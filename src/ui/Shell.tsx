@@ -11,6 +11,7 @@ import { ChatHeader, ChatView } from './ChatView';
 import { MemoryView } from './MemoryView';
 import { NotesView } from './NotesView';
 import { SettingsView } from './SettingsView';
+import { useKeyboardInset } from './keyboard';
 import { focusSoon, useShortcuts } from './shortcuts';
 import { FONT } from './theme';
 
@@ -29,6 +30,7 @@ export function Shell() {
   const { newChat, busy } = useStore();
   const [view, setView] = useState<ViewKey>('chat');
   const [chatsOpen, setChatsOpen] = useState(false);
+  const keyboard = useKeyboardInset();
   const wide = width >= 900;
 
   const content =
@@ -97,8 +99,14 @@ export function Shell() {
   }
 
   const index = ROUTES.findIndex((r) => r.key === view);
+  // While typing, the tabs hide and everything sits just above the keyboard.
+  const typing = keyboard.open && keyboard.inset > 0;
   return (
-    <View style={[styles.flex, { backgroundColor: theme.colors.background, paddingTop: insets.top }]}>
+    <View
+      ref={keyboard.ref}
+      onLayout={keyboard.onLayout}
+      style={[styles.flex, { backgroundColor: theme.colors.background, paddingTop: insets.top, paddingBottom: keyboard.inset }]}
+    >
       {view === 'chat' && (
         <ChatHeader
           left={<IconButton icon="menu" onPress={() => { tap(); setChatsOpen(true); }} accessibilityLabel="Chats" />}
@@ -106,13 +114,15 @@ export function Shell() {
         />
       )}
       <View style={styles.flex}>{content}</View>
-      <BottomNavigation.Bar
-        navigationState={{ index, routes: ROUTES as unknown as { key: string; title: string }[] }}
-        onTabPress={({ route }) => { tap(); setView(route.key as ViewKey); }}
-        safeAreaInsets={{ bottom: insets.bottom }}
-        style={{ backgroundColor: theme.colors.background, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.colors.outlineVariant }}
-        activeIndicatorStyle={{ backgroundColor: theme.colors.secondaryContainer }}
-      />
+      {!typing && (
+        <BottomNavigation.Bar
+          navigationState={{ index, routes: ROUTES as unknown as { key: string; title: string }[] }}
+          onTabPress={({ route }) => { tap(); setView(route.key as ViewKey); }}
+          safeAreaInsets={{ bottom: insets.bottom }}
+          style={{ backgroundColor: theme.colors.background, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.colors.outlineVariant }}
+          activeIndicatorStyle={{ backgroundColor: theme.colors.secondaryContainer }}
+        />
+      )}
 
       <Modal visible={chatsOpen} transparent animationType="fade" onRequestClose={() => setChatsOpen(false)} statusBarTranslucent>
         <View style={styles.sheetRow}>

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Animated, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, TextInput,
+  Animated, Image, Platform, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, TextInput,
   type TextInputInstance, View, useWindowDimensions,
 } from 'react-native';
 import { ActivityIndicator, Button, Icon, IconButton, Menu, ProgressBar, Snackbar, Surface, Text, useTheme } from 'react-native-paper';
@@ -320,7 +320,8 @@ function Composer({ ready }: { ready: boolean }) {
           placeholderTextColor={theme.colors.onSurfaceVariant}
           multiline
           editable={ready}
-          onContentSizeChange={(e) => setHeight(Math.min(160, Math.max(24, e.nativeEvent.contentSize.height)))}
+          // The phone grows the box with its text by itself (up to maxHeight); the PC's text area needs telling.
+          onContentSizeChange={Platform.OS === 'web' ? (e) => setHeight(Math.min(160, Math.max(24, e.nativeEvent.contentSize.height))) : undefined}
           onKeyPress={(e) => {
             const ev = e.nativeEvent as unknown as { key: string; shiftKey?: boolean };
             if (Platform.OS === 'web' && ev.key === 'Enter' && !ev.shiftKey) {
@@ -328,7 +329,7 @@ function Composer({ ready }: { ready: boolean }) {
               submit();
             }
           }}
-          style={[styles.input, { height, color: theme.colors.onSurface, fontFamily: FONT.regular }, Platform.OS === 'web' && ({ outlineStyle: 'none' } as object)]}
+          style={[styles.input, { color: theme.colors.onSurface, fontFamily: FONT.regular }, Platform.OS === 'web' && ({ height, outlineStyle: 'none' } as object)]}
         />
         {voiceSupported && ready && !busy && (
           <IconButton
@@ -377,7 +378,7 @@ export function ChatView({ onOpenSettings }: { onOpenSettings: () => void }) {
   }, [chat?.id]);
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'web' ? undefined : 'padding'}>
+    <View style={styles.flex}>
       <ScrollView
         ref={scroll}
         style={styles.flex}
@@ -445,7 +446,7 @@ export function ChatView({ onOpenSettings }: { onOpenSettings: () => void }) {
         <Composer ready={ready} />
       </View>
       <Snackbar visible={copiedNote} onDismiss={() => setCopiedNote(false)} duration={1500}>Copied</Snackbar>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -496,7 +497,7 @@ const styles = StyleSheet.create({
   userCol: { alignSelf: 'flex-end', alignItems: 'flex-end', gap: 6, maxWidth: '85%' },
   userThumbs: { flexDirection: 'row', gap: 6 },
   userThumb: { width: 140, height: 140, borderRadius: 16 },
-  input: { flex: 1, fontSize: 16, lineHeight: 22, paddingTop: 9, paddingBottom: 9, maxHeight: 160 },
+  input: { flex: 1, fontSize: 16, lineHeight: 22, paddingTop: 9, paddingBottom: 9, minHeight: 40, maxHeight: 160 },
   send: { margin: 2 },
   voiceError: { paddingHorizontal: 8 },
 });

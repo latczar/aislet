@@ -1,6 +1,6 @@
 // First-run set-up: your name, then getting the AI ready on this device.
 import React, { useState } from 'react';
-import { Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { Image, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { Button, ProgressBar, Surface, Text, TextInput, useTheme } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { APP_NAME } from '../config';
@@ -8,6 +8,7 @@ import { engine } from '../engine';
 import { useStore } from '../store';
 import { formatSize } from './confirm';
 import { cancelDownload, startDownload, useDownload } from './downloads';
+import { useKeyboardInset } from './keyboard';
 import { FONT, STATUS_COLOURS } from './theme';
 
 function Step({ n, of }: { n: number; of: number }) {
@@ -95,6 +96,7 @@ export function Onboarding() {
   const insets = useSafeAreaInsets();
   const { settings, updateSettings } = useStore();
   const [step, setStep] = useState(1);
+  const keyboard = useKeyboardInset();
   const [name, setName] = useState(settings.name);
   const saveName = async () => {
     if (!name.trim()) return;
@@ -103,7 +105,7 @@ export function Onboarding() {
   };
 
   return (
-    <KeyboardAvoidingView style={[styles.flex, { backgroundColor: theme.colors.background }]} behavior={Platform.OS === 'web' ? undefined : 'padding'}>
+    <View ref={keyboard.ref} onLayout={keyboard.onLayout} style={[styles.flex, { backgroundColor: theme.colors.background, paddingBottom: keyboard.inset }]}>
       <ScrollView contentContainerStyle={[styles.page, { paddingTop: insets.top + 32, paddingBottom: insets.bottom + 24 }]} keyboardShouldPersistTaps="handled">
         <Step n={step} of={2} />
         {step === 1 ? (
@@ -130,7 +132,7 @@ export function Onboarding() {
           <GetModel onDone={() => updateSettings({ onboarded: true })} />
         )}
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
