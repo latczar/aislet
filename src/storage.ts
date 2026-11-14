@@ -6,6 +6,7 @@ export const KEYS = {
   memories: 'memories',
   notes: 'notes',
   noteIndex: 'note-index',
+  memoryIndex: 'memory-index', // meaning vectors for facts, to pick the relevant ones
   chats: 'chats',
   chat: (id: string) => `chat:${id}`,
 };

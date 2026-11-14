@@ -32,8 +32,8 @@ export interface Engine {
   status(modelId: string): Promise<EngineStatus>;
   /** Stream a reply; returns the full text. */
   chat(messages: Message[], modelId: string, onToken: (text: string) => void, maxTokens?: number): Promise<string>;
-  /** A short JSON-only reply, used for learning facts. */
-  json(messages: Message[], modelId: string): Promise<string>;
+  /** A JSON-only reply, used for learning facts (short) and tidying memory (longer). */
+  json(messages: Message[], modelId: string, maxTokens?: number): Promise<string>;
   /** Vectors for notes search, or null when no embedding model is available. */
   embed(texts: string[], kind: 'query' | 'document'): Promise<number[][] | null>;
   /** Whether this engine can look at photos right now. */

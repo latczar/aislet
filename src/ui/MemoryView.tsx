@@ -1,22 +1,79 @@
 import React, { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
-import { Button, Divider, Icon, IconButton, List, Surface, Switch, Text, TextInput, useTheme } from 'react-native-paper';
-import { CATEGORIES } from '../brain';
+import {
+  ActivityIndicator, Button, Checkbox, Dialog, Divider, Icon, IconButton, List, Portal, Snackbar, Surface, Switch, Text, TextInput,
+  useTheme,
+} from 'react-native-paper';
+import { CATEGORIES, type TidyChange } from '../brain';
 import { useStore } from '../store';
+import type { Memory } from '../types';
 import { confirm } from './confirm';
 import { FONT } from './theme';
 
+/** One suggested change: what goes, what replaces it and why. */
+function TidyItem({ change, memories, checked, onToggle }: { change: TidyChange; memories: Memory[]; checked: boolean; onToggle: () => void }) {
+  const theme = useTheme();
+  const removed = memories.filter((m) => change.remove.includes(m.id));
+  const kept = memories.find((m) => m.id === change.keep);
+  const kind = { duplicate: 'Duplicate', contradiction: 'Out of date', overlap: 'Merge' }[change.kind];
+  return (
+    <View style={styles.tidyItem}>
+      <Checkbox.Android status={checked ? 'checked' : 'unchecked'} onPress={onToggle} accessibilityLabel={`${kind}: apply this change`} />
+      <View style={styles.flex}>
+        <Text variant="labelLarge" style={{ color: theme.colors.primary }} onPress={onToggle}>{kind}</Text>
+        {removed.map((m) => (
+          <Text key={m.id} variant="bodyMedium" style={[styles.struck, { color: theme.colors.onSurfaceVariant }]}>{m.fact}</Text>
+        ))}
+        {change.add && <Text variant="bodyMedium" style={{ fontFamily: FONT.medium }}>→ {change.add.fact}</Text>}
+        {kept && <Text variant="bodyMedium">Keeps: {kept.fact}</Text>}
+        {!!change.reason && <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>{change.reason}</Text>}
+      </View>
+    </View>
+  );
+}
+
 export function MemoryView({ onStartInterview }: { onStartInterview: () => void }) {
   const theme = useTheme();
-  const { memories, addMemory, removeMemory, settings, updateSettings, startInterview, status, busy } = useStore();
+  const {
+    memories, addMemory, removeMemory, proposeTidy, applyTidy, settings, updateSettings, startInterview, status, busy,
+  } = useStore();
   const [fact, setFact] = useState('');
+  const [tidying, setTidying] = useState(false);
+  const [changes, setChanges] = useState<TidyChange[] | null>(null);
+  const [picked, setPicked] = useState<boolean[]>([]);
+  const [toast, setToast] = useState<string | null>(null);
   const card = [styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }];
+  const chosen = changes?.filter((_, i) => picked[i]) ?? [];
 
   const add = async () => {
     if (await addMemory(fact)) setFact('');
   };
 
+  const tidy = async () => {
+    setTidying(true);
+    try {
+      const found = await proposeTidy();
+      if (!found.length) setToast('All tidy: no duplicates or out-of-date facts found.');
+      else {
+        setPicked(found.map(() => true));
+        setChanges(found);
+      }
+    } catch (e) {
+      setToast((e as Error).message || "Couldn't check your memory just now.");
+    } finally {
+      setTidying(false);
+    }
+  };
+
+  const apply = async () => {
+    const n = chosen.length;
+    await applyTidy(chosen);
+    setChanges(null);
+    setToast(`Tidied: ${n} ${n === 1 ? 'change' : 'changes'} made.`);
+  };
+
   return (
+    <View style={styles.flex}>
     <ScrollView contentContainerStyle={styles.page}>
       <Text variant="headlineSmall" style={styles.h1}>Memory</Text>
       <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
@@ -47,6 +104,21 @@ export function MemoryView({ onStartInterview }: { onStartInterview: () => void 
           title="Learn from my chats"
           description="Saves lasting facts and preferences as you talk"
           right={() => <Switch value={settings.learn} onValueChange={(v) => updateSettings({ learn: v })} />}
+        />
+        <Divider />
+        <List.Item
+          title="Tidy up memory"
+          titleStyle={{ fontFamily: FONT.medium }}
+          description={tidying ? 'Looking for duplicates and out-of-date facts…' : 'Finds duplicates and out-of-date facts. You approve each change.'}
+          descriptionNumberOfLines={2}
+          left={(p) => <List.Icon {...p} icon="broom" color={theme.colors.primary} />}
+          right={() => (tidying
+            ? <ActivityIndicator size={18} style={styles.tidySpinner} accessibilityLabel="Tidying" />
+            : (
+              <Button mode="contained-tonal" compact disabled={!status?.ready || busy || memories.length < 2} onPress={tidy}>
+                Tidy up
+              </Button>
+            ))}
         />
         <Divider />
         <View style={styles.addRow}>
@@ -104,6 +176,33 @@ export function MemoryView({ onStartInterview }: { onStartInterview: () => void 
         })
       )}
     </ScrollView>
+
+      <Portal>
+        <Dialog visible={!!changes} onDismiss={() => setChanges(null)} style={styles.dialog}>
+          <Dialog.Title style={{ fontFamily: FONT.semibold }}>Suggested changes</Dialog.Title>
+          <Dialog.ScrollArea style={styles.dialogScroll}>
+            <ScrollView contentContainerStyle={styles.tidyList}>
+              <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+                Untick anything you want to keep as it is. Nothing changes until you apply.
+              </Text>
+              {changes?.map((c, i) => (
+                <TidyItem
+                  key={i} change={c} memories={memories} checked={!!picked[i]}
+                  onToggle={() => setPicked((p) => p.map((v, j) => (j === i ? !v : v)))}
+                />
+              ))}
+            </ScrollView>
+          </Dialog.ScrollArea>
+          <Dialog.Actions>
+            <Button onPress={() => setChanges(null)}>Cancel</Button>
+            <Button mode="contained" disabled={!chosen.length} onPress={apply}>
+              {chosen.length ? `Apply ${chosen.length}` : 'Apply'}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+      <Snackbar visible={!!toast} onDismiss={() => setToast(null)} duration={3500}>{toast}</Snackbar>
+    </View>
   );
 }
 
@@ -116,4 +215,10 @@ const styles = StyleSheet.create({
   empty: { padding: 4 },
   group: { gap: 8 },
   groupHead: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4 },
+  tidySpinner: { marginHorizontal: 12 },
+  dialog: { maxWidth: 560, width: '92%', alignSelf: 'center', maxHeight: '85%' },
+  dialogScroll: { paddingHorizontal: 0 },
+  tidyList: { paddingHorizontal: 20, paddingVertical: 12, gap: 14 },
+  tidyItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
+  struck: { textDecorationLine: 'line-through' },
 });

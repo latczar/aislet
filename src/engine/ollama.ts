@@ -134,10 +134,10 @@ export function createOllamaEngine({ base, sign = () => ({}), where, label }: Op
       return full;
     },
 
-    async json(messages) {
+    async json(messages, _modelId, maxTokens = 256) {
       const res = await post('/api/chat', {
         model, messages: toOllama(messages), stream: false, think: false, format: 'json', keep_alive: keepAlive,
-        options: { num_ctx: 4096, temperature: 0, num_predict: 256 },
+        options: { num_ctx: maxTokens > 256 ? 8192 : 4096, temperature: 0, num_predict: maxTokens },
       });
       return (await res.json()).message?.content ?? '';
     },

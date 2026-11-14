@@ -235,11 +235,11 @@ export const deviceEngine: Engine = {
     }
   },
 
-  async json(messages, modelId) {
+  async json(messages, modelId, maxTokens = 256) {
     const ctx = await chatContext(modelId);
     try {
       const result = await ctx.completion({
-        messages: toLlama(messages.map(({ images: _i, ...m }) => m)), n_predict: 256, temperature: 0, stop: STOP,
+        messages: toLlama(messages.map(({ images: _i, ...m }) => m)), n_predict: maxTokens, temperature: 0, stop: STOP,
         jinja: true, enable_thinking: false, response_format: { type: 'json_object' },
       });
       return result.text ?? '';

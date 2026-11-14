@@ -2,8 +2,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
 import {
-  MAX_TOKENS, chunkText, cleanFact, conversationLearnMessages, interviewPrompt, keywordScore, learnMessages, parseFacts,
-  similarity, stripThinking, systemPrompt, titleFrom, worthLearning,
+  CATEGORIES, MAX_TOKENS, MEMORY_LIMIT, TIDY_BATCH, type TidyChange, chunkText, cleanFact, conversationLearnMessages,
+  interviewPrompt, keywordScore, learnMessages, parseFacts, parseTidy, relevantMemories, similarity, stripThinking,
+  systemPrompt, tidyMessages, titleFrom, worthLearning,
 } from './brain';
 import { engine as localEngine } from './engine';
 import { createOllamaEngine } from './engine/ollama';
@@ -21,6 +22,7 @@ const HISTORY = 20; // messages of the current chat the model sees
 const DELETED_KEY = 'deleted';
 
 type NoteIndex = Record<string, { updated: number; chunks: { text: string; vec?: number[] }[] }>;
+type MemoryIndex = Record<string, { fact: string; vec: number[] }>;
 
 export interface Attachments {
   images: string[];                       // base64 JPEG
@@ -47,6 +49,9 @@ interface Store {
   memories: Memory[];
   addMemory(fact: string, category?: MemoryCategory): Promise<boolean>;
   removeMemory(id: string): Promise<void>;
+  /** Ask the model for duplicates, contradictions and overlaps to tidy. Nothing changes until applyTidy. */
+  proposeTidy(): Promise<TidyChange[]>;
+  applyTidy(changes: TidyChange[]): Promise<void>;
   notes: Note[];
   saveNote(note: { id?: string; title: string; text: string }): Promise<void>;
   deleteNote(id: string): Promise<void>;
@@ -333,6 +338,72 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     await saveMemories(memRef.current.filter((m) => m.id !== id));
   }, [saveMemories, markDeleted]);
 
+  /** Meaning vectors for the facts, worked out once each and kept on this device. */
+  const memoryVectors = useCallback(async (): Promise<Record<string, number[]>> => {
+    const all = memRef.current;
+    const index = await load<MemoryIndex>(KEYS.memoryIndex, {});
+    const missing = all.filter((m) => index[m.id]?.fact !== m.fact).slice(0, 64); // the rest follow on later messages
+    for (let i = 0; i < missing.length; i += 32) {
+      const batch = missing.slice(i, i + 32);
+      const vecs = await engineRef.current.embed(batch.map((m) => m.fact), 'document').catch(() => null);
+      if (!vecs) break;
+      batch.forEach((m, j) => { if (vecs[j]) index[m.id] = { fact: m.fact, vec: vecs[j] }; });
+    }
+    const live = new Set(all.map((m) => m.id));
+    const kept: MemoryIndex = {};
+    for (const [id, entry] of Object.entries(index)) if (live.has(id)) kept[id] = entry;
+    if (missing.length || Object.keys(kept).length !== Object.keys(index).length) await save(KEYS.memoryIndex, kept);
+    return Object.fromEntries(Object.entries(kept).map(([id, e]) => [id, e.vec]));
+  }, []);
+
+  /** The facts that go in this prompt: all of them while memory is small, else the most relevant. */
+  const pickMemories = useCallback(async (query: string, queryVec: number[] | null, limit: number) => {
+    const all = memRef.current;
+    if (all.length <= limit) return all;
+    const facts = queryVec ? await memoryVectors().catch(() => ({})) : {};
+    return relevantMemories(all, query, limit, queryVec ? { query: queryVec, facts } : undefined);
+  }, [memoryVectors]);
+
+  const proposeTidy = useCallback(async (): Promise<TidyChange[]> => {
+    if (busyRef.current) throw new Error('Wait for the current reply to finish, then try again.');
+    const all = memRef.current;
+    if (all.length < 2) return [];
+    // A category at a time (small models mix up facts across a long mixed list), in batches it can read at once.
+    const groups: Memory[][] = [];
+    for (const c of CATEGORIES) {
+      const group = all.filter((m) => (m.category ?? 'about') === c.id);
+      for (let i = 0; i < group.length; i += TIDY_BATCH) groups.push(group.slice(i, i + TIDY_BATCH));
+    }
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      const changes: TidyChange[] = [];
+      for (const group of groups.filter((g) => g.length > 1)) {
+        const reply = await engineRef.current.json(tidyMessages(settingsRef.current.name, group), settingsRef.current.modelId, 1500);
+        changes.push(...parseTidy(reply, group));
+      }
+      return changes;
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }, []);
+
+  const applyTidy = useCallback(async (changes: TidyChange[]) => {
+    const gone = new Set(changes.flatMap((c) => c.remove));
+    if (!gone.size) return;
+    const kept = memRef.current.filter((m) => !gone.has(m.id));
+    for (const c of changes) {
+      const add = c.add;
+      if (!add || kept.some((m) => m.fact.toLowerCase() === add.fact.toLowerCase())) continue;
+      // A merged fact keeps the date of the newest fact it replaces, so later tidies know how recent it is.
+      const dates = memRef.current.filter((m) => c.remove.includes(m.id)).map((m) => m.added).sort();
+      kept.push({ id: newId(), fact: add.fact, category: add.category, added: dates[dates.length - 1] ?? today() });
+    }
+    await markDeleted([...gone]);
+    await saveMemories(kept);
+  }, [markDeleted, saveMemories]);
+
   // ---- Notes ----
   const indexNote = useCallback(async (note: Note, index: NoteIndex) => {
     const chunks = chunkText(`${note.title}\n\n${note.text}`);
@@ -340,11 +411,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     index[note.id] = { updated: note.updated, chunks: chunks.map((text, i) => ({ text, vec: vectors?.[i] })) };
   }, []);
 
-  const searchNotes = useCallback(async (query: string): Promise<NoteHit[]> => {
+  const searchNotes = useCallback(async (query: string, vec?: number[] | null): Promise<NoteHit[]> => {
     const all = notesRef.current;
     if (!all.length) return [];
     const index = await load<NoteIndex>(KEYS.noteIndex, {});
-    const queryVec = (await engineRef.current.embed([query], 'query').catch(() => null))?.[0];
+    const queryVec = vec === undefined ? (await engineRef.current.embed([query], 'query').catch(() => null))?.[0] : vec ?? undefined;
     let changed = false;
     for (const note of all) {
       const entry = index[note.id];
@@ -461,8 +532,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           ? 'To read photos offline, download "Photo understanding" in Settings (Qwen3.5 4B), or connect to your laptop.'
           : "This model can't read photos.");
       }
-      const hits = await searchNotes(userMsg.content).catch(() => []);
-      const prompt = systemPrompt(s, memRef.current, hits, active.where);
+      // One meaning vector for the question serves both the notes search and choosing memories.
+      const needVec = notesRef.current.length > 0 || memRef.current.length > MEMORY_LIMIT;
+      const queryVec = needVec ? (await active.embed([userMsg.content], 'query').catch(() => null))?.[0] ?? null : null;
+      const hits = await searchNotes(userMsg.content, queryVec).catch(() => []);
+      const recentAsks = base.messages.filter((m) => m.role === 'user').slice(-2).map((m) => m.display ?? m.content);
+      const memories = await pickMemories([...recentAsks, userMsg.content].join('\n'), queryVec, base.mode === 'interview' ? 80 : MEMORY_LIMIT)
+        .catch(() => memRef.current.slice(-MEMORY_LIMIT));
+      const prompt = systemPrompt(s, memories, hits, active.where);
       const sys: Message = { role: 'system', content: base.mode === 'interview' ? `${prompt}
 
 ${interviewPrompt(s.name)}` : prompt };
@@ -499,8 +576,13 @@ ${interviewPrompt(s.name)}` : prompt };
     const name = settingsRef.current.name;
     const userTurns = finalChat.messages.filter((m) => m.role === 'user').length;
     const jobs: Message[][] = [];
-    if (base.mode === 'interview' || worthLearning(text)) jobs.push(learnMessages(name, memRef.current, text));
-    if (userTurns > 0 && userTurns % 6 === 0) jobs.push(conversationLearnMessages(name, memRef.current, finalChat.messages.slice(-12)));
+    const recent = finalChat.messages.slice(-12);
+    // "Already known" lists only the related facts, so learning stays quick with a long memory.
+    if (base.mode === 'interview' || worthLearning(text)) jobs.push(learnMessages(name, relevantMemories(memRef.current, text, 40), text));
+    if (userTurns > 0 && userTurns % 6 === 0) {
+      const said = recent.filter((m) => m.role === 'user').map((m) => m.display ?? m.content).join('\n');
+      jobs.push(conversationLearnMessages(name, relevantMemories(memRef.current, said, 40), recent));
+    }
     const added: string[] = [];
     for (const job of jobs) {
       try {
@@ -511,7 +593,7 @@ ${interviewPrompt(s.name)}` : prompt };
       }
     }
     if (added.length) setNoted((n) => ({ ...n, [answerAt]: added }));
-  }, [searchNotes, saveChat, addMemory, refreshStatus]);
+  }, [searchNotes, pickMemories, saveChat, addMemory, refreshStatus]);
 
   const send = useCallback(async (text: string, attachments?: Attachments) => {
     const t = text.trim();
@@ -587,7 +669,7 @@ ${interviewPrompt(s.name)}` : prompt };
   }, [addMemory, saveNotes, updateSettings]);
 
   const value: Store = {
-    loaded, settings, updateSettings, status, refreshStatus, engine, hub, syncNow, memories, addMemory, removeMemory,
+    loaded, settings, updateSettings, status, refreshStatus, engine, hub, syncNow, memories, addMemory, removeMemory, proposeTidy, applyTidy,
     notes, saveNote, deleteNote, chats, chat, openChat, newChat, deleteChat, clearChats, busy, error, clearError, noted,
     send, regenerate, startInterview, stop, exportData, importData,
   };

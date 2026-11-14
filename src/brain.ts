@@ -143,6 +143,133 @@ export function parseFacts(reply: string): LearntFact[] {
     }));
 }
 
+// ---- Keeping long memories fast: only the facts that matter for this message go in the prompt ----
+
+/** Up to this many facts, all of them go in every prompt. Beyond it, the most relevant are chosen. */
+export const MEMORY_LIMIT = 30;
+
+/**
+ * Pick the facts most likely to help with `query`. How they like answers always applies, so the newest
+ * preferences always go in; the rest are ranked by meaning (when `vectors` are given) or shared words,
+ * with a small lift for newer facts. Returns them in their original order.
+ */
+export function relevantMemories(
+  memories: Memory[],
+  query: string,
+  limit = MEMORY_LIMIT,
+  vectors?: { query: number[]; facts: Record<string, number[] | undefined> },
+): Memory[] {
+  if (memories.length <= limit) return memories;
+  const prefs = memories.filter((m) => m.category === 'preferences').slice(-Math.floor(limit / 3));
+  const chosen = new Set(prefs.map((m) => m.id));
+  const rest = memories.filter((m) => !chosen.has(m.id));
+  const scored = rest.map((m, i) => {
+    const vec = vectors?.facts[m.id];
+    const relevance = vectors && vec ? similarity(vectors.query, vec) : keywordScore(query, m.fact);
+    const recency = (0.1 * i) / Math.max(1, rest.length - 1); // later in the list = learnt more recently
+    return { m, score: relevance + recency + ((m.category ?? 'about') === 'about' ? 0.05 : 0) };
+  });
+  scored.sort((a, b) => b.score - a.score).slice(0, limit - prefs.length).forEach((s) => chosen.add(s.m.id));
+  return memories.filter((m) => chosen.has(m.id));
+}
+
+// ---- Tidy up: the model suggests merges and removals, and the user approves each one ----
+
+export type TidyKind = 'duplicate' | 'contradiction' | 'overlap';
+
+export interface TidyChange {
+  kind: TidyKind;
+  remove: string[];                                // ids of the facts to forget
+  keep?: string;                                   // id of the fact that stays (duplicates, contradictions)
+  add?: { fact: string; category: MemoryCategory }; // the fact that replaces them (overlaps)
+  reason: string;
+}
+
+/** Facts per request. Memory is tidied a category at a time, in batches of up to this many. */
+export const TIDY_BATCH = 60;
+
+/** Facts from one category, numbered for the model. */
+export function tidyMessages(name: string, memories: Memory[]): Message[] {
+  const who = name || 'The user';
+  const list = memories.map((m, i) => `${i + 1}. [saved ${m.added}] ${m.fact}`).join('\n');
+  return [
+    {
+      role: 'system',
+      content: [
+        `You tidy the memory of ${who}'s personal assistant. Below are numbered facts, each with the date it was saved.`,
+        'Look only for these problems:',
+        '- duplicate: two facts say the same thing. Keep the one with more detail; remove the other.',
+        "- contradiction: two facts can't both be true now. Keep the newer one; remove the older one.",
+        '- overlap: two to four facts read better as one. Remove them all and write one new fact that keeps every detail.',
+        'Facts about different things are not duplicates. Leave everything else alone. Never invent details,',
+        "and don't remove a fact just because it seems unimportant. Check every number you give against the list.",
+        `A new fact is one short sentence starting "${who}". In reasons, call them ${name ? name : '"the user"'}, not he or she.`,
+        'Reply only with JSON: {"changes": [{"reason": "a short explanation", "problem": "duplicate|contradiction|overlap",',
+        '"keep": number or null, "remove": [numbers], "add": "the new fact for an overlap, otherwise empty"}]}.',
+        'Reply {"changes": []} when nothing needs tidying.',
+      ].join('\n'),
+    },
+    { role: 'user', content: `Facts:\n${list}` },
+  ];
+}
+
+function shorten(text: string, max = 200): string {
+  const t = text.replace(/\s+/g, ' ').trim();
+  return t.length <= max ? t : `${t.slice(0, max).replace(/\s+\S*$/, '')}…`;
+}
+
+/**
+ * Read the model's suggestions, keeping only ones that make sense: real fact numbers, at most four
+ * removals each, each fact in one change at most, and never removing a fact another change keeps.
+ */
+export function parseTidy(reply: string, memories: Memory[]): TidyChange[] {
+  const match = reply.match(/\{[\s\S]*\}/);
+  let data: unknown;
+  try {
+    data = JSON.parse(match ? match[0] : reply);
+  } catch {
+    return [];
+  }
+  const raw = (data as { changes?: unknown })?.changes;
+  if (!Array.isArray(raw)) return [];
+  type Raw = { reason?: unknown; problem?: unknown; keep?: unknown; remove?: unknown; add?: unknown };
+  const changes = (raw.slice(0, 30) as Raw[]).filter((c) => c && typeof c === 'object');
+  const at = (n: unknown): Memory | undefined => {
+    const i = Number(n);
+    return Number.isInteger(i) && i >= 1 && i <= memories.length ? memories[i - 1] : undefined;
+  };
+  const kept = new Set(changes.map((c) => at(c.keep)?.id).filter((id): id is string => !!id));
+  const used = new Set<string>();
+  const out: TidyChange[] = [];
+  for (const c of changes) {
+    const keep = at(c.keep);
+    let fact = typeof c.add === 'string' ? cleanFact(c.add) : '';
+    let targets = [...new Set((Array.isArray(c.remove) ? c.remove : []).map(at))]
+      .filter((m): m is Memory => !!m && !used.has(m.id) && !kept.has(m.id));
+    if (!targets.length || targets.length > 4) continue;
+    // "Replace these with one of them" really means "keep that one".
+    const same = targets.find((m) => m.fact.toLowerCase() === fact.toLowerCase());
+    if (same) {
+      targets = targets.filter((m) => m !== same);
+      fact = '';
+    }
+    if (!targets.length) continue;
+    if (memories.some((m) => !targets.includes(m) && m.fact.toLowerCase() === fact.toLowerCase())) fact = ''; // already known
+    const problem = String(c.problem ?? '').toLowerCase();
+    const kind: TidyKind = fact ? 'overlap' : problem.startsWith('contra') ? 'contradiction' : 'duplicate';
+    if (!fact && !keep) continue; // removing with nothing kept or added: not a tidy, so leave it to the user
+    targets.forEach((m) => used.add(m.id));
+    out.push({
+      kind,
+      remove: targets.map((m) => m.id),
+      keep: !fact && keep ? keep.id : undefined,
+      add: fact ? { fact, category: targets[0].category ?? 'about' } : undefined,
+      reason: typeof c.reason === 'string' ? shorten(c.reason) : '',
+    });
+  }
+  return out;
+}
+
 export function cleanFact(fact: string): string {
   return fact.replace(/\s+/g, ' ').trim().replace(/[.\s]+$/, '');
 }
