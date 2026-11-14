@@ -21,7 +21,7 @@ interface Options {
   /** Extra headers for each request, e.g. a signature for the laptop hub. */
   sign?: (method: string, path: string, body: string) => Record<string, string>;
   where: 'laptop' | 'phone';
-  label: string; // e.g. "on this laptop" or "on your laptop"
+  label: string; // e.g. "This laptop's AI" or "Your laptop's AI"
 }
 
 /** Ollama's message format. Only the latest photos are sent, to keep replies quick. */
@@ -83,7 +83,7 @@ export function createOllamaEngine({ base, sign = () => ({}), where, label }: Op
           return { ready: false, label: 'No model', problem: `No AI model is installed in Ollama yet. Run "ollama pull ${CHAT_MODEL}".` };
         }
         model = best;
-        return { ready: true, label: `${model} ${label}` };
+        return { ready: true, label, model };
       } catch {
         return { ready: false, label: 'Ollama', problem: "Ollama isn't running. Start the Ollama app on the laptop." };
       }
@@ -157,4 +157,4 @@ export function createOllamaEngine({ base, sign = () => ({}), where, label }: Op
   };
 }
 
-export const ollamaEngine = createOllamaEngine({ base: 'http://localhost:11434', where: 'laptop', label: 'on this laptop' });
+export const ollamaEngine = createOllamaEngine({ base: 'http://localhost:11434', where: 'laptop', label: "This laptop's AI" });

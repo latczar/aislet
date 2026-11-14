@@ -133,7 +133,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         base: settings.hubUrl,
         sign: (method, path, body) => hubHeaders({ key: settings.hubKey, kind: 'phone' }, method, path, body),
         where: 'phone',
-        label: 'on your laptop',
+        label: "Your laptop's AI",
       })
       : null),
     [settings.hubUrl, settings.hubKey],

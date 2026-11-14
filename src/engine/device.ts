@@ -246,7 +246,7 @@ export const deviceEngine: Engine = {
       }
       return { ready: false, needsModel: true, label: 'Choose a model', problem: 'Pick one of your downloaded models in Settings.' };
     }
-    return { ready: true, label: `${s.name} on this phone` };
+    return { ready: true, label: "This phone's AI", model: s.name };
   },
 
   async warm(modelId) {

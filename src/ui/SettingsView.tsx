@@ -133,6 +133,73 @@ function PairPhone() {
   );
 }
 
+/** Phone, paired: the laptop's address, and a search for it if the router has given it a new one. */
+function LaptopAddress() {
+  const theme = useTheme();
+  const { settings, updateSettings, refreshStatus } = useStore();
+  const [progress, setProgress] = useState<number | null>(null); // while looking
+  const [note, setNote] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const cancel = useRef<AbortController | null>(null);
+  useEffect(() => () => cancel.current?.abort(), []);
+
+  const findAgain = async () => {
+    setProblem(null);
+    setNote(null);
+    const controller = new AbortController();
+    cancel.current = controller;
+    setProgress(0);
+    const result = { match: '' };
+    const checks: Promise<void>[] = [];
+    try {
+      await findLaptops(
+        (a) => {
+          // Keep the same code: only the laptop that accepts it is ours.
+          checks.push(hubPing({ base: normaliseAddress(a), key: settings.hubKey, kind: 'phone' })
+            .then((info) => {
+              if (info.paired && !result.match) {
+                result.match = a;
+                controller.abort(); // found it: stop looking
+              }
+            })
+            .catch(() => undefined));
+        },
+        setProgress,
+        controller.signal,
+      );
+      await Promise.all(checks);
+    } catch (e) {
+      if (!result.match) {
+        setProgress(null);
+        setProblem((e as Error).message);
+        return;
+      }
+    }
+    setProgress(null);
+    if (result.match) {
+      await updateSettings({ hubUrl: normaliseAddress(result.match) });
+      setNote(`Found it at ${result.match}`);
+      refreshStatus();
+    } else if (!controller.signal.aborted) {
+      setProblem(`Couldn't find your laptop on this Wi-Fi. Check it's on and ${APP_NAME} is running there, or disconnect and type its address.`);
+    }
+  };
+
+  return (
+    <>
+      <Row
+        title="Laptop's address"
+        description={progress !== null ? `Looking on your Wi-Fi… ${Math.round(progress * 100)}%` : note ?? settings.hubUrl.replace(/^https?:\/\//, '').replace(/:8766$/, '')}
+        left={(p) => <List.Icon {...p} icon="ip-network-outline" />}
+        right={(p) => (progress !== null
+          ? <Button mode="contained-tonal" compact style={p.style} onPress={() => { cancel.current?.abort(); setProgress(null); }}>Cancel</Button>
+          : <Button mode="contained-tonal" compact style={p.style} onPress={findAgain}>Find again</Button>)}
+      />
+      {problem && <Text variant="bodySmall" style={[styles.refindProblem, { color: theme.colors.error }]}>{problem}</Text>}
+    </>
+  );
+}
+
 /** Phone: connect to the laptop hub, or show the connection. */
 function ConnectLaptop() {
   const theme = useTheme();
@@ -143,53 +210,9 @@ function ConnectLaptop() {
   const [problem, setProblem] = useState<string | null>(null);
   const [search, setSearch] = useState<{ progress: number; found: string[]; done: boolean } | null>(null);
   const cancelSearch = useRef<AbortController | null>(null);
-  const [note, setNote] = useState<string | null>(null);
   useEffect(() => () => cancelSearch.current?.abort(), []);
 
-  // A router can give the laptop a new address. Look for it on the Wi-Fi again, keeping the same code.
-  const findAgain = async () => {
-    setProblem(null);
-    setNote(null);
-    const controller = new AbortController();
-    cancelSearch.current = controller;
-    setSearch({ progress: 0, found: [], done: false });
-    const result = { match: '' };
-    const checks: Promise<void>[] = [];
-    try {
-      await findLaptops(
-        (a) => {
-          checks.push(hubPing({ base: normaliseAddress(a), key: settings.hubKey, kind: 'phone' })
-            .then((info) => {
-              if (info.paired && !result.match) {
-                result.match = a;
-                controller.abort(); // found it: stop looking
-              }
-            })
-            .catch(() => undefined));
-        },
-        (progress) => setSearch((s) => (s ? { ...s, progress } : s)),
-        controller.signal,
-      );
-      await Promise.all(checks);
-    } catch (e) {
-      if (!result.match) {
-        setSearch(null);
-        setProblem((e as Error).message);
-        return;
-      }
-    }
-    setSearch(null);
-    if (result.match) {
-      await updateSettings({ hubUrl: normaliseAddress(result.match) });
-      setNote(`Found it at ${result.match}`);
-      refreshStatus();
-    } else if (!controller.signal.aborted) {
-      setProblem(`Couldn't find your laptop on this Wi-Fi. Check it's on and ${APP_NAME} is running there, or disconnect and type its address.`);
-    }
-  };
-
   if (settings.hubUrl && settings.hubKey) {
-    const looking = !!search && !search.done;
     return (
       <View>
         <Row
@@ -208,16 +231,12 @@ function ConnectLaptop() {
             </Button>
           )}
         />
-        <Divider />
-        <Row
-          title="Laptop's address"
-          description={looking ? `Looking on your Wi-Fi… ${Math.round(search.progress * 100)}%` : note ?? settings.hubUrl.replace(/^https?:\/\//, '').replace(/:8766$/, '')}
-          left={(p) => <List.Icon {...p} icon="ip-network-outline" />}
-          right={(p) => (looking
-            ? <Button mode="contained-tonal" compact style={p.style} onPress={() => { cancelSearch.current?.abort(); setSearch(null); }}>Cancel</Button>
-            : <Button mode="contained-tonal" compact style={p.style} onPress={findAgain}>Find again</Button>)}
-        />
-        {problem && <Text variant="bodySmall" style={[styles.refindProblem, { color: theme.colors.error }]}>{problem}</Text>}
+        {!hub.connected && (
+          <>
+            <Divider />
+            <LaptopAddress />
+          </>
+        )}
         <Divider />
         <Row
           title="Use the laptop's AI at home"
@@ -316,7 +335,9 @@ function ConnectLaptop() {
 
 export function SettingsView() {
   const theme = useTheme();
-  const { settings, updateSettings, status, refreshStatus, exportData, importData, clearChats, chats, memories, notes } = useStore();
+  const { settings, updateSettings, status, refreshStatus, exportData, importData, clearChats, chats, memories, notes, hub } = useStore();
+  const [allModels, setAllModels] = useState(false);
+  const [advanced, setAdvanced] = useState(false);
   const [name, setName] = useState(settings.name);
   const [instructions, setInstructions] = useState(settings.instructions);
   const [toast, setToast] = useState<string | null>(null);
@@ -347,34 +368,6 @@ export function SettingsView() {
             />
           </View>
         </Section>
-
-        <Section title="Appearance">
-          <View style={styles.pad}>
-            <SegmentedButtons
-              value={settings.appearance}
-              onValueChange={(v) => updateSettings({ appearance: v as Appearance })}
-              buttons={[
-                { value: 'light', label: 'Light', icon: 'white-balance-sunny' },
-                { value: 'dark', label: 'Dark', icon: 'weather-night' },
-                { value: 'system', label: Platform.OS === 'web' ? 'Match system' : 'Match phone', icon: 'theme-light-dark' },
-              ]}
-            />
-          </View>
-        </Section>
-
-        {Platform.OS === 'web' && (
-          <Section title="Keyboard shortcuts">
-            {SHORTCUTS.map((s, i) => (
-              <View key={s.label}>
-                {i > 0 && <Divider />}
-                <Row
-                  title={s.label}
-                  right={(p) => <Text variant="labelLarge" style={[p.style, styles.keys, { color: theme.colors.onSurfaceVariant }]}>{s.keys}</Text>}
-                />
-              </View>
-            ))}
-          </Section>
-        )}
 
         <Section title="How it answers" footer="Instructions apply to every chat, on top of what it remembers about you.">
           <View style={styles.pad}>
@@ -410,10 +403,10 @@ export function SettingsView() {
           {Platform.OS === 'web' ? <PairPhone /> : <ConnectLaptop />}
         </Section>
 
-        <Section title="AI model">
+        <Section title="AI">
           <Row
             title={status?.label ?? 'Checking…'}
-            description={status?.ready ? 'Ready. Works with no internet.' : status?.problem}
+            description={status?.ready ? `Ready${status.model ? ` · ${status.model}` : ''}. Works with no internet.` : status?.problem}
             left={(p) => (
               <Lead style={p.style}>
                 <View style={[styles.statusDot, { backgroundColor: !status || status.starting ? STATUS_COLOURS.checking : status.ready ? STATUS_COLOURS.ready : STATUS_COLOURS.problem }]} />
@@ -425,10 +418,25 @@ export function SettingsView() {
             <>
               <Divider />
               <RadioButton.Group value={settings.modelId} onValueChange={(id) => updateSettings({ modelId: id })}>
-                {engine.models.chatModels().map((m) => (
-                  <ModelRow key={m.id} model={m} selected={settings.modelId === m.id} onSelect={() => updateSettings({ modelId: m.id })} onChanged={changed} />
-                ))}
+                {/* The recommended model (listed first) and any you have; the rest wait behind "Other models". */}
+                {engine.models.chatModels()
+                  .filter((m, i) => allModels || i === 0 || m.downloaded || m.id === settings.modelId)
+                  .map((m) => (
+                    <ModelRow key={m.id} model={m} selected={settings.modelId === m.id} onSelect={() => updateSettings({ modelId: m.id })} onChanged={changed} />
+                  ))}
               </RadioButton.Group>
+              {!allModels && engine.models.chatModels().some((m, i) => !(i === 0 || m.downloaded || m.id === settings.modelId)) && (
+                <>
+                  <Divider />
+                  <Row
+                    title="Other models"
+                    description="Smaller or older models, if this one doesn't suit your phone"
+                    left={(p) => <List.Icon {...p} icon="view-list-outline" />}
+                    right={(p) => <List.Icon {...p} icon="chevron-down" />}
+                    onPress={() => setAllModels(true)}
+                  />
+                </>
+              )}
               <Divider />
               <ModelRow model={engine.models.searchModel()} onChanged={changed} />
               <Divider />
@@ -445,7 +453,6 @@ export function SettingsView() {
               : settings.performance === 'max'
                 ? 'Max: quickest with long questions and files. Uses more cores and keeps the model ready, so it runs warmer.'
                 : 'Balanced: quick replies without working the device too hard.',
-            engine.models ? 'On the phone, the AI chip is usually the coolest if it works; CPU is the most reliable.' : '',
             engine.lastSpeed?.() ? `Last reply: ${engine.lastSpeed()!.toFixed(1)} tokens a second.` : '',
           ].filter(Boolean).join(' ')}
         >
@@ -460,22 +467,36 @@ export function SettingsView() {
                 { value: 'max', label: 'Max', icon: 'lightning-bolt' },
               ]}
             />
-            {engine.models && (
-              <>
-                <Text variant="labelLarge">Runs on</Text>
-                <SegmentedButtons
-                  value={settings.accel}
-                  onValueChange={(v) => updateSettings({ accel: v as Accel })}
-                  buttons={[
-                    { value: 'cpu', label: 'CPU' },
-                    { value: 'gpu', label: 'GPU' },
-                    { value: 'npu', label: 'AI chip' },
-                  ]}
-                />
-              </>
-            )}
           </View>
         </Section>
+
+        <Section title="Appearance">
+          <View style={styles.pad}>
+            <SegmentedButtons
+              value={settings.appearance}
+              onValueChange={(v) => updateSettings({ appearance: v as Appearance })}
+              buttons={[
+                { value: 'light', label: 'Light', icon: 'white-balance-sunny' },
+                { value: 'dark', label: 'Dark', icon: 'weather-night' },
+                { value: 'system', label: Platform.OS === 'web' ? 'Match system' : 'Match phone', icon: 'theme-light-dark' },
+              ]}
+            />
+          </View>
+        </Section>
+
+        {Platform.OS === 'web' && (
+          <Section title="Keyboard shortcuts">
+            {SHORTCUTS.map((s, i) => (
+              <View key={s.label}>
+                {i > 0 && <Divider />}
+                <Row
+                  title={s.label}
+                  right={(p) => <Text variant="labelLarge" style={[p.style, styles.keys, { color: theme.colors.onSurfaceVariant }]}>{s.keys}</Text>}
+                />
+              </View>
+            ))}
+          </Section>
+        )}
 
         <Section
           title="Your data"
@@ -513,6 +534,44 @@ export function SettingsView() {
             }}
           />
         </Section>
+
+        {engine.models && (
+          <Section title="Advanced">
+            <Row
+              title={advanced ? 'Hide advanced settings' : 'Show advanced settings'}
+              description="Which chip runs the AI, and your laptop's address"
+              left={(p) => <List.Icon {...p} icon="tune-variant" />}
+              right={(p) => <List.Icon {...p} icon={advanced ? 'chevron-up' : 'chevron-down'} />}
+              onPress={() => setAdvanced((a) => !a)}
+            />
+            {advanced && (
+              <>
+                <Divider />
+                <View style={styles.pad}>
+                  <Text variant="labelLarge">Runs on</Text>
+                  <SegmentedButtons
+                    value={settings.accel}
+                    onValueChange={(v) => updateSettings({ accel: v as Accel })}
+                    buttons={[
+                      { value: 'cpu', label: 'CPU' },
+                      { value: 'gpu', label: 'GPU' },
+                      { value: 'npu', label: 'AI chip' },
+                    ]}
+                  />
+                  <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                    CPU works on every phone. The others can be quicker or cooler on some phones; if one doesn't work, the phone uses the CPU instead.
+                  </Text>
+                </View>
+                {!!settings.hubUrl && !!settings.hubKey && hub.connected && (
+                  <>
+                    <Divider />
+                    <LaptopAddress />
+                  </>
+                )}
+              </>
+            )}
+          </Section>
+        )}
 
         <Text variant="bodySmall" style={[styles.about, { color: theme.colors.onSurfaceVariant }]}>
           {engine.where === 'laptop'

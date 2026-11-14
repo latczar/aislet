@@ -513,27 +513,29 @@ def check_find_laptop() -> str:
     go_tab('Settings')
     scroll_to_top()
     try:
-        state = scroll_to('the laptop status', timeout_swipes=8, contains='Find')
-    except CheckFailed as e:
-        raise CheckFailed('no Find my laptop or Find again button in Settings → Home') from e
-    nodes = screen()
-    if find(nodes, text='Find again'):
-        # Paired: look for the laptop again with the same code, and check it stays connected.
+        scroll_to('the Home section', timeout_swipes=8, contains="Use the laptop's AI")
+        paired = True
+    except CheckFailed:
+        paired = False
+    if paired:
+        nodes = screen()
         if find(nodes, contains='Laptop not reachable'):
             raise CheckFailed('paired, but the laptop is not reachable')
         if not find(nodes, contains='Connected to'):
             raise CheckFailed('paired, but no "Connected to" status')
         laptop_ai = [n for n in nodes if n.cls.endswith('Switch')]
-        tap(find(nodes, text='Find again')[0])
-        found = wait_for('"Found it at …"', timeout=60, contains='Found it at')
-        wait_for('the connected status after finding', timeout=20, contains='Connected to')
-        scroll_to_top()
         ai = f"; laptop's AI {'on' if laptop_ai[-1].checked else 'off'}" if laptop_ai else ''
+        # While connected, Find again lives under Advanced.
+        tap(scroll_to('Show advanced settings', text='Show advanced settings'))
+        tap(scroll_to('Find again', text='Find again'))
+        found = wait_for('"Found it at …"', timeout=60, contains='Found it at')
         where = re.search(r'Found it at (\S+)', found.label)
+        scroll_to_top()
+        wait_for('the connected status after finding', timeout=20, contains='Connected to')
         return f"paired and connected; Find again found it at {where.group(1) if where else '?'}{ai}"
 
     # Not paired: Find my laptop should list the laptop. It doesn't pair (that needs the code).
-    tap(state if state.text == 'Find my laptop' else wait_for('Find my laptop', text='Find my laptop'))
+    tap(scroll_to('Find my laptop', text='Find my laptop'))
     end = time.time() + 60
     while time.time() < end:
         nodes = screen()
@@ -746,15 +748,14 @@ def check_layout() -> str:
     scroll_to_top()
     checked = 'Memory'
     try:
-        scroll_to('Settings → Home', timeout_swipes=8, contains='Find')
+        scroll_to('Settings → Home', timeout_swipes=8, contains="Use the laptop's AI")
     except CheckFailed:
         pass
     nodes = screen()
-    if find(nodes, text='Find again'):  # paired; the unpaired form has no rows to compare
+    if find(nodes, contains="Use the laptop's AI"):  # paired; the unpaired form has no rows to compare
         sync = 'Sync' if find(nodes, text='Sync') else 'Retry'
         l2, r2 = check_rows(nodes, {
             'Connected to…' if sync == 'Sync' else 'Laptop not reachable': sync,
-            "Laptop's address": 'Find again',
             "Use the laptop's AI at home": 'switch',
         }, 'Settings → Home', dp)
         lined_up({**l2, 'Memory titles': title_x}, 'Settings → Home row titles')
@@ -762,16 +763,16 @@ def check_layout() -> str:
         checked += ', Settings → Home'
     scroll_to('Photo understanding', text='Photo understanding')
     nodes = screen()
-    l3, _ = check_rows(nodes, {'Notes search': '', 'Photo understanding': ''}, 'Settings → AI model', dp)
-    lined_up({**l3, 'Memory titles': title_x}, 'Settings → AI model row titles')
+    l3, _ = check_rows(nodes, {'Notes search': '', 'Photo understanding': ''}, 'Settings → AI', dp)
+    lined_up({**l3, 'Memory titles': title_x}, 'Settings → AI row titles')
     gets = [b for b in (button_box(nodes, 'Get'),) if b] + [n for n in nodes if n.desc.startswith('Delete ') and n.clickable]
     if gets:
-        lined_up({**{f'control {i + 1}': g.x2 for i, g in enumerate(gets)}, 'Memory buttons': button_x}, "Settings → AI model controls' right edges")
+        lined_up({**{f'control {i + 1}': g.x2 for i, g in enumerate(gets)}, 'Memory buttons': button_x}, "Settings → AI controls' right edges")
         for g in gets:
             if surface(nodes, g).height > g.height + 4:
                 raise CheckFailed(f'a model button is stretched to {surface(nodes, g).height / dp:.0f} dp tall')
     scroll_to_top()
-    return f'{checked}, Settings → AI model: titles at x={title_x}, buttons end at x={button_x}'
+    return f'{checked}, Settings → AI: titles at x={title_x}, buttons end at x={button_x}'
 
 
 CHECKS = {

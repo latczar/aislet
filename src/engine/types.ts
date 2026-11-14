@@ -2,7 +2,8 @@ import type { Accel, Message, Performance } from '../types';
 
 export interface EngineStatus {
   ready: boolean;
-  label: string;        // e.g. "qwen3.5:9b on this laptop"
+  label: string;        // e.g. "Your laptop's AI"
+  model?: string;       // e.g. "qwen3.5:9b", shown as detail
   problem?: string;     // plain-English reason it isn't ready
   needsModel?: boolean; // phone: no model downloaded yet
   starting?: boolean;   // the laptop's AI is starting up; check again shortly
