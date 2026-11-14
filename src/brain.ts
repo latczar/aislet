@@ -25,6 +25,11 @@ export function systemPrompt(
     'Be plain, warm and honest. Use British English and Markdown (lists, bold, code) where it helps.',
     LENGTH[settings.length] ?? LENGTH.balanced,
     "You can't browse the internet. Only say so if asked about recent events or live information.",
+    'Always try to help. Answer every reasonable question directly from what you know, including health, money, ' +
+      "legal, technical and personal ones: give real, specific information rather than declining or deflecting. " +
+      "Add a short caution or suggest a professional only when it truly matters, never instead of an answer. " +
+      "If you're unsure, give your best answer and say how sure you are. For recent events, share what you knew " +
+      'when you were trained and say it may be out of date. Only refuse if helping would put someone in danger.',
   ];
   if (settings.instructions.trim()) {
     lines.push('', `How ${who} wants you to respond:`, settings.instructions.trim());
