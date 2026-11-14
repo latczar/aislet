@@ -34,15 +34,17 @@ function GetModel({ onDone }: { onDone: () => void }) {
         <Text variant="headlineSmall" style={styles.title}>Check the AI is ready</Text>
         <Surface style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]} elevation={0}>
           <View style={styles.row}>
-            <View style={[styles.dot, { backgroundColor: status?.ready ? STATUS_COLOURS.ready : STATUS_COLOURS.problem }]} />
+            <View style={[styles.dot, { backgroundColor: status?.ready ? STATUS_COLOURS.ready : !status || status.starting ? STATUS_COLOURS.checking : STATUS_COLOURS.problem }]} />
             <Text variant="titleMedium" style={{ fontFamily: FONT.medium, flex: 1 }}>{status?.label ?? 'Checking…'}</Text>
           </View>
           <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
             {status?.ready
               ? 'All set. It runs on this computer and works with no internet.'
-              : `${status?.problem ?? ''} The installer sets this up; you can also install Ollama from ollama.com.`}
+              : !status ? 'Looking for Ollama on this computer…'
+                : status.starting ? status.problem
+                  : `${status.problem ?? ''} The installer sets this up; you can also install Ollama from ollama.com.`}
           </Text>
-          {!status?.ready && <Button onPress={refreshStatus}>Check again</Button>}
+          {status && !status.ready && !status.starting && <Button onPress={refreshStatus}>Check again</Button>}
         </Surface>
         <Button mode="contained" onPress={onDone} contentStyle={styles.big}>{status?.ready ? 'Start' : 'Continue anyway'}</Button>
       </View>

@@ -4,6 +4,7 @@
 - Syncs memory, notes and chats with your paired phone over home Wi-Fi.
 - Lets the phone use the laptop's bigger model by passing its requests to Ollama.
 - Reads PDFs for both.
+- Starts Ollama if it isn't running (for example, just after the computer starts).
 
 Who may do what:
 - The PC app proves itself with a secret token that launch.py passes to it (it never leaves this computer).
@@ -24,6 +25,7 @@ import ipaddress
 import json
 import os
 import secrets
+import shutil
 import socket
 import subprocess
 import sys
@@ -43,6 +45,8 @@ OLD_DATA_DIRS = [LOCAL / "Unplugged", LOCAL / "Assistant"]  # earlier names; dat
 STORE = DATA_DIR / "hub.json"
 LOG = DATA_DIR / "hub.log"
 OLLAMA = ("127.0.0.1", 11434)
+OLLAMA_EXE = LOCAL / "Programs" / "Ollama" / "ollama.exe"
+OLLAMA_GRACE = 90  # seconds Ollama gets to start before the hub tries again
 TOMBSTONE_DAYS = 90
 SIGNATURE_WINDOW_MS = 5 * 60_000      # a signed request must be this fresh
 MAX_FAILURES, FAILURE_WINDOW = 10, 600  # wrong attempts per device before a 10-minute pause
@@ -56,6 +60,8 @@ TYPES = {
 }
 
 lock = threading.Lock()
+ollama_lock = threading.Lock()
+ollama_launched = 0.0  # when the hub last started Ollama
 failures: dict[str, list[float]] = {}  # device address -> times of wrong attempts
 seen_signatures: dict[str, float] = {}  # signature -> when it can be forgotten
 
@@ -195,6 +201,55 @@ def read_document(name: str, raw: bytes) -> str:
             raise ValueError("The laptop can't read PDFs yet. Run: python -m pip install --user --upgrade pypdf")
         raise ValueError("That PDF couldn't be read. It may be damaged.")
     return result.stdout.decode("utf-8", errors="replace").strip()
+
+
+# ---- Ollama: the laptop's AI ---------------------------------------------------------------
+
+def ollama_running(timeout: float = 2) -> bool:
+    try:
+        conn = http.client.HTTPConnection(*OLLAMA, timeout=timeout)
+        conn.request("GET", "/api/version")
+        return conn.getresponse().status == 200
+    except OSError:
+        return False
+
+
+def ollama_command() -> list[str] | None:
+    """Ollama's server on its own, with no window. (The Ollama app opens its chat window when started,
+    which would pop up over Untethered; it still works normally if opened later.)"""
+    exe = str(OLLAMA_EXE) if OLLAMA_EXE.is_file() else shutil.which("ollama")
+    return [exe, "serve"] if exe else None
+
+
+def start_ollama() -> bool:
+    """Start Ollama when it isn't running. True while it's starting; False if it isn't installed.
+    Starts it at most once every OLLAMA_GRACE seconds, however often it's asked."""
+    global ollama_launched
+    with ollama_lock:
+        if time.time() - ollama_launched < OLLAMA_GRACE:
+            return True
+        command = ollama_command()
+        if not command:
+            return False
+        try:
+            subprocess.Popen(  # a fixed program with no input from requests
+                command, cwd=str(Path(command[0]).parent), close_fds=True,
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+            )
+        except OSError as e:
+            log(f"Couldn't start Ollama: {e}")
+            return False
+        ollama_launched = time.time()
+        log("Ollama wasn't running, so the hub started it")
+        return True
+
+
+def ollama_at_login(wait: float = 30) -> None:
+    """Ollama starts itself at login too; give it a head start, then start it if it still isn't up."""
+    time.sleep(wait)
+    if not ollama_running():
+        start_ollama()
 
 
 def lan_addresses() -> list[str]:
@@ -374,14 +429,11 @@ class Handler(BaseHTTPRequestHandler):
                 pass
 
     def hub_info(self, role: str | None):
-        try:
-            conn = http.client.HTTPConnection(*OLLAMA, timeout=2)
-            conn.request("GET", "/api/version")
-            ok = conn.getresponse().status == 200
-        except OSError:
-            ok = False
+        ok = ollama_running()
+        starting = not ok and role is not None and start_ollama()  # only paired devices can start it
         # Unpaired devices only learn that a hub is here, not the computer's name.
-        self.send_json({"app": "untethered", "name": socket.gethostname() if role else "", "paired": role is not None, "ollama": ok})
+        self.send_json({"app": "untethered", "name": socket.gethostname() if role else "", "paired": role is not None,
+                        "ollama": ok, "starting": starting})
 
     def proxy(self, method: str, path: str, body: bytes | None) -> None:
         """Pass a request to Ollama and stream its reply straight back."""
@@ -390,7 +442,11 @@ class Handler(BaseHTTPRequestHandler):
             conn.request(method, path, body=body, headers={"Content-Type": "application/json"})
             resp = conn.getresponse()
         except OSError:
-            return self.send_json({"error": "Ollama isn't running on the laptop. Start the Ollama app."}, 502)
+            if ollama_running(1):
+                return self.send_json({"error": "The laptop's AI didn't answer. Try again."}, 502)
+            if start_ollama():
+                return self.send_json({"error": "The laptop's AI is starting. Try again in a few seconds."}, 503)
+            return self.send_json({"error": "Ollama isn't installed on the laptop. Get it from ollama.com."}, 502)
         self.send_response(resp.status)
         self.send_header("Content-Type", resp.getheader("Content-Type", "application/json"))
         self.send_header("Cache-Control", "no-store")
@@ -436,6 +492,7 @@ def main() -> int:
         log(f"Couldn't start on port {PORT} (already running?): {e}")
         return 1
     log(f"Hub started on port {PORT}")
+    threading.Thread(target=ollama_at_login, daemon=True).start()
     print(f"Hub running: http://localhost:{PORT}")
     server.serve_forever()
     return 0

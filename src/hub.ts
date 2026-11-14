@@ -56,6 +56,7 @@ export interface HubInfo {
   name: string;
   paired: boolean;
   ollama: boolean;
+  starting?: boolean; // the hub has just started Ollama
 }
 
 export function hubPing(t: HubTarget): Promise<HubInfo> {

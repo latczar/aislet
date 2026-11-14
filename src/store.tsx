@@ -8,7 +8,7 @@ import {
 import { engine as localEngine } from './engine';
 import { createOllamaEngine } from './engine/ollama';
 import type { Engine, EngineStatus } from './engine/types';
-import { type HubTarget, hubHeaders, hubPing, hubSync, localHub } from './hub';
+import { type HubInfo, type HubTarget, hubHeaders, hubPing, hubSync, localHub } from './hub';
 import { KEYS, load, newId, remove, save, today } from './storage';
 import { exportFile, pickFile } from './transfer';
 import type { Backup, Chat, ChatSummary, Memory, MemoryCategory, Message, Note, NoteHit, Settings } from './types';
@@ -118,6 +118,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   hubRef.current = hub;
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncing = useRef(false);
+  const recheck = useRef<{ timer: ReturnType<typeof setTimeout> | null; tries: number }>({ timer: null, tries: 0 });
+  const checkRef = useRef<(auto: boolean) => Promise<void>>(async () => undefined);
 
   // ---- Which engine answers ----
   const remote = useMemo(
@@ -242,24 +244,45 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     syncTimer.current = setTimeout(() => { syncNow(); }, 2500);
   }, [syncNow]);
 
-  const refreshStatus = useCallback(async () => {
+  /** Find out whether the AI is ready. `auto` is a re-check while it starts; anything else starts the count again. */
+  const checkStatus = useCallback(async (auto: boolean) => {
+    if (recheck.current.timer) clearTimeout(recheck.current.timer);
+    recheck.current.timer = null;
+    if (!auto) recheck.current.tries = 0;
     let connected = false;
+    let info: HubInfo | null = null;
     const target = hubTarget();
     if (target) {
       try {
-        const info = await hubPing(target);
+        info = await hubPing(target); // a paired ping also asks the hub to start Ollama if it isn't running
         connected = info.paired;
-        setHub((h) => ({ ...h, connected, name: info.name, problem: connected ? undefined : 'Not paired. Check the code.' }));
+        setHub((h) => ({ ...h, connected, name: info!.name, problem: connected ? undefined : 'Not paired. Check the code.' }));
       } catch (e) {
         setHub((h) => ({ ...h, connected: false, problem: (e as Error).message }));
       }
     }
     const active = pickEngine(connected);
-    const s = await active.status(settingsRef.current.modelId);
+    let s = await active.status(settingsRef.current.modelId);
+    const usesLaptopAI = Platform.OS === 'web' || active !== localEngine;
+    if (!s.ready && usesLaptopAI && (s.starting || info?.starting)) {
+      s = {
+        ready: false, starting: true, label: 'Starting the AI…',
+        problem: Platform.OS === 'web' ? 'Starting Ollama on this laptop. This takes a few seconds.' : 'Starting the AI on your laptop. This takes a few seconds.',
+      };
+    }
+    // While the AI starts, check again every few seconds, for up to two minutes.
+    if (s.starting && recheck.current.tries < 40) {
+      recheck.current.tries += 1;
+      recheck.current.timer = setTimeout(() => { checkRef.current(true); }, 3000);
+    } else if (s.starting) {
+      s = { ready: false, label: 'Ollama', problem: 'The AI is taking a long time to start. Open the Ollama app on the laptop, then press Retry.' };
+    }
     setStatus(s);
     if (connected) syncNow();
     if (s.ready && active === localEngine && localEngine.warm) localEngine.warm(settingsRef.current.modelId).catch(() => undefined);
   }, [hubTarget, pickEngine, syncNow]);
+  checkRef.current = checkStatus;
+  const refreshStatus = useCallback(() => checkStatus(false), [checkStatus]);
 
   useEffect(() => {
     (async () => {

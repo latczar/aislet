@@ -3,7 +3,7 @@ import {
   Animated, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, TextInput,
   View, useWindowDimensions,
 } from 'react-native';
-import { Button, Icon, IconButton, Menu, ProgressBar, Snackbar, Surface, Text, useTheme } from 'react-native-paper';
+import { ActivityIndicator, Button, Icon, IconButton, Menu, ProgressBar, Snackbar, Surface, Text, useTheme } from 'react-native-paper';
 import { engine } from '../engine';
 import { hubExtract, localHub } from '../hub';
 import { useStore } from '../store';
@@ -32,7 +32,7 @@ function greeting(name: string): string {
 export function ChatHeader({ left, right }: { left?: React.ReactNode; right?: React.ReactNode }) {
   const theme = useTheme();
   const { chat, status } = useStore();
-  const colour = !status ? STATUS_COLOURS.checking : status.ready ? STATUS_COLOURS.ready : STATUS_COLOURS.problem;
+  const colour = !status || status.starting ? STATUS_COLOURS.checking : status.ready ? STATUS_COLOURS.ready : STATUS_COLOURS.problem;
   return (
     <View style={[styles.header, { borderBottomColor: theme.colors.outlineVariant }]}>
       <View style={styles.headerSide}>{left}</View>
@@ -426,8 +426,10 @@ export function ChatView({ onOpenSettings }: { onOpenSettings: () => void }) {
       <View style={styles.bottom}>
         {status && !status.ready && !status.needsModel && (
           <View style={[styles.problem, { backgroundColor: theme.colors.surfaceVariant }]}>
-            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, flex: 1 }}>{status.problem}</Text>
-            <Button compact onPress={refreshStatus}>Retry</Button>
+            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, flex: 1, paddingVertical: status.starting ? 9 : 0 }}>{status.problem}</Text>
+            {status.starting
+              ? <ActivityIndicator size={16} style={styles.startingSpinner} accessibilityLabel="Starting" />
+              : <Button compact onPress={refreshStatus}>Retry</Button>}
           </View>
         )}
         {status?.needsModel && messages.length > 0 && (
@@ -477,6 +479,7 @@ const styles = StyleSheet.create({
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   bottom: { paddingHorizontal: 12, paddingTop: 4, paddingBottom: 10, gap: 8, width: '100%', maxWidth: 804, alignSelf: 'center' },
   problem: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, paddingLeft: 14, paddingVertical: 2 },
+  startingSpinner: { marginHorizontal: 16 },
   composerBox: { borderRadius: 26, borderWidth: StyleSheet.hairlineWidth, paddingVertical: 4 },
   composer: { flexDirection: 'row', alignItems: 'flex-end', paddingLeft: 2, paddingRight: 4 },
   attachBtn: { margin: 2 },

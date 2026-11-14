@@ -290,7 +290,7 @@ export function SettingsView() {
             descriptionNumberOfLines={3}
             left={() => (
               <View style={styles.radio}>
-                <View style={[styles.statusDot, { backgroundColor: !status ? STATUS_COLOURS.checking : status.ready ? STATUS_COLOURS.ready : STATUS_COLOURS.problem }]} />
+                <View style={[styles.statusDot, { backgroundColor: !status || status.starting ? STATUS_COLOURS.checking : status.ready ? STATUS_COLOURS.ready : STATUS_COLOURS.problem }]} />
               </View>
             )}
             right={() => <Button compact onPress={refreshStatus}>Check</Button>}

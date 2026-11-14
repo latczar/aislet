@@ -5,6 +5,7 @@ export interface EngineStatus {
   label: string;        // e.g. "qwen3.5:9b on this laptop"
   problem?: string;     // plain-English reason it isn't ready
   needsModel?: boolean; // phone: no model downloaded yet
+  starting?: boolean;   // the laptop's AI is starting up; check again shortly
 }
 
 export interface ModelInfo {

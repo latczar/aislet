@@ -55,7 +55,7 @@ export function createOllamaEngine({ base, sign = () => ({}), where, label }: Op
     } catch (e) {
       if ((e as Error).name === 'AbortError') throw e;
       throw new Error(where === 'laptop'
-        ? "Can't reach Ollama on this laptop. Start the Ollama app, then try again."
+        ? "Can't reach Ollama on this laptop. It may still be starting, so try again in a few seconds."
         : "Can't reach your laptop. Check it's on and on the same Wi-Fi.");
     }
     if (!res.ok) {
@@ -73,6 +73,10 @@ export function createOllamaEngine({ base, sign = () => ({}), where, label }: Op
       try {
         const res = (await netFetch(`${base}/api/tags`, { headers: sign('GET', '/api/tags', '') })) as unknown as Response;
         if (res.status === 401) return { ready: false, label: 'Laptop', problem: 'The laptop needs pairing again. Check the code in Settings.' };
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          return { ready: false, label: 'Laptop', problem: data.error || `The laptop replied with an error (${res.status}).`, starting: res.status === 503 };
+        }
         const names: string[] = ((await res.json()).models ?? []).map((m: { name: string }) => m.name);
         const best = pickModel(names);
         if (!best) {
