@@ -1,14 +1,30 @@
-// Phone: talk instead of typing. Uses the phone's own speech recogniser, on-device when available.
+// Phone: talk instead of typing. Uses the phone's own speech recogniser, on-device when available,
+// so what you say stays on the phone.
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
 import { useRef, useState } from 'react';
 
 export const voiceSupported = true;
+
+const PREFERRED = 'en-GB';
+
+/** English the phone can recognise offline: UK if its pack is installed, else another installed English, else UK. */
+async function offlineEnglish(): Promise<string> {
+  try {
+    const { installedLocales } = await ExpoSpeechRecognitionModule.getSupportedLocales({});
+    const installed = installedLocales.map((l) => l.replace('_', '-'));
+    return installed.find((l) => l.toLowerCase() === 'en-gb') ?? installed.find((l) => /^en-/i.test(l)) ?? PREFERRED;
+  } catch {
+    return PREFERRED;
+  }
+}
 
 export function useVoice(onText: (text: string, final: boolean) => void) {
   const [listening, setListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const callback = useRef(onText);
   callback.current = onText;
+  const lang = useRef(PREFERRED);
+  const onDevice = useRef(false);
 
   useSpeechRecognitionEvent('start', () => setListening(true));
   useSpeechRecognitionEvent('end', () => setListening(false));
@@ -16,6 +32,20 @@ export function useVoice(onText: (text: string, final: boolean) => void) {
   useSpeechRecognitionEvent('error', (e) => {
     setListening(false);
     if (e.error === 'no-speech' || e.error === 'aborted') return;
+    if (e.error === 'language-not-supported' && onDevice.current) {
+      // The phone can do this offline but hasn't got the language pack yet: ask Android to fetch it.
+      setError('Getting the offline voice pack for English…');
+      ExpoSpeechRecognitionModule.androidTriggerOfflineModelDownload({ locale: lang.current })
+        .then((r) => setError(
+          r.status === 'download_success'
+            ? 'The offline voice pack is ready. Tap the microphone again.'
+            : r.status === 'download_scheduled'
+              ? 'The offline voice pack is downloading (it waits for Wi-Fi). Try the microphone again in a minute.'
+              : 'Follow the prompt to download the offline voice pack, then tap the microphone again.',
+        ))
+        .catch(() => setError("Voice needs your phone's offline English voice pack. Add it in the phone's speech recognition settings, then try again."));
+      return;
+    }
     setError(
       e.error === 'network'
         ? "Voice needs your phone's offline speech pack when you're offline. Turn it on in Samsung/Google voice input settings."
@@ -32,12 +62,14 @@ export function useVoice(onText: (text: string, final: boolean) => void) {
       setError('Allow microphone access to talk to your assistant.');
       return;
     }
+    onDevice.current = ExpoSpeechRecognitionModule.supportsOnDeviceRecognition();
+    lang.current = onDevice.current ? await offlineEnglish() : PREFERRED;
     ExpoSpeechRecognitionModule.start({
-      lang: 'en-GB',
+      lang: lang.current,
       interimResults: true,
       continuous: false,
       addsPunctuation: true,
-      requiresOnDeviceRecognition: ExpoSpeechRecognitionModule.supportsOnDeviceRecognition(),
+      requiresOnDeviceRecognition: onDevice.current,
     });
   };
 
