@@ -65,3 +65,4 @@ TypeScript · React Native (Expo) · React Native Paper · Ollama on Windows · 
   ```bash
   npm run typecheck
   ```
+- **Hub security tests:** after any change to `pc/hub.py`, run `pc/tests/hub_attack_test.py` against a test hub. Its first lines say how. All checks must pass.
