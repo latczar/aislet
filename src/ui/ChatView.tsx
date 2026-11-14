@@ -335,7 +335,7 @@ function Composer({ ready }: { ready: boolean }) {
           anchor={
             <IconButton
               icon="paperclip" size={22} iconColor={theme.colors.onSurfaceVariant} disabled={!ready || busy}
-              accessibilityLabel="Attach a photo or file" onPress={() => { tap(); setMenu(true); }} style={styles.attachBtn}
+              accessibilityLabel="Attach a photo or file" onPress={() => { tap(); setMenu(true); }} style={styles.composerIcon}
             />
           }
         >
@@ -367,7 +367,7 @@ function Composer({ ready }: { ready: boolean }) {
             icon={voice.listening ? 'microphone' : 'microphone-outline'}
             size={22}
             iconColor={voice.listening ? theme.colors.primary : theme.colors.onSurfaceVariant}
-            style={voice.listening && { backgroundColor: theme.colors.primaryContainer }}
+            style={[styles.composerIcon, voice.listening && { backgroundColor: theme.colors.primaryContainer }]}
             accessibilityLabel={voice.listening ? 'Stop listening' : 'Talk'}
             onPress={() => {
               tap();
@@ -380,11 +380,11 @@ function Composer({ ready }: { ready: boolean }) {
           />
         )}
         {busy ? (
-          <IconButton icon="stop" mode="contained" size={20} onPress={stop} accessibilityLabel="Stop" style={styles.send} />
+          <IconButton icon="stop" mode="contained" size={20} onPress={stop} accessibilityLabel="Stop" style={styles.composerIcon} />
         ) : (
           <IconButton
             icon="arrow-up" mode="contained" size={20} disabled={!canSend} onPress={submit}
-            accessibilityLabel="Send" style={styles.send}
+            accessibilityLabel="Send" style={styles.composerIcon}
             containerColor={canSend ? theme.colors.primary : undefined}
             iconColor={canSend ? theme.colors.onPrimary : undefined}
           />
@@ -502,7 +502,6 @@ const styles = StyleSheet.create({
   startingSpinner: { marginHorizontal: 16 },
   composerBox: { borderRadius: 26, borderWidth: StyleSheet.hairlineWidth, paddingVertical: 4 },
   composer: { flexDirection: 'row', alignItems: 'flex-end', paddingLeft: 2, paddingRight: 4 },
-  attachBtn: { margin: 2 },
   attachRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 12, paddingTop: 8 },
   attachThumb: { width: 56, height: 56, borderRadius: 12 },
   attachRemove: { position: 'absolute', top: -10, right: -10, margin: 0, width: 22, height: 22 },
@@ -512,7 +511,9 @@ const styles = StyleSheet.create({
   userCol: { alignSelf: 'flex-end', alignItems: 'flex-end', gap: 6, maxWidth: '85%' },
   userThumbs: { flexDirection: 'row', gap: 6 },
   userThumb: { width: 140, height: 140, borderRadius: 16 },
-  input: { flex: 1, fontSize: 16, lineHeight: 22, paddingTop: 9, paddingBottom: 9, minHeight: 40, maxHeight: 160 },
-  send: { margin: 2 },
+  // Every icon is a 40 dp box with 2 dp around it, and the text box matches, so one line of text sits level
+  // with the icons; as the text grows, the icons stay at the bottom.
+  input: { flex: 1, fontSize: 16, lineHeight: 22, paddingTop: 9, paddingBottom: 9, minHeight: 40, maxHeight: 160, marginVertical: 2 },
+  composerIcon: { margin: 2, width: 40, height: 40, borderRadius: 20 },
   voiceError: { paddingHorizontal: 8 },
 });
