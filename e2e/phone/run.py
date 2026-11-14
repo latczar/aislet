@@ -125,6 +125,7 @@ class Node:
     checked: bool
     enabled: bool
     focused: bool
+    clickable: bool
     x1: int
     y1: int
     x2: int
@@ -161,7 +162,7 @@ def screen() -> list[Node]:
                     continue
                 nodes.append(Node(
                     n.get('text', ''), n.get('content-desc', ''), n.get('class', ''), n.get('checked') == 'true',
-                    n.get('enabled') == 'true', n.get('focused') == 'true', *map(int, b.groups()),
+                    n.get('enabled') == 'true', n.get('focused') == 'true', n.get('clickable') == 'true', *map(int, b.groups()),
                 ))
             return nodes
         time.sleep(0.5 + attempt * 0.3)  # uiautomator waits for an idle screen; animations can delay it
@@ -623,10 +624,20 @@ def check_memory() -> str:
 MODES = {'Cool': 'Cool: slower replies', 'Balanced': 'Balanced: quick replies', 'Max': 'Max: quickest'}
 
 
+def mode_buttons() -> dict[str, Node]:
+    """The Cool / Balanced / Max buttons under "Performance" (Answer length has a "Balanced" too)."""
+    nodes = screen()
+    label = find(nodes, text='Performance')
+    if not label:
+        raise CheckFailed('no Performance setting on screen')
+    below = [n for n in nodes if n.label in MODES and label[0].y2 < n.cy < label[0].y2 + 250]
+    return {n.label: n for n in below}
+
+
 def current_mode() -> str | None:
-    for n in screen():
-        if n.label in MODES and n.checked:
-            return n.label
+    for name, n in mode_buttons().items():
+        if n.checked:
+            return name
     nodes = screen()
     for mode, footer in MODES.items():
         if find(nodes, contains=footer):
@@ -639,24 +650,128 @@ def check_performance() -> str:
     go_tab('Settings')
     scroll_to_top()
     scroll_to('Speed and heat', contains='Speed and heat')
-    scroll_to('the performance buttons', text='Balanced')
+    scroll_to('the performance buttons', text='Performance')
     original = current_mode()
     if not original:
         raise CheckFailed('could not tell which performance mode is on')
     seen = []
     try:
         for mode in [m for m in ('Cool', 'Max', 'Balanced') if m != original] + [original]:
-            tap(wait_for(mode, text=mode))
+            tap(mode_buttons()[mode])
             wait_for(f'the {mode} description', timeout=5, contains=MODES[mode])
             seen.append(mode)
     finally:
         if current_mode() != original:
-            tap(wait_for(original, text=original))
+            tap(mode_buttons()[original])
             time.sleep(0.8)
     if current_mode() != original:
         raise CheckFailed(f'could not put the mode back to {original}')
     scroll_to_top()
     return f"{' → '.join(seen)} (was {original})"
+
+
+def button_box(nodes: list[Node], label: str) -> Node | None:
+    """The tappable box around a button's label."""
+    texts = [n for n in nodes if n.text == label or n.desc == label]
+    if not texts:
+        return None
+    t = texts[0]
+    boxes = [n for n in nodes if n.clickable and n.x1 <= t.cx <= n.x2 and n.y1 <= t.cy <= n.y2]
+    return min(boxes, key=lambda n: (n.x2 - n.x1) * (n.y2 - n.y1)) if boxes else None
+
+
+def surface(nodes: list[Node], box: Node) -> Node:
+    """A button's visible shape: the tallest box in its column around it. A row that drops Paper's
+    style stretches this to the row's height while the tappable part keeps its size."""
+    column = [n for n in nodes if abs(n.x1 - box.x1) <= 2 and abs(n.x2 - box.x2) <= 2 and n.y1 <= box.y1 and n.y2 >= box.y2]
+    return max(column, key=lambda n: n.height, default=box)
+
+
+def row_around(nodes: list[Node], a: Node, b: Node) -> Node | None:
+    """The smallest box holding both a row's title and its control: the row itself."""
+    holders = [n for n in nodes if n.x1 <= min(a.x1, b.x1) and n.x2 >= max(a.x2, b.x2)
+               and n.y1 <= min(a.y1, b.y1) and n.y2 >= max(a.y2, b.y2)]
+    return min(holders, key=lambda n: (n.x2 - n.x1) * (n.y2 - n.y1)) if holders else None
+
+
+def lined_up(values: dict[str, int], what: str, tolerance: int = 4) -> None:
+    if max(values.values()) - min(values.values()) > tolerance:
+        raise CheckFailed(f"{what} don't line up: " + ', '.join(f'{k} {v}' for k, v in values.items()))
+
+
+def check_rows(nodes: list[Node], rows: dict[str, str], screen_name: str, dp: float) -> tuple[dict, dict]:
+    """Rows given as title → control label. Returns the titles' left edges and the controls' right edges."""
+    lefts, rights = {}, {}
+    for title, control in rows.items():
+        t = next((n for n in nodes if n.text == title or (title.endswith('…') and n.text.startswith(title[:-1]))), None)
+        if t is None:
+            raise CheckFailed(f'no "{title}" row on {screen_name}')
+        lefts[title] = t.x1
+        if not control:
+            continue
+        box = (next((n for n in nodes if n.cls.endswith('Switch') and abs(n.cy - t.cy) < 60 * dp), None)
+               if control == 'switch' else button_box(nodes, control))
+        if box is None:
+            raise CheckFailed(f'no {control} control on the "{title}" row')
+        shape = surface(nodes, box)
+        if shape.height > box.height + 4 or box.height > 48 * dp:
+            raise CheckFailed(f'"{control}" is stretched to {shape.height / dp:.0f} dp tall on {screen_name}')
+        # Material 3: controls sit centred on the row, or level with the title when the description wraps.
+        row = row_around(nodes, t, box)
+        centred = row is not None and abs(row.cy - box.cy) <= 3 * dp
+        level = abs(box.y1 - t.y1) <= 3 * dp
+        if not (centred or level):
+            raise CheckFailed(f'"{control}" is neither centred on its row nor level with its title on {screen_name}')
+        if control != 'switch':
+            rights[control] = box.x2
+    return lefts, rights
+
+
+def check_layout() -> str:
+    """List rows line up: one left edge for titles, one right edge for buttons, none stretched or out of place."""
+    dp = px_per_dp()
+    go_tab('Memory')
+    scroll_to_top()
+    nodes = screen()
+    lefts, rights = check_rows(nodes, {'Get to know me': 'Start', 'Learn from my chats': 'switch', 'Tidy up memory': 'Tidy up'}, 'Memory', dp)
+    add = button_box(nodes, 'Add')
+    if add is None:
+        raise CheckFailed('no Add button on Memory')
+    rights['Add'] = add.x2
+    lined_up(lefts, 'Memory row titles')
+    lined_up(rights, "Memory buttons' right edges")
+    title_x, button_x = min(lefts.values()), min(rights.values())
+
+    go_tab('Settings')
+    scroll_to_top()
+    checked = 'Memory'
+    try:
+        scroll_to('Settings → Home', timeout_swipes=8, contains='Find')
+    except CheckFailed:
+        pass
+    nodes = screen()
+    if find(nodes, text='Find again'):  # paired; the unpaired form has no rows to compare
+        sync = 'Sync' if find(nodes, text='Sync') else 'Retry'
+        l2, r2 = check_rows(nodes, {
+            'Connected to…' if sync == 'Sync' else 'Laptop not reachable': sync,
+            "Laptop's address": 'Find again',
+            "Use the laptop's AI at home": 'switch',
+        }, 'Settings → Home', dp)
+        lined_up({**l2, 'Memory titles': title_x}, 'Settings → Home row titles')
+        lined_up({**r2, 'Memory buttons': button_x}, "Settings → Home buttons' right edges")
+        checked += ', Settings → Home'
+    scroll_to('Photo understanding', text='Photo understanding')
+    nodes = screen()
+    l3, _ = check_rows(nodes, {'Notes search': '', 'Photo understanding': ''}, 'Settings → AI model', dp)
+    lined_up({**l3, 'Memory titles': title_x}, 'Settings → AI model row titles')
+    gets = [b for b in (button_box(nodes, 'Get'),) if b] + [n for n in nodes if n.desc.startswith('Delete ') and n.clickable]
+    if gets:
+        lined_up({**{f'control {i + 1}': g.x2 for i, g in enumerate(gets)}, 'Memory buttons': button_x}, "Settings → AI model controls' right edges")
+        for g in gets:
+            if surface(nodes, g).height > g.height + 4:
+                raise CheckFailed(f'a model button is stretched to {surface(nodes, g).height / dp:.0f} dp tall')
+    scroll_to_top()
+    return f'{checked}, Settings → AI model: titles at x={title_x}, buttons end at x={button_x}'
 
 
 CHECKS = {
@@ -667,6 +782,7 @@ CHECKS = {
     'find_laptop': check_find_laptop,
     'memory': check_memory,
     'performance': check_performance,
+    'layout': check_layout,
 }
 
 

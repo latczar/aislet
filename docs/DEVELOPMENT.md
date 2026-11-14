@@ -67,6 +67,16 @@ TypeScript · React Native (Expo) · React Native Paper · Ollama on Windows · 
   ```
 - **Hub security tests:** after any change to `pc/hub.py`, run `pc/tests/hub_attack_test.py` against a test hub. Its first lines say how. All checks must pass.
 
+## List rows
+
+Rows in cards use `Row` and `Lead` from `src/ui/rows.tsx`. Every row in a card shares the same columns:
+
+- a 24 dp leading slot: a `List.Icon`, or a status dot or radio button inside `Lead`;
+- the title and description;
+- one trailing control.
+
+Always pass the renderer's `p.style` on to the control, as in `right={(p) => <Button mode="contained-tonal" compact style={p.style}>…`. Dropping it stretches buttons to the row's height and shifts titles. Trailing actions are compact tonal buttons. The `layout` check below catches a row that breaks this.
+
 ## Phone end-to-end checks
 
 `e2e/phone/run.py` drives the installed app on a real Android phone over adb. It taps and types like a person, reads the screen with uiautomator, and prints one `PASS` or `FAIL` line per check. It exits with 1 if any check fails. It needs only Python 3 and adb.
@@ -90,6 +100,7 @@ python e2e/phone/run.py
 | `find_laptop` | Settings → Home shows the pairing status. When paired, "Find again" finds the laptop with the same code and stays connected. When not paired, "Find my laptop" lists it. It never unpairs. |
 | `memory` | Two facts are added, "Tidy up" runs, and the facts are forgotten again. Suggestions are applied only when memory held nothing else; otherwise they're cancelled. |
 | `performance` | Cool, Max and Balanced each switch over and show their description, then the original mode is put back. |
+| `layout` | List rows on Memory and Settings line up. Titles start at one left edge and buttons end at one right edge, the same on every card. No button is stretched or off-centre on its row. |
 
 The checks use made-up text starting "E2E" and clean up after themselves:
 
