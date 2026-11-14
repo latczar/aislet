@@ -66,3 +66,39 @@ TypeScript · React Native (Expo) · React Native Paper · Ollama on Windows · 
   npm run typecheck
   ```
 - **Hub security tests:** after any change to `pc/hub.py`, run `pc/tests/hub_attack_test.py` against a test hub. Its first lines say how. All checks must pass.
+
+## Phone end-to-end checks
+
+`e2e/phone/run.py` drives the installed app on a real Android phone over adb. It taps and types like a person, reads the screen with uiautomator, and prints one `PASS` or `FAIL` line per check. It exits with 1 if any check fails. It needs only Python 3 and adb.
+
+Run it after installing a new APK, before every release:
+
+```bash
+python e2e/phone/run.py
+```
+
+- **Before running:** connect the phone over adb, unlock it and leave it on the home screen. The runner won't start while another app is in front, so it never types into something else.
+- **One check at a time:** `python e2e/phone/run.py chat_typing`. List them with `--list`. Every run starts with a fresh launch of the app.
+- **More than one device:** add `--device <serial>`.
+
+| Check | What it proves |
+|---|---|
+| `launch` | The app starts from cold and its AI becomes ready. |
+| `chat_typing` | Typed text shows in the message box. The box and Send stay above the keyboard, and the tabs hide while typing. Long text grows the box up to its 160 dp limit, and it shrinks again when cleared. |
+| `chat_send` | Tapping Send with the keyboard open sends the message, clears the box, and a reply arrives. |
+| `text_fields` | Typing shows, above the keyboard, in Memory's "Add a fact", a new note's title and text, and Settings' name and custom instructions. |
+| `find_laptop` | Settings → Home shows the pairing status. When paired, "Find again" finds the laptop with the same code and stays connected. When not paired, "Find my laptop" lists it. It never unpairs. |
+| `memory` | Two facts are added, "Tidy up" runs, and the facts are forgotten again. Suggestions are applied only when memory held nothing else; otherwise they're cancelled. |
+| `performance` | Cool, Max and Balanced each switch over and show their description, then the original mode is put back. |
+
+The checks use made-up text starting "E2E" and clean up after themselves:
+
+- The test chat is deleted.
+- Test facts are forgotten.
+- Notes are never saved.
+- Text added to the name and instructions boxes is deleted before they save.
+- The performance mode is put back.
+
+When a check fails, a screenshot and screen dump go to `e2e/phone/out/`, which git ignores.
+
+`chat_send` and `memory` use the AI, so they need it ready: the laptop's AI, or a downloaded phone model. Allow a few minutes for a full run.

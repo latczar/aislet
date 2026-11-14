@@ -1,0 +1,733 @@
+#!/usr/bin/env python3
+"""End-to-end checks for the Untethered phone app, run on a real Android phone over adb.
+
+Drives the installed app with adb taps and typing, reads the screen with uiautomator, and prints one
+PASS or FAIL line per check. Exits non-zero if any check fails. Python standard library only.
+
+    python e2e/phone/run.py                  # every check
+    python e2e/phone/run.py --list           # list the checks
+    python e2e/phone/run.py chat_typing memory
+
+Before running: unlock the phone and leave it on its home screen or in Untethered. The runner refuses to
+start while another app is in front, so it never types into something else.
+
+Test data is made up ("E2E ..." text) and removed afterwards: the test chat is deleted, test facts are
+forgotten, notes are never saved, and changed fields and settings are put back as they were. On a failure
+a screenshot and screen dump go to e2e/phone/out/.
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import subprocess
+import sys
+import time
+import xml.etree.ElementTree as ET
+from dataclasses import dataclass
+from pathlib import Path
+
+PKG = 'app.untethered.assistant'
+OUT = Path(__file__).resolve().parent / 'out'
+LAUNCHERS = ('launcher', 'nexuslauncher', 'trebuchet', 'lawnchair')
+# The keyboard covers the message box if it reaches this close (px).
+MARGIN = 2
+
+
+class CheckFailed(Exception):
+    pass
+
+
+# ---------- adb ----------
+
+def adb(*args: str, timeout: float = 30, check: bool = True) -> str:
+    cmd = [os.environ.get('ADB', 'adb'), *args]
+    try:
+        done = subprocess.run(cmd, capture_output=True, timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        raise CheckFailed(f"adb timed out: {' '.join(args)}") from e
+    out = done.stdout.decode('utf-8', 'replace')
+    if check and done.returncode != 0:
+        raise CheckFailed(f"adb {' '.join(args)} failed: {done.stderr.decode('utf-8', 'replace').strip() or out.strip()}")
+    return out
+
+
+def shell(command: str, timeout: float = 30) -> str:
+    return adb('shell', command, timeout=timeout)
+
+
+def key(code: int | str) -> None:
+    shell(f'input keyevent {code}')
+
+
+def tap_xy(x: int, y: int) -> None:
+    shell(f'input tap {x} {y}')
+
+
+SAFE_TEXT = re.compile(r"^[A-Za-z0-9 .,:\-]*$")
+
+
+def type_text(text: str) -> None:
+    """Type into the focused field. Test text sticks to letters, digits and simple punctuation."""
+    if not SAFE_TEXT.match(text):
+        raise ValueError(f'unsupported characters in test text: {text!r}')
+    for start in range(0, len(text), 40):  # long strings in one go can drop characters
+        chunk = text[start:start + 40].replace(' ', '%s')
+        shell(f"input text '{chunk}'")
+
+
+def clear_focused_field() -> None:
+    shell('input keycombination 113 29')  # Ctrl+A
+    key(67)  # delete
+
+
+def foreground() -> str:
+    out = shell('dumpsys activity activities')
+    m = re.search(r'(?:topResumedActivity|mResumedActivity|ResumedActivity)[^\n]*?\s(\S+)/(\S+)', out)
+    return m.group(1) if m else ''
+
+
+def keyboard_top() -> int | None:
+    """Screen y (px) of the top of the on-screen keyboard, or None when it's hidden."""
+    if 'mInputShown=true' not in shell('dumpsys input_method'):
+        return None
+    win = shell('dumpsys window InputMethod')
+    frame = re.search(r'\sframe=\[(\d+),(\d+)\]\[(\d+),(\d+)\]', win)
+    insets = re.search(r'mGivenContentInsets=\[\d+,(\d+)\]', win)
+    if not frame or 'isVisible=true' not in win:
+        return None
+    return int(frame.group(2)) + (int(insets.group(1)) if insets else 0)
+
+
+def wait_keyboard(shown: bool, timeout: float = 5) -> int | None:
+    end = time.time() + timeout
+    while time.time() < end:
+        top = keyboard_top()
+        if (top is not None) == shown:
+            return top
+        time.sleep(0.3)
+    raise CheckFailed('keyboard did not ' + ('open' if shown else 'close'))
+
+
+def hide_keyboard() -> None:
+    if keyboard_top() is not None:
+        key(4)  # back closes the keyboard (only pressed when it's open)
+        wait_keyboard(False)
+
+
+# ---------- screen ----------
+
+@dataclass
+class Node:
+    text: str
+    desc: str
+    cls: str
+    checked: bool
+    enabled: bool
+    focused: bool
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+
+    @property
+    def cx(self) -> int:
+        return (self.x1 + self.x2) // 2
+
+    @property
+    def cy(self) -> int:
+        return (self.y1 + self.y2) // 2
+
+    @property
+    def height(self) -> int:
+        return self.y2 - self.y1
+
+    @property
+    def label(self) -> str:
+        return self.text or self.desc
+
+
+def screen() -> list[Node]:
+    """Everything uiautomator can see in the app's window."""
+    for attempt in range(6):
+        raw = adb('exec-out', 'uiautomator', 'dump', '/dev/tty', timeout=40, check=False)
+        start, end = raw.find('<?xml'), raw.rfind('</hierarchy>')
+        if start >= 0 and end > start:
+            root = ET.fromstring(raw[start:end + len('</hierarchy>')])
+            nodes = []
+            for n in root.iter('node'):
+                b = re.match(r'\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]', n.get('bounds', ''))
+                if not b:
+                    continue
+                nodes.append(Node(
+                    n.get('text', ''), n.get('content-desc', ''), n.get('class', ''), n.get('checked') == 'true',
+                    n.get('enabled') == 'true', n.get('focused') == 'true', *map(int, b.groups()),
+                ))
+            return nodes
+        time.sleep(0.5 + attempt * 0.3)  # uiautomator waits for an idle screen; animations can delay it
+    raise CheckFailed('could not read the screen (uiautomator dump failed)')
+
+
+def find(nodes: list[Node], text: str | None = None, desc: str | None = None, contains: str | None = None,
+         cls: str | None = None) -> list[Node]:
+    out = []
+    for n in nodes:
+        if text is not None and n.text != text:
+            continue
+        if desc is not None and n.desc != desc:
+            continue
+        if contains is not None and contains.lower() not in (n.text + ' ' + n.desc).lower():
+            continue
+        if cls is not None and not n.cls.endswith(cls):
+            continue
+        if n.x2 <= n.x1 or n.y2 <= n.y1:
+            continue
+        out.append(n)
+    return out
+
+
+def wait_for(what: str, timeout: float = 10, **match) -> Node:
+    end = time.time() + timeout
+    while True:
+        hits = find(screen(), **match)
+        if hits:
+            return hits[0]
+        if time.time() > end:
+            raise CheckFailed(f'{what} did not appear within {timeout:.0f} s')
+        time.sleep(0.4)
+
+
+def wait_gone(what: str, timeout: float = 10, **match) -> None:
+    end = time.time() + timeout
+    while find(screen(), **match):
+        if time.time() > end:
+            raise CheckFailed(f'{what} still showing after {timeout:.0f} s')
+        time.sleep(0.4)
+
+
+def tap(node: Node) -> None:
+    top = keyboard_top()
+    if top is not None and node.cy >= top - MARGIN:
+        raise CheckFailed(f"'{node.label}' is behind the keyboard (y={node.cy}, keyboard top={top})")
+    tap_xy(node.cx, node.cy)
+
+
+def screen_height() -> int:
+    m = re.search(r'(\d+)x(\d+)', shell('wm size'))
+    return int(m.group(2)) if m else 2340
+
+
+def px_per_dp() -> float:
+    out = shell('wm density')
+    m = re.search(r'Override density: (\d+)', out) or re.search(r'Physical density: (\d+)', out)
+    return int(m.group(1)) / 160 if m else 2.625
+
+
+def scroll_to(what: str, timeout_swipes: int = 10, up: bool = False, **match) -> Node:
+    h = screen_height()
+    for _ in range(timeout_swipes):
+        hits = [n for n in find(screen(), **match) if 150 < n.cy < h - 300]
+        if hits:
+            return hits[0]
+        if up:
+            shell(f'input swipe 540 {int(h * 0.35)} 540 {int(h * 0.7)} 300')
+        else:
+            shell(f'input swipe 540 {int(h * 0.7)} 540 {int(h * 0.35)} 300')
+        time.sleep(0.6)
+    raise CheckFailed(f'could not scroll to {what}')
+
+
+def scroll_to_top() -> None:
+    h = screen_height()
+    for _ in range(4):
+        shell(f'input swipe 540 {int(h * 0.3)} 540 {int(h * 0.8)} 200')
+    time.sleep(0.5)
+
+
+def go_tab(name: str) -> None:
+    hide_keyboard()
+    tab = wait_for(f'the {name} tab', text=name)
+    tap(tab)
+    time.sleep(1)
+
+
+def editable(nodes: list[Node]) -> list[Node]:
+    return [n for n in nodes if n.cls.endswith('EditText')]
+
+
+def labelled_field(label: str, swipes: int = 10) -> Node:
+    """The text box with this label, scrolled into view."""
+    tag = scroll_to(f'the {label} box', timeout_swipes=swipes, text=label)
+    boxes = editable(screen())
+    if not boxes:
+        raise CheckFailed(f'no text box near "{label}"')
+    return min(boxes, key=lambda b: 0 if b.y1 <= tag.cy <= b.y2 else min(abs(b.y1 - tag.cy), abs(b.y2 - tag.cy)))
+
+
+def field_above_keyboard(field: Node, top: int, what: str) -> None:
+    if field.y2 > top + MARGIN:
+        raise CheckFailed(f'{what} is behind the keyboard (bottom y={field.y2}, keyboard top={top})')
+    if field.y1 < 0:
+        raise CheckFailed(f'{what} is off the top of the screen')
+
+
+def confirm_alert(button: str) -> None:
+    """Press a button in a native Android alert (button labels may be shown in capitals)."""
+    end = time.time() + 6
+    while time.time() < end:
+        for n in screen():
+            if n.text.lower() == button.lower() and n.cls.endswith('Button'):
+                tap_xy(n.cx, n.cy)
+                time.sleep(0.8)
+                return
+        time.sleep(0.3)
+    raise CheckFailed(f"no '{button}' button in the alert")
+
+
+def row_button(row_text_contains: str, desc: str) -> Node | None:
+    """The button with this label on the same row as some text (e.g. a fact's Forget button)."""
+    nodes = screen()
+    rows = find(nodes, contains=row_text_contains)
+    buttons = find(nodes, desc=desc)
+    for r in rows:
+        for b in buttons:
+            if b.y1 <= r.cy <= b.y2 or r.y1 <= b.cy <= r.y2:
+                return b
+    return None
+
+
+def save_evidence(name: str) -> None:
+    OUT.mkdir(exist_ok=True)
+    stamp = time.strftime('%H%M%S')
+    try:
+        png = subprocess.run([os.environ.get('ADB', 'adb'), 'exec-out', 'screencap', '-p'], capture_output=True, timeout=20).stdout
+        (OUT / f'{stamp}-{name}.png').write_bytes(png)
+        xml = adb('exec-out', 'uiautomator', 'dump', '/dev/tty', timeout=40, check=False)
+        (OUT / f'{stamp}-{name}.xml').write_text(xml, encoding='utf-8')
+    except Exception:  # evidence is best effort
+        pass
+
+
+# ---------- the checks ----------
+
+PROMPT = 'E2E check: reply with one word, pong'
+FACTS = ['E2E test fact: favourite colour is teal', 'E2E test fact: likes the colour teal best']
+
+
+def check_launch() -> str:
+    """Start the app from cold and wait until its AI is ready."""
+    shell(f'am force-stop {PKG}')
+    shell(f'monkey -p {PKG} -c android.intent.category.LAUNCHER 1')
+    wait_for('the Chat tab', timeout=20, text='Chat')
+    status = wait_for('a ready AI (status ending "private")', timeout=90, contains='· private')
+    if foreground() != PKG:
+        raise CheckFailed('the app is not in front after launching')
+    return status.text
+
+
+def open_new_chat() -> Node:
+    go_tab('Chat')
+    tap(wait_for('the New chat button', desc='New chat'))
+    time.sleep(0.8)
+    boxes = editable(screen())
+    if not boxes:
+        raise CheckFailed('no message box on the chat screen')
+    return boxes[-1]
+
+
+def message_box() -> Node:
+    boxes = editable(screen())
+    if not boxes:
+        raise CheckFailed('message box disappeared')
+    return boxes[-1]
+
+
+def check_chat_typing() -> str:
+    """Typing in the message box shows the text, and the box and Send stay above the keyboard."""
+    tap(open_new_chat())
+    top = wait_keyboard(True)
+    text = 'E2E typing check 123'
+    type_text(text)
+    time.sleep(0.6)
+    box = message_box()
+    if box.text != text:
+        raise CheckFailed(f'message box shows {box.text!r}, expected {text!r}')
+    field_above_keyboard(box, top, 'the message box')
+    send = find(screen(), desc='Send')
+    if not send:
+        raise CheckFailed('no Send button while typing')
+    field_above_keyboard(send[0], top, 'the Send button')
+    if find(screen(), text='Memory'):
+        raise CheckFailed('the tabs should hide while typing')
+    one_line = box.height
+
+    # Long text grows the box up to its limit, still above the keyboard.
+    clear_focused_field()
+    type_text('E2E long text check, line after line. ' * 12)
+    time.sleep(0.8)
+    box = message_box()
+    limit = 160 * px_per_dp() + 4
+    if not box.text.startswith('E2E long text check'):
+        raise CheckFailed(f'long text not shown: {box.text[:40]!r}')
+    if box.height <= one_line * 1.5:
+        raise CheckFailed(f'box did not grow for long text ({one_line}px to {box.height}px)')
+    if box.height > limit:
+        raise CheckFailed(f'box grew past its limit ({box.height}px > {limit:.0f}px)')
+    field_above_keyboard(box, wait_keyboard(True), 'the message box with long text')
+    grown = box.height
+
+    clear_focused_field()
+    time.sleep(0.6)
+    if message_box().height >= grown:
+        raise CheckFailed('box did not shrink after clearing')
+    hide_keyboard()
+    return f'box {one_line}px, grows to {grown}px (limit {limit:.0f}px), keyboard top {top}'
+
+
+def delete_test_chat() -> bool:
+    hide_keyboard()
+    go_tab('Chat')
+    tap(wait_for('the Chats button', desc='Chats'))
+    time.sleep(1)
+    deleted = False
+    for _ in range(3):
+        b = row_button('E2E check', 'Delete chat')
+        if not b:
+            break
+        tap_xy(b.cx, b.cy)
+        confirm_alert('Delete')
+        deleted = True
+    key(4)  # close the chat list
+    time.sleep(0.8)
+    return deleted
+
+
+def check_chat_send() -> str:
+    """Send a message by tapping Send with the keyboard open, and get a reply."""
+    tap(open_new_chat())
+    wait_keyboard(True)
+    type_text(PROMPT)
+    time.sleep(0.5)
+    if message_box().text != PROMPT:
+        raise CheckFailed(f'message box shows {message_box().text!r}')
+    send = find(screen(), desc='Send')
+    if not send:
+        raise CheckFailed('no Send button')
+    tap(send[0])  # fails if Send is under the keyboard, where a tap would type instead
+    started = time.time()
+    try:
+        wait_for('the sent message in the thread', timeout=10, text=PROMPT)
+        if message_box().text not in ('', 'Message'):
+            raise CheckFailed(f'message box not cleared after sending: {message_box().text!r}')
+        hide_keyboard()
+        end = time.time() + 180
+        while True:
+            nodes = screen()
+            if find(nodes, desc='Copy') and not find(nodes, desc='Stop'):
+                break
+            problem = find(nodes, text='Dismiss')
+            if problem:
+                raise CheckFailed('the reply failed with an error card')
+            if time.time() > end:
+                raise CheckFailed('no reply within 180 s')
+            time.sleep(1.5)
+        return f'reply in {time.time() - started:.0f} s'
+    finally:
+        if not delete_test_chat():
+            print('  note: could not find the test chat to delete', file=sys.stderr)
+
+
+def type_check(what: str, field: Node, text: str) -> None:
+    tap(field)
+    wait_keyboard(True)
+    clear_focused_field()
+    type_text(text)
+    time.sleep(0.6)
+    now = [n for n in editable(screen()) if n.focused] or editable(screen())
+    shown = now[0]
+    if shown.text != text:
+        raise CheckFailed(f'{what} shows {shown.text!r}, expected {text!r}')
+    field_above_keyboard(shown, wait_keyboard(True), what)
+    clear_focused_field()
+
+
+def append_and_restore(what: str, field: Node, extra: str = ' e2e') -> None:
+    """Type at the end of a field that saves itself, check it, then delete exactly what was typed."""
+    original = field.text
+    tap(field)
+    wait_keyboard(True)
+    key(123)  # cursor to the end
+    type_text(extra)
+    time.sleep(0.6)
+    focused = [n for n in editable(screen()) if n.focused]
+    if not focused:
+        raise CheckFailed(f'{what} lost focus while typing')
+    try:
+        if not focused[0].text.endswith(extra):
+            raise CheckFailed(f'{what} shows {focused[0].text!r} after typing {extra!r}')
+        field_above_keyboard(focused[0], wait_keyboard(True), what)
+    finally:
+        key(123)
+        for _ in extra:
+            key(67)
+        time.sleep(0.5)
+        after = [n for n in editable(screen()) if n.focused]
+        if after and original and after[0].text != original:
+            raise CheckFailed(f'could not put {what} back: now {after[0].text!r}, was {original!r}')
+        hide_keyboard()
+
+
+def check_text_fields() -> str:
+    """Typing shows in Memory's add-a-fact box, a new note, and Settings (put back afterwards)."""
+    go_tab('Memory')
+    scroll_to_top()
+    fact_box = wait_for('the Add a fact box', contains='Add a fact', cls='EditText')
+    type_check('the Add a fact box', fact_box, 'E2E field check')
+    hide_keyboard()
+
+    go_tab('Notes')
+    tap(wait_for('the New note button', text='New note'))
+    time.sleep(0.8)
+    fields = editable(screen())
+    if len(fields) < 2:
+        raise CheckFailed('new note has no title and text boxes')
+    type_check('the note title', fields[0], 'E2E note title')
+    type_check('the note text', editable(screen())[1], 'E2E note body text')
+    hide_keyboard()
+    tap(wait_for('Cancel', text='Cancel'))
+    time.sleep(0.8)
+    if find(screen(), contains='E2E note'):
+        raise CheckFailed('a test note was saved')
+
+    go_tab('Settings')
+    scroll_to_top()
+    append_and_restore('Your name', labelled_field('Your name'))
+    append_and_restore('Custom instructions', labelled_field('Custom instructions'))
+    scroll_to_top()
+    return 'memory, note title and text, your name, custom instructions'
+
+
+def check_find_laptop() -> str:
+    """Pairing status in Settings → Home, and Find my laptop (never unpairs)."""
+    go_tab('Settings')
+    scroll_to_top()
+    try:
+        state = scroll_to('the laptop status', timeout_swipes=8, contains='Find')
+    except CheckFailed as e:
+        raise CheckFailed('no Find my laptop or Find again button in Settings → Home') from e
+    nodes = screen()
+    if find(nodes, text='Find again'):
+        # Paired: look for the laptop again with the same code, and check it stays connected.
+        if find(nodes, contains='Laptop not reachable'):
+            raise CheckFailed('paired, but the laptop is not reachable')
+        if not find(nodes, contains='Connected to'):
+            raise CheckFailed('paired, but no "Connected to" status')
+        laptop_ai = [n for n in nodes if n.cls.endswith('Switch')]
+        tap(find(nodes, text='Find again')[0])
+        found = wait_for('"Found it at …"', timeout=60, contains='Found it at')
+        wait_for('the connected status after finding', timeout=20, contains='Connected to')
+        scroll_to_top()
+        ai = f"; laptop's AI {'on' if laptop_ai[-1].checked else 'off'}" if laptop_ai else ''
+        where = re.search(r'Found it at (\S+)', found.label)
+        return f"paired and connected; Find again found it at {where.group(1) if where else '?'}{ai}"
+
+    # Not paired: Find my laptop should list the laptop. It doesn't pair (that needs the code).
+    tap(state if state.text == 'Find my laptop' else wait_for('Find my laptop', text='Find my laptop'))
+    end = time.time() + 60
+    while time.time() < end:
+        nodes = screen()
+        ips = [n for n in nodes if re.fullmatch(r'\d+\.\d+\.\d+\.\d+', n.text)]
+        if ips:
+            scroll_to_top()
+            return f'not paired; found a laptop at {ips[0].text} (did not pair)'
+        if find(nodes, contains='No laptop found'):
+            raise CheckFailed('Find my laptop found nothing')
+        time.sleep(1)
+    raise CheckFailed('Find my laptop found nothing within 60 s')
+
+
+def forget(text_contains: str) -> int:
+    count = 0
+    for _ in range(6):
+        b = row_button(text_contains, 'Forget this')
+        if not b:
+            break
+        tap_xy(b.cx, b.cy)
+        confirm_alert('Forget')
+        count += 1
+    return count
+
+
+def check_memory() -> str:
+    """Add facts, tidy up, and forget them again."""
+    go_tab('Memory')
+    scroll_to_top()
+    started_empty = bool(find(screen(), contains='Nothing yet'))
+    for fact in FACTS:
+        scroll_to_top()
+        tap(editable(screen())[0])  # the add-a-fact box is the only text box on the Memory screen
+        wait_keyboard(True)
+        clear_focused_field()
+        type_text(fact)
+        time.sleep(0.4)
+        hide_keyboard()
+        tap(wait_for('the Add button', text='Add'))
+        wait_for(f'the fact "{fact}"', timeout=8, text=fact)
+    detail = 'added 2'
+    try:
+        tidy = wait_for('the Tidy up button', text='Tidy up')
+        if not tidy.enabled:
+            raise CheckFailed('Tidy up is disabled (is the AI ready?)')
+        tap(tidy)
+        end = time.time() + 180
+        while True:
+            nodes = screen()
+            if find(nodes, text='Suggested changes'):
+                if started_empty:
+                    apply = [n for n in nodes if n.text.startswith('Apply')]
+                    if not apply or not apply[0].enabled:
+                        raise CheckFailed('no Apply button in the suggestions')
+                    tap(apply[0])
+                    wait_for('the "Tidied" message', timeout=10, contains='Tidied')
+                    detail += ', tidy suggested changes (applied, test facts only)'
+                else:
+                    tap(wait_for('Cancel', text='Cancel'))
+                    detail += ', tidy suggested changes (cancelled: real facts present)'
+                break
+            if find(nodes, contains='All tidy'):
+                detail += ', tidy found nothing to change'
+                break
+            if find(nodes, contains="Couldn't check"):
+                raise CheckFailed('tidy up failed')
+            if time.time() > end:
+                raise CheckFailed('tidy up took longer than 180 s')
+            time.sleep(2)
+    finally:
+        time.sleep(1.5)
+        removed = forget('E2E test fact')
+        if started_empty:  # anything left came from the test facts (e.g. a merged fact)
+            for _ in range(4):
+                b = find(screen(), desc='Forget this')
+                if not b:
+                    break
+                tap_xy(b[0].cx, b[0].cy)
+                confirm_alert('Forget')
+                removed += 1
+    if find(screen(), contains='E2E test fact'):
+        raise CheckFailed('test facts still in memory after forgetting them')
+    if started_empty and not find(screen(), contains='Nothing yet'):
+        raise CheckFailed('memory not empty again after the test')
+    return f'{detail}, forgot {removed}'
+
+
+MODES = {'Cool': 'Cool: slower replies', 'Balanced': 'Balanced: quick replies', 'Max': 'Max: quickest'}
+
+
+def current_mode() -> str | None:
+    for n in screen():
+        if n.label in MODES and n.checked:
+            return n.label
+    nodes = screen()
+    for mode, footer in MODES.items():
+        if find(nodes, contains=footer):
+            return mode
+    return None
+
+
+def check_performance() -> str:
+    """Switch Cool, Max and back, and check each takes effect."""
+    go_tab('Settings')
+    scroll_to_top()
+    scroll_to('Speed and heat', contains='Speed and heat')
+    scroll_to('the performance buttons', text='Balanced')
+    original = current_mode()
+    if not original:
+        raise CheckFailed('could not tell which performance mode is on')
+    seen = []
+    try:
+        for mode in [m for m in ('Cool', 'Max', 'Balanced') if m != original] + [original]:
+            tap(wait_for(mode, text=mode))
+            wait_for(f'the {mode} description', timeout=5, contains=MODES[mode])
+            seen.append(mode)
+    finally:
+        if current_mode() != original:
+            tap(wait_for(original, text=original))
+            time.sleep(0.8)
+    if current_mode() != original:
+        raise CheckFailed(f'could not put the mode back to {original}')
+    scroll_to_top()
+    return f"{' → '.join(seen)} (was {original})"
+
+
+CHECKS = {
+    'launch': check_launch,
+    'chat_typing': check_chat_typing,
+    'chat_send': check_chat_send,
+    'text_fields': check_text_fields,
+    'find_laptop': check_find_laptop,
+    'memory': check_memory,
+    'performance': check_performance,
+}
+
+
+def preflight(force: bool) -> None:
+    out = adb('devices')
+    if not re.search(r'\tdevice\b', out):
+        sys.exit('No phone connected over adb. Connect it (adb connect / wireless debugging) and try again.')
+    power = shell('dumpsys power')
+    if 'mWakefulness=Awake' not in power or 'isKeyguardShowing=true' in shell('dumpsys window'):
+        sys.exit('The phone is asleep or locked. Unlock it, leave it on the home screen, and run again.')
+    front = foreground()
+    if not force and front != PKG and not any(l in front for l in LAUNCHERS):
+        sys.exit(f'Another app is in front ({front}). Go to the home screen first, or pass --force.')
+    if PKG not in shell(f'pm list packages {PKG}'):
+        sys.exit(f'{PKG} is not installed.')
+
+
+def main() -> int:
+    for stream in (sys.stdout, sys.stderr):  # Windows consoles may not be UTF-8
+        stream.reconfigure(encoding='utf-8', errors='replace')  # type: ignore[union-attr]
+    parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
+    parser.add_argument('checks', nargs='*', help='checks to run (default: all)')
+    parser.add_argument('--list', action='store_true', help='list the checks and exit')
+    parser.add_argument('--device', help='adb serial, if more than one device is connected')
+    parser.add_argument('--force', action='store_true', help='run even if another app is in front')
+    args = parser.parse_args()
+    if args.list:
+        for name, fn in CHECKS.items():
+            print(f'{name:12} {fn.__doc__}')
+        return 0
+    if args.device:
+        os.environ['ANDROID_SERIAL'] = args.device
+    unknown = [c for c in args.checks if c not in CHECKS]
+    if unknown:
+        sys.exit(f"Unknown check(s): {', '.join(unknown)}. Use --list.")
+    preflight(args.force)
+    version = re.search(r'versionName=(\S+)', shell(f'dumpsys package {PKG}'))
+    print(f"Untethered {version.group(1) if version else '?'} on {shell('getprop ro.product.model').strip()}")
+
+    names = args.checks or list(CHECKS)
+    if 'launch' not in names:
+        names = ['launch', *names]  # every run starts from a fresh launch
+    failed = 0
+    for name in names:
+        started = time.time()
+        try:
+            detail = CHECKS[name]()
+            print(f'PASS {name} ({time.time() - started:.0f} s): {detail}', flush=True)
+        except Exception as e:  # report and carry on with the next check
+            failed += 1
+            print(f'FAIL {name} ({time.time() - started:.0f} s): {e}', flush=True)
+            save_evidence(name)
+            try:
+                hide_keyboard()
+            except Exception:
+                pass
+            if name == 'launch':
+                break
+    print(f"{len(names) - failed}/{len(names)} passed" + (f'; evidence in {OUT}' if failed else ''))
+    return 1 if failed else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

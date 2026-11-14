@@ -54,3 +54,6 @@ yarn-error.*
 .env.*
 hub.json
 *.log
+
+# Phone end-to-end check evidence
+e2e/phone/out/
