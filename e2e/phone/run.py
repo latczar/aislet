@@ -9,7 +9,8 @@ PASS or FAIL line per check. Exits non-zero if any check fails. Python standard 
     python e2e/phone/run.py chat_typing memory
 
 Before running: unlock the phone and leave it on its home screen or in Untethered. The runner refuses to
-start while another app is in front, so it never types into something else.
+start while another app is in front, and checks again before every tap, key, swipe and launch, so it never
+types into something else. If another app comes to the front during a run, the current check stops.
 
 Test data is made up ("E2E ..." text) and removed afterwards: the test chat is deleted, test facts are
 forgotten, notes are never saved, and changed fields and settings are put back as they were. On a failure
@@ -55,6 +56,12 @@ def adb(*args: str, timeout: float = 30, check: bool = True) -> str:
 
 
 def shell(command: str, timeout: float = 30) -> str:
+    # Every tap, key, swipe and launch first checks that Untethered or the home screen is in front, so nothing
+    # lands in another app if someone picks up the phone during a run.
+    if command.startswith(('input ', 'am start')):
+        front = foreground()
+        if front != PKG and not any(l in front for l in LAUNCHERS):
+            raise CheckFailed(f'stopped: another app is in front ({front or "unknown"})')
     return adb('shell', command, timeout=timeout)
 
 
@@ -319,6 +326,8 @@ FACTS = ['E2E test fact: favourite colour is teal', 'E2E test fact: likes the co
 
 def check_launch() -> str:
     """Start the app from cold and wait until its AI is ready."""
+    key(3)  # home first, so closing the app can't bring another app to the front
+    time.sleep(1)
     shell(f'am force-stop {PKG}')
     # A fresh task (NEW_TASK | CLEAR_TASK), so a browser tab the app opened earlier can't stay on top.
     shell(f'am start -W -n {PKG}/.MainActivity -f 0x10008000')

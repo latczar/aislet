@@ -95,7 +95,7 @@ Run it after installing a new APK, before every release:
 python e2e/phone/run.py
 ```
 
-- **Before running:** connect the phone over adb, unlock it and leave it on the home screen. The runner won't start while another app is in front, so it never types into something else.
+- **Before running:** connect the phone over adb, unlock it and leave it on the home screen. The runner won't start while another app is in front, and checks again before every tap, key, swipe and launch, so it never types into something else. If another app comes to the front during a run, the current check stops.
 - **One check at a time:** `python e2e/phone/run.py chat_typing`. List them with `--list`. Every run starts with a fresh launch of the app.
 - **More than one device:** add `--device <serial>`.
 
