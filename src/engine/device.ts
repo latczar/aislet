@@ -41,10 +41,13 @@ const VISION_FOR = 'qwen3.5-4b';
 const STOP = ['<|im_end|>', '<|endoftext|>', '<|end|>', '<|eot_id|>', '</s>'];
 
 // How hard the phone works. The S25 has 8 fast cores (2 prime + 6 performance).
+// Measured on an S25 with Qwen3.5 4B (14 Nov 2026): writing a reply is limited by memory speed, so
+// 2 threads gave 13.5 tokens/s, 4 gave 16.7 and 8 only 13.6 (the cores fight over memory).
+// More threads mainly help read a long prompt (notes, files) faster.
 const PROFILE: Record<Performance, { threads: number; idleMs: number }> = {
-  cool: { threads: 2, idleMs: 60_000 },          // gentle: slower replies, little heat
-  balanced: { threads: 4, idleMs: 3 * 60_000 },  // the default
-  max: { threads: 8, idleMs: 10 * 60_000 },      // fastest: all cores, stays loaded longer
+  cool: { threads: 2, idleMs: 60_000 },          // gentle: a little slower, least heat
+  balanced: { threads: 4, idleMs: 3 * 60_000 },  // the default, and the fastest at writing
+  max: { threads: 6, idleMs: 10 * 60_000 },      // reads long prompts fastest and stays loaded longer
 };
 
 function folder(): Directory {

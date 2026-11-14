@@ -385,7 +385,7 @@ export function SettingsView() {
             settings.performance === 'cool'
               ? 'Cool: slower replies, least heat and battery. The model loads only when you send.'
               : settings.performance === 'max'
-                ? 'Max: fastest replies. Uses every core and keeps the model ready, so it runs warmer.'
+                ? 'Max: quickest with long questions and files. Uses more cores and keeps the model ready, so it runs warmer.'
                 : 'Balanced: quick replies without working the device too hard.',
             engine.models ? 'On the phone, the AI chip is usually the coolest if it works; CPU is the most reliable.' : '',
             engine.lastSpeed?.() ? `Last reply: ${engine.lastSpeed()!.toFixed(1)} tokens a second.` : '',
