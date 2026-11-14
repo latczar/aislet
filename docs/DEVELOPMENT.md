@@ -100,6 +100,7 @@ python e2e/phone/run.py
 | `find_laptop` | Settings → Home shows the pairing status. When paired, Advanced → "Find again" finds the laptop with the same code and stays connected. When not paired, "Find my laptop" lists it. It never unpairs. |
 | `memory` | Two facts are added, "Tidy up" runs, and the facts are forgotten again. Suggestions are applied only when memory held nothing else; otherwise they're cancelled. |
 | `performance` | Cool, Max and Balanced each switch over and show their description, then the original mode is put back. |
+| `haptics` | The "Vibrate on taps" switch in Settings turns off and on, then is put back as it was. |
 | `layout` | List rows on Memory and Settings line up. Titles start at one left edge and buttons end at one right edge, the same on every card. No button is stretched or off-centre on its row. |
 
 The checks use made-up text starting "E2E" and clean up after themselves:

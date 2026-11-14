@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import {
-  ActivityIndicator, Button, Checkbox, Dialog, Divider, Icon, IconButton, List, Portal, Snackbar, Surface, Switch, Text, TextInput,
-  useTheme,
+  ActivityIndicator, Button, Checkbox, Dialog, Divider, Icon, IconButton, List, Portal, Snackbar, Surface, Switch, Text, useTheme,
 } from 'react-native-paper';
 import { CATEGORIES, type TidyChange } from '../brain';
 import { useStore } from '../store';
 import type { Memory } from '../types';
+import { Field } from './Field';
 import { confirm } from './confirm';
 import { Row } from './rows';
 import { FONT } from './theme';
@@ -121,7 +121,7 @@ export function MemoryView({ onStartInterview }: { onStartInterview: () => void 
         />
         <Divider />
         <View style={styles.addRow}>
-          <TextInput
+          <Field
             mode="outlined"
             dense
             style={styles.flex}

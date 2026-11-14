@@ -4,8 +4,15 @@ import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
 import { Platform } from 'react-native';
 
+let hapticsOn = true;
+
+/** Settings can turn the buzz off. */
+export function setHaptics(on: boolean) {
+  hapticsOn = on;
+}
+
 export function tap() {
-  if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+  if (hapticsOn && Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
 }
 
 export async function copy(text: string) {

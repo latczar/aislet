@@ -1,11 +1,12 @@
 // First-run set-up: your name, then getting the AI ready on this device.
 import React, { useState } from 'react';
 import { Image, Platform, ScrollView, StyleSheet, View } from 'react-native';
-import { Button, ProgressBar, Surface, Text, TextInput, useTheme } from 'react-native-paper';
+import { Button, ProgressBar, Surface, Text, useTheme } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { APP_NAME } from '../config';
 import { engine } from '../engine';
 import { useStore } from '../store';
+import { Field } from './Field';
 import { formatSize } from './confirm';
 import { cancelDownload, startDownload, useDownload } from './downloads';
 import { useKeyboardInset } from './keyboard';
@@ -116,7 +117,7 @@ export function Onboarding() {
               Your private AI. It runs on your own devices, works without the internet, and learns about you as you chat.
               Nothing you say is sent to anyone.
             </Text>
-            <TextInput
+            <Field
               mode="outlined"
               label="What should it call you?"
               value={name}

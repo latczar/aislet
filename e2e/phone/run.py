@@ -775,6 +775,34 @@ def check_layout() -> str:
     return f'{checked}, Settings → AI: titles at x={title_x}, buttons end at x={button_x}'
 
 
+def vibrate_switch() -> Node:
+    row = scroll_to('Vibrate on taps', text='Vibrate on taps')
+    switches = [n for n in screen() if n.cls.endswith('Switch') and abs(n.cy - row.cy) < 120]
+    if not switches:
+        raise CheckFailed('no switch on the "Vibrate on taps" row')
+    return switches[0]
+
+
+def check_haptics() -> str:
+    """The "Vibrate on taps" switch turns off and on, and is put back as it was."""
+    go_tab('Settings')
+    scroll_to_top()
+    original = vibrate_switch().checked
+    try:
+        tap(vibrate_switch())
+        time.sleep(0.6)
+        if vibrate_switch().checked == original:
+            raise CheckFailed('the switch did not change')
+    finally:
+        if vibrate_switch().checked != original:
+            tap(vibrate_switch())
+            time.sleep(0.6)
+    if vibrate_switch().checked != original:
+        raise CheckFailed('could not put "Vibrate on taps" back')
+    scroll_to_top()
+    return f"switched {'off and on' if original else 'on and off'}"
+
+
 CHECKS = {
     'launch': check_launch,
     'chat_typing': check_chat_typing,
@@ -783,6 +811,7 @@ CHECKS = {
     'find_laptop': check_find_laptop,
     'memory': check_memory,
     'performance': check_performance,
+    'haptics': check_haptics,
     'layout': check_layout,
 }
 

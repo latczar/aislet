@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
-import { Button, Divider, List, Surface, Text, TextInput, useTheme } from 'react-native-paper';
+import { Button, Divider, List, Surface, Text, useTheme } from 'react-native-paper';
 import { useStore } from '../store';
 import type { Note } from '../types';
+import { Field } from './Field';
 import { confirm, formatWhen } from './confirm';
 import { FONT } from './theme';
 
@@ -16,8 +17,8 @@ function Editor({ note, onDone }: { note: Partial<Note>; onDone: () => void }) {
   return (
     <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
       <Text variant="headlineSmall" style={styles.h1}>{note.id ? 'Edit note' : 'New note'}</Text>
-      <TextInput mode="outlined" label="Title" value={title} onChangeText={setTitle} />
-      <TextInput
+      <Field mode="outlined" label="Title" value={title} onChangeText={setTitle} />
+      <Field
         mode="outlined"
         label="Note"
         value={text}

@@ -52,6 +52,7 @@ export interface Settings {
   useLaptop: boolean;  // phone: use the laptop's bigger model when it's reachable
   accel: Accel;
   performance: Performance;
+  haptics: boolean;    // phone: a light buzz on taps
   onboarded: boolean;  // finished the first-run set-up
 }
 

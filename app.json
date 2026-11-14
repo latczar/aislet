@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "backgroundColor": "#FBFCFA",
+    "backgroundColor": "#F1F3F2",
     "ios": {
       "supportsTablet": true
     },
@@ -33,7 +33,7 @@
       "name": "Untethered",
       "shortName": "Untethered",
       "themeColor": "#2F6F5E",
-      "backgroundColor": "#FBFCFA",
+      "backgroundColor": "#F1F3F2",
       "description": "Your private AI that works offline."
     },
     "plugins": [

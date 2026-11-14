@@ -1,8 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Linking, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import {
-  Avatar, Button, Chip, Divider, IconButton, List, ProgressBar, RadioButton, SegmentedButtons, Snackbar, Surface, Switch, Text, TextInput,
-  useTheme,
+  Avatar, Button, Chip, Divider, IconButton, List, ProgressBar, RadioButton, SegmentedButtons, Snackbar, Surface, Switch, Text, useTheme,
 } from 'react-native-paper';
 import { APP_NAME } from '../config';
 import { findLaptops } from '../discover';
@@ -11,6 +10,7 @@ import type { ModelInfo } from '../engine/types';
 import { STALE_PC_KEY, hubNewCode, hubPairing, hubPing, normaliseAddress } from '../hub';
 import { useStore } from '../store';
 import type { Accel, AnswerLength, Appearance, Performance } from '../types';
+import { Field } from './Field';
 import { formatWhen } from './confirm';
 import { confirm, formatSize } from './confirm';
 import { cancelDownload, startDownload, useDownload } from './downloads';
@@ -325,8 +325,8 @@ function ConnectLaptop() {
           ))}
         </View>
       )}
-      <TextInput mode="outlined" dense label="Laptop address" placeholder="e.g. 192.168.1.20" value={address} onChangeText={setAddress} keyboardType="numbers-and-punctuation" autoCapitalize="none" />
-      <TextInput mode="outlined" dense label="Code" value={code} onChangeText={setCode} autoCapitalize="characters" maxLength={8} />
+      <Field mode="outlined" dense label="Laptop address" placeholder="e.g. 192.168.1.20" value={address} onChangeText={setAddress} keyboardType="numbers-and-punctuation" autoCapitalize="none" />
+      <Field mode="outlined" dense label="Code" value={code} onChangeText={setCode} autoCapitalize="characters" maxLength={8} />
       {problem && <Text variant="bodySmall" style={{ color: theme.colors.error }}>{problem}</Text>}
       <Button mode="contained" onPress={connect} loading={busy} disabled={busy || !address.trim() || code.trim().length < 8}>Connect</Button>
     </View>
@@ -356,7 +356,7 @@ export function SettingsView() {
         <Section title="You">
           <View style={styles.profile}>
             <Avatar.Text size={48} label={initials} style={{ backgroundColor: theme.colors.primaryContainer }} color={theme.colors.onPrimaryContainer} />
-            <TextInput
+            <Field
               mode="outlined"
               label="Your name"
               value={name}
@@ -381,7 +381,7 @@ export function SettingsView() {
                 { value: 'detailed', label: 'Detailed' },
               ]}
             />
-            <TextInput
+            <Field
               mode="outlined"
               label="Custom instructions"
               placeholder="e.g. Be direct. Explain code step by step. Use metric units."
@@ -482,6 +482,17 @@ export function SettingsView() {
               ]}
             />
           </View>
+          {Platform.OS !== 'web' && (
+            <>
+              <Divider />
+              <Row
+                title="Vibrate on taps"
+                description="A light buzz when you tap buttons"
+                left={(p) => <List.Icon {...p} icon="vibrate" />}
+                right={(p) => <Switch style={p.style} value={settings.haptics} onValueChange={(v) => updateSettings({ haptics: v })} />}
+              />
+            </>
+          )}
         </Section>
 
         {Platform.OS === 'web' && (

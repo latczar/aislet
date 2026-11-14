@@ -12,11 +12,12 @@ import type { Engine, EngineStatus } from './engine/types';
 import { type HubInfo, type HubTarget, STALE_PC_KEY, hubHeaders, hubPing, hubSync, localHub } from './hub';
 import { KEYS, load, newId, remove, save, today } from './storage';
 import { exportFile, pickFile } from './transfer';
+import { setHaptics } from './ui/actions';
 import type { Backup, Chat, ChatSummary, Memory, MemoryCategory, Message, Note, NoteHit, Settings } from './types';
 
 const DEFAULT_SETTINGS: Settings = {
   name: '', learn: true, modelId: 'qwen3.5-4b', instructions: '', length: 'balanced', appearance: 'light',
-  hubUrl: '', hubKey: '', useLaptop: true, accel: 'cpu', performance: 'balanced', onboarded: false,
+  hubUrl: '', hubKey: '', useLaptop: true, accel: 'cpu', performance: 'balanced', haptics: true, onboarded: false,
 };
 const HISTORY = 20; // messages of the current chat the model sees
 const DELETED_KEY = 'deleted';
@@ -292,6 +293,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     (async () => {
       const s = { ...DEFAULT_SETTINGS, ...(await load<Partial<Settings>>(KEYS.settings, {})) };
+      setHaptics(s.haptics);
       setSettings(s);
       settingsRef.current = s;
       setMemories(await load<Memory[]>(KEYS.memories, []));
@@ -314,6 +316,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const next = { ...settingsRef.current, ...patch };
     settingsRef.current = next;
     setSettings(next);
+    setHaptics(next.haptics);
     await save(KEYS.settings, next);
     if ('modelId' in patch || 'hubUrl' in patch || 'hubKey' in patch || 'useLaptop' in patch) setTimeout(() => refreshStatus(), 0);
   }, [refreshStatus]);
