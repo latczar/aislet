@@ -552,16 +552,44 @@ def check_find_laptop() -> str:
     raise CheckFailed('Find my laptop found nothing within 60 s')
 
 
+def scroll_list() -> bool:
+    """Swipe up about a third of the screen. False when nothing moved: the end of the list."""
+    before = [(n.label, n.y1) for n in screen()]
+    h = screen_height()
+    shell(f'input swipe 540 {int(h * 0.7)} 540 {int(h * 0.35)} 300')
+    time.sleep(0.6)
+    return [(n.label, n.y1) for n in screen()] != before
+
+
 def forget(text_contains: str) -> int:
+    """Forget every fact containing this text, looking through the whole list (real facts push test ones down)."""
     count = 0
-    for _ in range(6):
+    scroll_to_top()
+    for _ in range(30):
         b = row_button(text_contains, 'Forget this')
-        if not b:
+        if b:
+            tap_xy(b.cx, b.cy)
+            confirm_alert('Forget')
+            count += 1
+            continue
+        if not scroll_list():
             break
-        tap_xy(b.cx, b.cy)
-        confirm_alert('Forget')
-        count += 1
+    scroll_to_top()
     return count
+
+
+def has_fact(text_contains: str) -> bool:
+    """Whether any fact in the whole list contains this text."""
+    scroll_to_top()
+    found = False
+    for _ in range(30):
+        if row_button(text_contains, 'Forget this'):
+            found = True
+            break
+        if not scroll_list():
+            break
+    scroll_to_top()
+    return found
 
 
 def check_memory() -> str:
@@ -569,18 +597,20 @@ def check_memory() -> str:
     go_tab('Memory')
     scroll_to_top()
     started_empty = bool(find(screen(), contains='Nothing yet'))
-    for fact in FACTS:
-        scroll_to_top()
-        tap(editable(screen())[0])  # the add-a-fact box is the only text box on the Memory screen
-        wait_keyboard(True)
-        clear_focused_field()
-        type_text(fact)
-        time.sleep(0.4)
-        hide_keyboard()
-        tap(wait_for('the Add button', text='Add'))
-        wait_for(f'the fact "{fact}"', timeout=8, text=fact)
     detail = 'added 2'
     try:
+        for fact in FACTS:
+            scroll_to_top()
+            tap(editable(screen())[0])  # the add-a-fact box is the only text box on the Memory screen
+            wait_keyboard(True)
+            clear_focused_field()
+            type_text(fact)
+            time.sleep(0.4)
+            hide_keyboard()
+            tap(wait_for('the Add button', text='Add'))
+            time.sleep(0.8)
+            scroll_to(f'the fact "{fact}"', timeout_swipes=12, text=fact)  # new facts go below the real ones
+        scroll_to_top()
         tidy = wait_for('the Tidy up button', text='Tidy up')
         if not tidy.enabled:
             raise CheckFailed('Tidy up is disabled (is the AI ready?)')
@@ -619,7 +649,7 @@ def check_memory() -> str:
                 tap_xy(b[0].cx, b[0].cy)
                 confirm_alert('Forget')
                 removed += 1
-    if find(screen(), contains='E2E test fact'):
+    if has_fact('E2E test fact'):
         raise CheckFailed('test facts still in memory after forgetting them')
     if started_empty and not find(screen(), contains='Nothing yet'):
         raise CheckFailed('memory not empty again after the test')
@@ -933,7 +963,8 @@ def check_share() -> str:
             if find(nodes, contains='needs your laptop'):
                 details.append('PDF: "needs your laptop" shown (laptop not connected)')
                 break
-            problem = find(nodes, contains='E2E-share.pdf has no readable text') or find(nodes, contains="Couldn't open")
+            problem = (find(nodes, contains='E2E-share.pdf has no readable text') or find(nodes, contains="Couldn't open")
+                       or find(nodes, contains="can't read PDFs") or find(nodes, contains="couldn't be read"))
             if problem:
                 raise CheckFailed(f'shared PDF not read: {problem[0].text}')
             if time.time() > end:
