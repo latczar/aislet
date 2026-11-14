@@ -11,6 +11,7 @@ import { ChatHeader, ChatView } from './ChatView';
 import { MemoryView } from './MemoryView';
 import { NotesView } from './NotesView';
 import { SettingsView } from './SettingsView';
+import { focusSoon, useShortcuts } from './shortcuts';
 import { FONT } from './theme';
 
 type ViewKey = 'chat' | 'memory' | 'notes' | 'settings';
@@ -41,6 +42,24 @@ export function Shell() {
     newChat();
     setView('chat');
   };
+
+  useShortcuts({
+    newChat: () => {
+      if (busy) return;
+      startChat();
+      setChatsOpen(false);
+      focusSoon('message');
+    },
+    typeMessage: () => {
+      setChatsOpen(false);
+      setView('chat');
+      focusSoon('message');
+    },
+    searchChats: () => {
+      if (!wide) setChatsOpen(true);
+      focusSoon('search');
+    },
+  });
 
   if (wide) {
     return (

@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { IconButton, Searchbar, Text, TouchableRipple, useTheme } from 'react-native-paper';
 import { useStore } from '../store';
 import type { ChatSummary } from '../types';
 import { confirm } from './confirm';
+import { registerFocus } from './shortcuts';
 
 function group(chats: ChatSummary[]): [string, ChatSummary[]][] {
   const startOfToday = new Date().setHours(0, 0, 0, 0);
@@ -22,6 +23,9 @@ export function ChatList({ onPicked }: { onPicked?: () => void }) {
   const theme = useTheme();
   const { chats, chat, openChat, deleteChat } = useStore();
   const [query, setQuery] = useState('');
+  const search = useRef<{ focus(): void }>(null);
+  const searchable = chats.length > 4;
+  useEffect(() => (searchable ? registerFocus('search', () => search.current?.focus()) : undefined), [searchable]);
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
     return group(q ? chats.filter((c) => c.title.toLowerCase().includes(q)) : chats);
@@ -29,8 +33,9 @@ export function ChatList({ onPicked }: { onPicked?: () => void }) {
 
   return (
     <View style={styles.flex}>
-      {chats.length > 4 && (
+      {searchable && (
         <Searchbar
+          ref={search as never}
           placeholder="Search chats"
           value={query}
           onChangeText={setQuery}

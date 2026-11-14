@@ -39,6 +39,13 @@ TypeScript · React Native (Expo) · React Native Paper · Ollama on Windows · 
   ```
 
   Release builds are signed when the `UNTETHERED_*` properties are set in `~/.gradle/gradle.properties`.
+- **Install on a phone with adb:**
+
+  ```bash
+  adb install --user 0 -r release/Untethered.apk
+  ```
+
+  Use `--user 0` on phones with a second profile, such as Samsung Dual Apps or Secure Folder. Without it the app installs into every profile and shows two icons.
 - **Release files:**
 
   ```powershell

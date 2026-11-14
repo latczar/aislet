@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, TextInput,
-  View, useWindowDimensions,
+  type TextInputInstance, View, useWindowDimensions,
 } from 'react-native';
 import { ActivityIndicator, Button, Icon, IconButton, Menu, ProgressBar, Snackbar, Surface, Text, useTheme } from 'react-native-paper';
 import { engine } from '../engine';
@@ -13,6 +13,7 @@ import { formatSize } from './confirm';
 import { cancelDownload, startDownload, useDownload } from './downloads';
 import { Markdown } from './Markdown';
 import { FONT, STATUS_COLOURS } from './theme';
+import { registerFocus } from './shortcuts';
 import { useVoice, voiceSupported } from './voice';
 
 const SUGGESTIONS = [
@@ -205,6 +206,8 @@ function Composer({ ready }: { ready: boolean }) {
   const [reading, setReading] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const before = useRef('');
+  const input = useRef<TextInputInstance>(null);
+  useEffect(() => registerFocus('message', () => input.current?.focus()), []);
   const voice = useVoice((heard, final) => {
     setText(before.current ? `${before.current} ${heard}` : heard);
     if (final) before.current = '';
@@ -310,6 +313,7 @@ function Composer({ ready }: { ready: boolean }) {
           <Menu.Item leadingIcon="file-document-outline" title="PDF or text file" onPress={addFile} />
         </Menu>
         <TextInput
+          ref={input}
           value={text}
           onChangeText={setText}
           placeholder={!ready ? 'Getting ready…' : voice.listening ? 'Listening…' : 'Message'}

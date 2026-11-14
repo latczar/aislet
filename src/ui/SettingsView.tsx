@@ -13,6 +13,7 @@ import type { Accel, AnswerLength, Appearance, Performance } from '../types';
 import { formatWhen } from './confirm';
 import { confirm, formatSize } from './confirm';
 import { cancelDownload, startDownload, useDownload } from './downloads';
+import { SHORTCUTS } from './shortcuts';
 import { FONT, STATUS_COLOURS } from './theme';
 
 function Section({ title, children, footer }: { title: string; children: React.ReactNode; footer?: string }) {
@@ -242,11 +243,25 @@ export function SettingsView() {
               buttons={[
                 { value: 'light', label: 'Light', icon: 'white-balance-sunny' },
                 { value: 'dark', label: 'Dark', icon: 'weather-night' },
-                { value: 'system', label: 'Match phone', icon: 'theme-light-dark' },
+                { value: 'system', label: Platform.OS === 'web' ? 'Match system' : 'Match phone', icon: 'theme-light-dark' },
               ]}
             />
           </View>
         </Section>
+
+        {Platform.OS === 'web' && (
+          <Section title="Keyboard shortcuts">
+            {SHORTCUTS.map((s, i) => (
+              <View key={s.label}>
+                {i > 0 && <Divider />}
+                <List.Item
+                  title={s.label}
+                  right={() => <Text variant="labelLarge" style={[styles.keys, { color: theme.colors.onSurfaceVariant }]}>{s.keys}</Text>}
+                />
+              </View>
+            ))}
+          </Section>
+        )}
 
         <Section title="How it answers" footer="Instructions apply to every chat, on top of what it remembers about you.">
           <View style={styles.pad}>
@@ -421,6 +436,7 @@ const styles = StyleSheet.create({
   instructions: { minHeight: 96 },
   radio: { justifyContent: 'center', alignItems: 'center', paddingLeft: 4, minWidth: 40 },
   statusDot: { width: 10, height: 10, borderRadius: 5 },
+  keys: { alignSelf: 'center', fontFamily: FONT.medium },
   leftButton: { alignSelf: 'flex-start' },
   pairGrid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', rowGap: 6, columnGap: 16 },
   mono: { fontFamily: Platform.select({ web: 'ui-monospace, Consolas, monospace', android: 'monospace', default: 'Menlo' }), minWidth: '60%' },
