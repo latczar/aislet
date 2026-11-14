@@ -8,6 +8,7 @@ TypeScript · React Native (Expo) · React Native Paper · Ollama on Windows · 
 - `src/store.tsx`: app state, learning and sync.
 - `src/brain.ts`: prompts, memory and notes search.
 - `src/ui`: the screens.
+- `src/ui/share.ts`: "Share to Untethered" on Android. The share filters are the `expo-sharing` plugin's options in `app.json`: single text, images and PDFs, or several images. A share opens a new chat with the text, photos (as JPEGs, at most 3) or files in the message box, ready to send. Shared PDFs are read by the laptop, as when attached. Only shared files are resolved: resolving shared text would make `expo-sharing` open any web link in it, and nothing in Untethered goes online by itself.
 - `pc/hub.py`: the laptop hub. It serves the PC app on :8766 and handles sync, Ollama passthrough and PDF text.
 - `install/install.ps1`: the Windows installer. `scripts/package.ps1` makes the release files.
 
@@ -103,6 +104,7 @@ python e2e/phone/run.py
 | `launch` | The app starts from cold and its AI becomes ready. |
 | `chat_typing` | Typed text shows in the message box. The box and Send stay above the keyboard, and the tabs hide while typing. Long text grows the box up to its 160 dp limit, and it shrinks again when cleared. |
 | `chat_send` | Tapping Send with the keyboard open sends the message, clears the box, and a reply arrives. |
+| `share` | Android shares reach the app. Text shared while the app is open on another tab opens a new chat with the text in the message box, unsent. A photo shared while the app is closed starts it with the photo attached. A shared PDF is read by the laptop and attached, or, when the laptop isn't connected, the app says it needs the laptop. |
 | `text_fields` | Typing shows, above the keyboard, in Memory's "Add a fact", a new note's title and text, and Settings' name and custom instructions. |
 | `find_laptop` | Settings → Home shows the pairing status. When paired, Advanced → "Find again" finds the laptop with the same code and stays connected. When not paired, "Find my laptop" lists it. It never unpairs. |
 | `memory` | Two facts are added, "Tidy up" runs, and the facts are forgotten again. Suggestions are applied only when memory held nothing else; otherwise they're cancelled. |
@@ -113,6 +115,7 @@ python e2e/phone/run.py
 The checks use made-up text starting "E2E" and clean up after themselves:
 
 - The test chat is deleted.
+- Shared text, photos and PDFs are removed from the message box unsent. The made-up picture and PDF are pushed to the app's own folder (`Android/data/app.untethered.assistant/files/e2e`), never the gallery, and deleted afterwards.
 - Test facts are forgotten.
 - Notes are never saved.
 - Text added to the name and instructions boxes is deleted before they save.

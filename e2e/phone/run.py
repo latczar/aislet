@@ -23,7 +23,9 @@ import re
 import subprocess
 import sys
 import time
+import struct
 import xml.etree.ElementTree as ET
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -804,10 +806,149 @@ def check_haptics() -> str:
     return f"switched {'off and on' if original else 'on and off'}"
 
 
+# Files to share live in the app's own folder on the phone, so the app can read them without any storage
+# permission and they never reach the gallery or a photo backup.
+SHARE_DIR = f'/sdcard/Android/data/{PKG}/files/e2e'
+SHARED_TEXT = 'E2E shared text check 42'
+
+
+def safe_front(doing: str) -> None:
+    """Stop unless Untethered or the home screen is in front, so nothing lands in another app."""
+    front = foreground()
+    if front != PKG and not any(l in front for l in LAUNCHERS):
+        raise CheckFailed(f'stopped before {doing}: another app is in front ({front})')
+
+
+def share_to_app(mime: str, extras: str) -> None:
+    """Send an Android share (ACTION_SEND) the way the share sheet does, limited to Untethered."""
+    out = shell(f'am start -W -a android.intent.action.SEND -t {mime} {extras} -p {PKG}')
+    if 'Error' in out:
+        raise CheckFailed(f'Android does not offer Untethered for {mime}: {out.strip()}')
+
+
+def test_png(w: int = 360, h: int = 240) -> bytes:
+    """A made-up picture (a colour gradient)."""
+    rows = b''.join(b'\x00' + bytes(v for x in range(w) for v in (x * 255 // w, y * 255 // h, 140)) for y in range(h))
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xFFFFFFFF)
+    return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
+            + chunk(b'IDAT', zlib.compress(rows)) + chunk(b'IEND', b''))
+
+
+def test_pdf(text: str) -> bytes:
+    """A one-page PDF with a line of made-up text."""
+    stream = f'BT /F1 18 Tf 72 720 Td ({text}) Tj ET'.encode()
+    objects = [
+        b'<< /Type /Catalog /Pages 2 0 R >>',
+        b'<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+        b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+        b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+        b'<< /Length %d >>\nstream\n' % len(stream) + stream + b'\nendstream',
+    ]
+    out, offsets = b'%PDF-1.4\n', []
+    for i, body in enumerate(objects, 1):
+        offsets.append(len(out))
+        out += b'%d 0 obj\n' % i + body + b'\nendobj\n'
+    xref = len(out)
+    out += b'xref\n0 %d\n0000000000 65535 f \n' % (len(objects) + 1)
+    out += b''.join(b'%010d 00000 n \n' % o for o in offsets)
+    return out + b'trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n' % (len(objects) + 1, xref)
+
+
+def push_test_file(name: str, data: bytes) -> str:
+    OUT.mkdir(exist_ok=True)
+    local = OUT / name
+    local.write_bytes(data)
+    try:
+        shell(f'mkdir -p {SHARE_DIR}')
+        adb('push', str(local), f'{SHARE_DIR}/{name}')
+    finally:
+        local.unlink(missing_ok=True)
+    return f'file://{SHARE_DIR}/{name}'
+
+
+def wait_message_text(text: str, timeout: float = 15) -> Node:
+    end = time.time() + timeout
+    while True:
+        boxes = editable(screen())
+        if boxes and boxes[-1].text == text:
+            return boxes[-1]
+        if time.time() > end:
+            raise CheckFailed(f"message box shows {boxes[-1].text if boxes else None!r}, expected the shared text")
+        time.sleep(0.5)
+
+
+def check_share() -> str:
+    """Text, a photo and a PDF shared from another app each open a new chat with them in the message box."""
+    details = []
+    try:
+        # Text, while the app is open on another tab.
+        go_tab('Memory')
+        safe_front('sharing text')
+        share_to_app('text/plain', f"--es android.intent.extra.TEXT '{SHARED_TEXT}'")
+        box = wait_message_text(SHARED_TEXT)
+        if foreground() != PKG:
+            raise CheckFailed('Untethered is not in front after sharing text')
+        if not find(screen(), text='New chat'):
+            raise CheckFailed('sharing text did not open a new chat')
+        if any(n.text == SHARED_TEXT and not n.cls.endswith('EditText') for n in screen()):
+            raise CheckFailed('the shared text was sent; it should wait in the message box')
+        tap(box)
+        wait_keyboard(True)
+        clear_focused_field()
+        hide_keyboard()
+        details.append('text (app open)')
+
+        # A photo, with the app closed: it starts with the share.
+        uri = push_test_file('E2E-share.png', test_png())
+        safe_front('going to the home screen')
+        key(3)  # home, so the app can be closed without another app coming to the front
+        time.sleep(1)
+        shell(f'am force-stop {PKG}')
+        safe_front('sharing a photo')
+        share_to_app('image/png', f'--eu android.intent.extra.STREAM {uri}')
+        remove = wait_for('the shared photo in the message box', timeout=40, desc='Remove photo')
+        if foreground() != PKG:
+            raise CheckFailed('Untethered is not in front after sharing a photo')
+        if len(find(screen(), desc='Remove photo')) != 1:
+            raise CheckFailed('expected exactly one shared photo')
+        tap(remove)
+        wait_gone('the shared photo', desc='Remove photo')
+        details.append('photo (app closed)')
+
+        # A PDF: the laptop reads its text, so wait for the AI to be ready first.
+        wait_for('a ready AI', timeout=90, contains='· private')
+        uri = push_test_file('E2E-share.pdf', test_pdf('E2E shared PDF check'))
+        safe_front('sharing a PDF')
+        share_to_app('application/pdf', f'--eu android.intent.extra.STREAM {uri}')
+        end = time.time() + 60
+        while True:
+            nodes = screen()
+            if find(nodes, text='E2E-share.pdf') and find(nodes, desc='Remove file') and not find(nodes, text='Reading file…'):
+                tap(find(nodes, desc='Remove file')[0])
+                wait_gone('the shared PDF', desc='Remove file')
+                details.append('PDF read by the laptop')
+                break
+            if find(nodes, contains='needs your laptop'):
+                details.append('PDF: "needs your laptop" shown (laptop not connected)')
+                break
+            problem = find(nodes, contains='E2E-share.pdf has no readable text') or find(nodes, contains="Couldn't open")
+            if problem:
+                raise CheckFailed(f'shared PDF not read: {problem[0].text}')
+            if time.time() > end:
+                raise CheckFailed('the shared PDF did not appear in the message box within 60 s')
+            time.sleep(1)
+    finally:
+        adb('shell', f'rm -rf {SHARE_DIR}', check=False)
+    return ', '.join(details)
+
+
 CHECKS = {
     'launch': check_launch,
     'chat_typing': check_chat_typing,
     'chat_send': check_chat_send,
+    'share': check_share,
     'text_fields': check_text_fields,
     'find_laptop': check_find_laptop,
     'memory': check_memory,
