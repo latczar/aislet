@@ -12,7 +12,7 @@ irm https://raw.githubusercontent.com/latczar/untethered/main/install/install.ps
 
 **Android:** download `Untethered.apk` from the [latest release](https://github.com/latczar/untethered/releases/latest), install it and follow the set-up.
 
-To link them, open Settings → Home on the phone and enter the address and code shown in Settings → Home on the computer.
+To link them, open Settings → Home on the phone, tap **Find my laptop** (or type the address), then enter the code shown in Settings → Home on the computer. Both need to be on the same Wi-Fi.
 
 ## What it does
 

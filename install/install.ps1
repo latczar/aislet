@@ -116,7 +116,7 @@ try {
   Step 'Opening Untethered'
   Start-Process $pyw -ArgumentList "`"$(Join-Path $AppDir 'pc\launch.py')`""
   Write-Host "`nAll done. Open Untethered from the Start menu any time." -ForegroundColor Green
-  Write-Host 'For your phone: install Untethered.apk from the releases page, then go to Settings > Home and enter the address and code shown on this computer.'
+  Write-Host 'For your phone: install Untethered.apk from the releases page, then go to Settings > Home, tap Find my laptop and enter the code shown on this computer.'
 } catch {
   Write-Host "`nInstall stopped: $($_.Exception.Message)" -ForegroundColor Red
   Write-Host 'Nothing was half-replaced: an earlier install, if any, is still in place.'
