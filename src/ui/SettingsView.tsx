@@ -14,6 +14,7 @@ import type { Accel, AnswerLength, Appearance, Performance } from '../types';
 import { formatWhen } from './confirm';
 import { confirm, formatSize } from './confirm';
 import { cancelDownload, startDownload, useDownload } from './downloads';
+import { Lead, Row } from './rows';
 import { SHORTCUTS } from './shortcuts';
 import { FONT, STATUS_COLOURS } from './theme';
 
@@ -30,34 +31,33 @@ function Section({ title, children, footer }: { title: string; children: React.R
   );
 }
 
-function ModelRow({ model, selected, onSelect, onChanged }: {
-  model: ModelInfo; selected?: boolean; onSelect?: () => void; onChanged: () => void;
+function ModelRow({ model, selected, onSelect, onChanged, icon = 'text-search' }: {
+  model: ModelInfo; selected?: boolean; onSelect?: () => void; onChanged: () => void; icon?: string;
 }) {
   const theme = useTheme();
   const dl = useDownload(model.id);
   return (
     <View>
-      <List.Item
+      <Row
         title={model.name}
-        titleStyle={{ fontFamily: FONT.medium }}
         description={`${model.note} ${formatSize(model.size)}`}
-        descriptionNumberOfLines={2}
         onPress={model.downloaded && onSelect ? onSelect : undefined}
         left={(p) =>
           onSelect ? (
-            <View style={styles.radio}>
+            <Lead style={p.style}>
               <RadioButton value={model.id} status={selected ? 'checked' : 'unchecked'} disabled={!model.downloaded} onPress={onSelect} />
-            </View>
+            </Lead>
           ) : (
-            <List.Icon {...p} icon="text-search" />
+            <List.Icon {...p} icon={icon} />
           )
         }
-        right={() =>
+        right={(p) =>
           dl.progress !== null ? (
-            <Button compact onPress={() => cancelDownload(model.id)}>Cancel</Button>
+            <Button mode="contained-tonal" compact style={p.style} onPress={() => cancelDownload(model.id)}>Cancel</Button>
           ) : model.downloaded ? (
             <IconButton
               icon="trash-can-outline"
+              style={[styles.iconAction, p.style]}
               iconColor={theme.colors.onSurfaceVariant}
               accessibilityLabel={`Delete ${model.name}`}
               onPress={async () => {
@@ -68,7 +68,7 @@ function ModelRow({ model, selected, onSelect, onChanged }: {
               }}
             />
           ) : (
-            <Button mode="contained-tonal" compact icon="download" onPress={() => startDownload(model.id, () => { onChanged(); onSelect?.(); })}>
+            <Button mode="contained-tonal" compact style={p.style} onPress={() => startDownload(model.id, () => { onChanged(); onSelect?.(); })}>
               Get
             </Button>
           )
@@ -104,10 +104,14 @@ function PairPhone() {
         On your phone, open {APP_NAME} → Settings → Home and tap Find my laptop (or type the address), then enter the code:
       </Text>
       <View style={styles.pairGrid}>
-        <Text variant="labelLarge" style={{ color: theme.colors.onSurfaceVariant }}>Address</Text>
-        <Text variant="titleMedium" selectable style={styles.mono}>{info.urls[0]?.replace('http://', '').replace(':8766', '') ?? 'Connect to Wi-Fi first'}</Text>
-        <Text variant="labelLarge" style={{ color: theme.colors.onSurfaceVariant }}>Code</Text>
-        <Text variant="titleLarge" selectable style={[styles.mono, { color: theme.colors.primary, letterSpacing: 3 }]}>{info.code}</Text>
+        <View style={styles.pairRow}>
+          <Text variant="labelLarge" style={[styles.pairLabel, { color: theme.colors.onSurfaceVariant }]}>Address</Text>
+          <Text variant="titleMedium" selectable style={styles.mono}>{info.urls[0]?.replace('http://', '').replace(':8766', '') ?? 'Connect to Wi-Fi first'}</Text>
+        </View>
+        <View style={styles.pairRow}>
+          <Text variant="labelLarge" style={[styles.pairLabel, { color: theme.colors.onSurfaceVariant }]}>Code</Text>
+          <Text variant="titleLarge" selectable style={[styles.mono, { color: theme.colors.primary, letterSpacing: 3 }]}>{info.code}</Text>
+        </View>
       </View>
       <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
         Both need to be on the same Wi-Fi. The first time, Windows may ask whether Python can use the network: choose Allow.
@@ -116,7 +120,7 @@ function PairPhone() {
       <Button
         mode="text"
         icon="refresh"
-        style={styles.leftButton}
+        style={[styles.leftButton, styles.textButtonFlush]}
         onPress={async () => {
           if (await confirm('Make a new code?', 'Phones using the old code will need the new one before they can sync again.', 'New code')) {
             hubNewCode().then(setInfo).catch((e) => setProblem((e as Error).message));
@@ -188,38 +192,41 @@ function ConnectLaptop() {
     const looking = !!search && !search.done;
     return (
       <View>
-        <List.Item
+        <Row
           title={hub.connected ? `Connected to ${hub.name ?? 'your laptop'}` : 'Laptop not reachable'}
-          titleStyle={{ fontFamily: FONT.medium }}
           description={hub.connected
             ? (hub.syncing ? 'Syncing…' : hub.lastSync ? `Synced ${formatWhen(hub.lastSync)}` : 'Ready to sync')
             : `${hub.problem ?? ''} It works on its own until you're home.`.trim()}
-          descriptionNumberOfLines={3}
-          left={() => (
-            <View style={styles.radio}>
+          left={(p) => (
+            <Lead style={p.style}>
               <View style={[styles.statusDot, { backgroundColor: hub.connected ? STATUS_COLOURS.ready : STATUS_COLOURS.checking }]} />
-            </View>
+            </Lead>
           )}
-          right={() => <Button compact onPress={() => (hub.connected ? syncNow() : refreshStatus())}>{hub.connected ? 'Sync' : 'Retry'}</Button>}
+          right={(p) => (
+            <Button mode="contained-tonal" compact style={p.style} onPress={() => (hub.connected ? syncNow() : refreshStatus())}>
+              {hub.connected ? 'Sync' : 'Retry'}
+            </Button>
+          )}
         />
         <Divider />
-        <List.Item
+        <Row
           title="Laptop's address"
           description={looking ? `Looking on your Wi-Fi… ${Math.round(search.progress * 100)}%` : note ?? settings.hubUrl.replace(/^https?:\/\//, '').replace(/:8766$/, '')}
-          right={() => (looking
-            ? <Button compact onPress={() => { cancelSearch.current?.abort(); setSearch(null); }}>Cancel</Button>
-            : <Button compact icon="magnify" onPress={findAgain}>Find again</Button>)}
+          left={(p) => <List.Icon {...p} icon="ip-network-outline" />}
+          right={(p) => (looking
+            ? <Button mode="contained-tonal" compact style={p.style} onPress={() => { cancelSearch.current?.abort(); setSearch(null); }}>Cancel</Button>
+            : <Button mode="contained-tonal" compact style={p.style} onPress={findAgain}>Find again</Button>)}
         />
         {problem && <Text variant="bodySmall" style={[styles.refindProblem, { color: theme.colors.error }]}>{problem}</Text>}
         <Divider />
-        <List.Item
+        <Row
           title="Use the laptop's AI at home"
           description="Better answers and a cooler phone when the laptop is reachable"
-          descriptionNumberOfLines={2}
-          right={() => <Switch value={settings.useLaptop} onValueChange={(v) => updateSettings({ useLaptop: v })} />}
+          left={(p) => <List.Icon {...p} icon="laptop" />}
+          right={(p) => <Switch style={p.style} value={settings.useLaptop} onValueChange={(v) => updateSettings({ useLaptop: v })} />}
         />
         <Divider />
-        <List.Item
+        <Row
           title="Disconnect"
           titleStyle={{ color: theme.colors.error }}
           left={(p) => <List.Icon {...p} icon="link-off" color={theme.colors.error} />}
@@ -360,9 +367,9 @@ export function SettingsView() {
             {SHORTCUTS.map((s, i) => (
               <View key={s.label}>
                 {i > 0 && <Divider />}
-                <List.Item
+                <Row
                   title={s.label}
-                  right={() => <Text variant="labelLarge" style={[styles.keys, { color: theme.colors.onSurfaceVariant }]}>{s.keys}</Text>}
+                  right={(p) => <Text variant="labelLarge" style={[p.style, styles.keys, { color: theme.colors.onSurfaceVariant }]}>{s.keys}</Text>}
                 />
               </View>
             ))}
@@ -404,17 +411,15 @@ export function SettingsView() {
         </Section>
 
         <Section title="AI model">
-          <List.Item
+          <Row
             title={status?.label ?? 'Checking…'}
-            titleStyle={{ fontFamily: FONT.medium }}
             description={status?.ready ? 'Ready. Works with no internet.' : status?.problem}
-            descriptionNumberOfLines={3}
-            left={() => (
-              <View style={styles.radio}>
+            left={(p) => (
+              <Lead style={p.style}>
                 <View style={[styles.statusDot, { backgroundColor: !status || status.starting ? STATUS_COLOURS.checking : status.ready ? STATUS_COLOURS.ready : STATUS_COLOURS.problem }]} />
-              </View>
+              </Lead>
             )}
-            right={() => <Button compact onPress={refreshStatus}>Check</Button>}
+            right={(p) => <Button mode="contained-tonal" compact style={p.style} onPress={refreshStatus}>Check</Button>}
           />
           {engine.models && (
             <>
@@ -427,7 +432,7 @@ export function SettingsView() {
               <Divider />
               <ModelRow model={engine.models.searchModel()} onChanged={changed} />
               <Divider />
-              <ModelRow model={engine.models.visionModel()} onChanged={changed} />
+              <ModelRow model={engine.models.visionModel()} onChanged={changed} icon="image-search-outline" />
             </>
           )}
         </Section>
@@ -476,14 +481,14 @@ export function SettingsView() {
           title="Your data"
           footer="Export makes a file with your memory and notes. Import it on your other device to bring them over. Chats stay where they are."
         >
-          <List.Item
+          <Row
             title="Export memory and notes"
             description={`${memories.length} facts · ${notes.length} notes`}
             left={(p) => <List.Icon {...p} icon="export-variant" />}
             onPress={() => exportData().catch((e) => setToast((e as Error).message))}
           />
           <Divider />
-          <List.Item
+          <Row
             title="Import from a backup"
             description="Adds anything new; nothing is overwritten"
             left={(p) => <List.Icon {...p} icon="import" />}
@@ -497,7 +502,7 @@ export function SettingsView() {
             }}
           />
           <Divider />
-          <List.Item
+          <Row
             title="Delete all chats"
             titleStyle={{ color: theme.colors.error }}
             description={`${chats.length} ${chats.length === 1 ? 'chat' : 'chats'}. Memory and notes are kept.`}
@@ -536,21 +541,24 @@ const styles = StyleSheet.create({
   sectionTitle: { paddingHorizontal: 4 },
   card: { borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   footer: { paddingHorizontal: 4, lineHeight: 18 },
-  profile: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14 },
-  pad: { padding: 14, gap: 12 },
+  profile: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16 },
+  pad: { padding: 16, gap: 12 },
   label: {},
   instructions: { minHeight: 96 },
-  radio: { justifyContent: 'center', alignItems: 'center', paddingLeft: 4, minWidth: 40 },
+  iconAction: { margin: 0 },
   statusDot: { width: 10, height: 10, borderRadius: 5 },
-  keys: { alignSelf: 'center', fontFamily: FONT.medium },
+  keys: { fontFamily: FONT.medium },
   finding: { gap: 6 },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   findBar: { height: 4, borderRadius: 2 },
   foundRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
   leftButton: { alignSelf: 'flex-start' },
   refindProblem: { paddingHorizontal: 16, paddingBottom: 10 },
-  pairGrid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', rowGap: 6, columnGap: 16 },
-  mono: { fontFamily: Platform.select({ web: 'ui-monospace, Consolas, monospace', android: 'monospace', default: 'Menlo' }), minWidth: '60%' },
+  pairGrid: { gap: 6 },
+  pairRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  pairLabel: { width: 64 },
+  mono: { fontFamily: Platform.select({ web: 'ui-monospace, Consolas, monospace', android: 'monospace', default: 'Menlo' }), flexShrink: 1 },
+  textButtonFlush: { marginLeft: -12 }, // lines a text button's label up with the text above it
   progress: { paddingHorizontal: 16, paddingBottom: 12, gap: 6 },
   bar: { height: 6, borderRadius: 3 },
   about: { marginTop: 16, lineHeight: 18, paddingHorizontal: 4 },

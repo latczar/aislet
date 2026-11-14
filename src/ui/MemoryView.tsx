@@ -8,6 +8,7 @@ import { CATEGORIES, type TidyChange } from '../brain';
 import { useStore } from '../store';
 import type { Memory } from '../types';
 import { confirm } from './confirm';
+import { Row } from './rows';
 import { FONT } from './theme';
 
 /** One suggested change: what goes, what replaces it and why. */
@@ -82,16 +83,15 @@ export function MemoryView({ onStartInterview }: { onStartInterview: () => void 
       </Text>
 
       <Surface style={card} elevation={0}>
-        <List.Item
+        <Row
           title="Get to know me"
-          titleStyle={{ fontFamily: FONT.medium }}
           description="A short chat where it asks about you, one question at a time"
-          descriptionNumberOfLines={2}
           left={(p) => <List.Icon {...p} icon="account-heart-outline" color={theme.colors.primary} />}
-          right={() => (
+          right={(p) => (
             <Button
               mode="contained-tonal"
               compact
+              style={p.style}
               disabled={!status?.ready || busy}
               onPress={() => { onStartInterview(); startInterview(); }}
             >
@@ -100,22 +100,21 @@ export function MemoryView({ onStartInterview }: { onStartInterview: () => void 
           )}
         />
         <Divider />
-        <List.Item
+        <Row
           title="Learn from my chats"
           description="Saves lasting facts and preferences as you talk"
-          right={() => <Switch value={settings.learn} onValueChange={(v) => updateSettings({ learn: v })} />}
+          left={(p) => <List.Icon {...p} icon="lightbulb-on-outline" color={theme.colors.primary} />}
+          right={(p) => <Switch style={p.style} value={settings.learn} onValueChange={(v) => updateSettings({ learn: v })} />}
         />
         <Divider />
-        <List.Item
+        <Row
           title="Tidy up memory"
-          titleStyle={{ fontFamily: FONT.medium }}
           description={tidying ? 'Looking for duplicates and out-of-date facts…' : 'Finds duplicates and out-of-date facts. You approve each change.'}
-          descriptionNumberOfLines={2}
           left={(p) => <List.Icon {...p} icon="broom" color={theme.colors.primary} />}
-          right={() => (tidying
-            ? <ActivityIndicator size={18} style={styles.tidySpinner} accessibilityLabel="Tidying" />
+          right={(p) => (tidying
+            ? <ActivityIndicator size={18} style={[p.style, styles.tidySpinner]} accessibilityLabel="Tidying" />
             : (
-              <Button mode="contained-tonal" compact disabled={!status?.ready || busy || memories.length < 2} onPress={tidy}>
+              <Button mode="contained-tonal" compact style={p.style} disabled={!status?.ready || busy || memories.length < 2} onPress={tidy}>
                 Tidy up
               </Button>
             ))}
@@ -126,12 +125,12 @@ export function MemoryView({ onStartInterview }: { onStartInterview: () => void 
             mode="outlined"
             dense
             style={styles.flex}
-            placeholder="Add a fact, e.g. I prefer short answers"
+            placeholder="Add a fact about you"
             value={fact}
             onChangeText={setFact}
             onSubmitEditing={add}
           />
-          <Button mode="contained-tonal" onPress={add} disabled={!fact.trim()}>Add</Button>
+          <Button mode="contained-tonal" compact onPress={add} disabled={!fact.trim()}>Add</Button>
         </View>
       </Surface>
 
@@ -157,10 +156,11 @@ export function MemoryView({ onStartInterview }: { onStartInterview: () => void 
                       title={m.fact}
                       titleNumberOfLines={4}
                       description={m.added}
-                      right={() => (
+                      right={(p) => (
                         <IconButton
                           icon="close"
                           size={18}
+                          style={[styles.iconAction, p.style]}
                           accessibilityLabel="Forget this"
                           onPress={async () => {
                             if (await confirm('Forget this?', m.fact, 'Forget')) removeMemory(m.id);
@@ -210,12 +210,13 @@ const styles = StyleSheet.create({
   page: { padding: 20, gap: 14, width: '100%', maxWidth: 760, alignSelf: 'center' },
   h1: { fontFamily: FONT.semibold },
   card: { borderRadius: 18, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth },
-  addRow: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12 },
+  addRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 16, paddingRight: 24, paddingVertical: 12 },
+  iconAction: { margin: 0 },
   flex: { flex: 1 },
   empty: { padding: 4 },
   group: { gap: 8 },
   groupHead: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4 },
-  tidySpinner: { marginHorizontal: 12 },
+  tidySpinner: { marginRight: 22 },
   dialog: { maxWidth: 560, width: '92%', alignSelf: 'center', maxHeight: '85%' },
   dialogScroll: { paddingHorizontal: 0 },
   tidyList: { paddingHorizontal: 20, paddingVertical: 12, gap: 14 },
