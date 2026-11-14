@@ -318,7 +318,8 @@ FACTS = ['E2E test fact: favourite colour is teal', 'E2E test fact: likes the co
 def check_launch() -> str:
     """Start the app from cold and wait until its AI is ready."""
     shell(f'am force-stop {PKG}')
-    shell(f'monkey -p {PKG} -c android.intent.category.LAUNCHER 1')
+    # A fresh task (NEW_TASK | CLEAR_TASK), so a browser tab the app opened earlier can't stay on top.
+    shell(f'am start -W -n {PKG}/.MainActivity -f 0x10008000')
     wait_for('the Chat tab', timeout=20, text='Chat')
     status = wait_for('a ready AI (status ending "private")', timeout=90, contains='· private')
     if foreground() != PKG:
@@ -855,8 +856,8 @@ def main() -> int:
     names = args.checks or list(CHECKS)
     if 'launch' not in names:
         names = ['launch', *names]  # every run starts from a fresh launch
-    failed = 0
-    for name in names:
+    failed = skipped = 0
+    for i, name in enumerate(names):
         started = time.time()
         try:
             detail = CHECKS[name]()
@@ -870,8 +871,12 @@ def main() -> int:
             except Exception:
                 pass
             if name == 'launch':
+                skipped = len(names) - i - 1
+                for rest in names[i + 1:]:
+                    print(f'SKIP {rest}: the app did not start', flush=True)
                 break
-    print(f"{len(names) - failed}/{len(names)} passed" + (f'; evidence in {OUT}' if failed else ''))
+    passed = len(names) - failed - skipped
+    print(f"{passed}/{len(names)} passed" + (f', {skipped} not run' if skipped else '') + (f'; evidence in {OUT}' if failed else ''))
     return 1 if failed else 0
 
 
