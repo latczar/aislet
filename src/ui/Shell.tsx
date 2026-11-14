@@ -1,5 +1,5 @@
 // Layout: a sidebar on the PC, a header and bottom tabs on the phone.
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Image, Modal, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { BottomNavigation, Button, Divider, Drawer, IconButton, Text, useTheme } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,6 +12,7 @@ import { MemoryView } from './MemoryView';
 import { NotesView } from './NotesView';
 import { SettingsView } from './SettingsView';
 import { useKeyboardInset } from './keyboard';
+import { type Incoming, useIncomingShare } from './share';
 import { focusSoon, useShortcuts } from './shortcuts';
 import { FONT } from './theme';
 
@@ -27,14 +28,32 @@ export function Shell() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { newChat, busy } = useStore();
+  const { newChat, busy, stop } = useStore();
   const [view, setView] = useState<ViewKey>('chat');
   const [chatsOpen, setChatsOpen] = useState(false);
+  const [shared, setShared] = useState<Incoming | null>(null);     // arrived from another app
+  const [incoming, setIncoming] = useState<Incoming | null>(null); // handed to the message box
   const keyboard = useKeyboardInset();
   const wide = width >= 900;
 
+  // "Share to Untethered" from another app opens a new chat with it in the message box. A reply that's
+  // still being written is stopped first, since a new chat can't start until it ends.
+  useIncomingShare((s) => {
+    if (busy) stop();
+    setShared(s);
+  });
+  useEffect(() => {
+    if (!shared || busy) return;
+    newChat();
+    setView('chat');
+    setChatsOpen(false);
+    setIncoming(shared);
+    setShared(null);
+  }, [shared, busy, newChat]);
+  const takeIncoming = useCallback(() => setIncoming(null), []);
+
   const content =
-    view === 'chat' ? <ChatView onOpenSettings={() => setView('settings')} />
+    view === 'chat' ? <ChatView onOpenSettings={() => setView('settings')} incoming={incoming} onIncomingTaken={takeIncoming} />
       : view === 'memory' ? <MemoryView onStartInterview={() => setView('chat')} />
         : view === 'notes' ? <NotesView />
           : <SettingsView />;

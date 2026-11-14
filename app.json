@@ -48,7 +48,16 @@
         }
       ],
       "expo-font",
-      "expo-sharing",
+      [
+        "expo-sharing",
+        {
+          "android": {
+            "enabled": true,
+            "singleShareMimeTypes": ["text/*", "image/*", "application/pdf"],
+            "multipleShareMimeTypes": ["image/*"]
+          }
+        }
+      ],
       [
         "expo-image-picker",
         {

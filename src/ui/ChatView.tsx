@@ -14,6 +14,7 @@ import { formatSize } from './confirm';
 import { cancelDownload, startDownload, useDownload } from './downloads';
 import { Markdown } from './Markdown';
 import { FONT, STATUS_COLOURS } from './theme';
+import type { Incoming } from './share';
 import { registerFocus } from './shortcuts';
 import { useVoice, voiceSupported } from './voice';
 
@@ -226,13 +227,18 @@ const UserMessage = React.memo(function UserMessage({ message: m, onCopied }: { 
   );
 });
 
-function Composer({ ready }: { ready: boolean }) {
+const NEEDS_LAPTOP = 'Reading PDFs needs your laptop. Connect it in Settings → Home, or attach a text file.';
+
+type ComposerProps = { ready: boolean; incoming?: Incoming | null; onIncomingTaken?: () => void };
+
+function Composer({ ready, incoming, onIncomingTaken }: ComposerProps) {
   const theme = useTheme();
-  const { busy, send, stop, hub, settings } = useStore();
+  const { busy, send, stop, hub, settings, status } = useStore();
   const [text, setText] = useState('');
   const [height, setHeight] = useState(24);
   const [images, setImages] = useState<string[]>([]);
   const [files, setFiles] = useState<{ name: string; text: string }[]>([]);
+  const [pdfs, setPdfs] = useState<{ name: string; base64: string }[]>([]); // shared PDFs waiting for the laptop
   const [menu, setMenu] = useState(false);
   const [reading, setReading] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -244,7 +250,49 @@ function Composer({ ready }: { ready: boolean }) {
     if (final) before.current = '';
   });
   const hasAttachments = images.length > 0 || files.length > 0;
-  const canSend = (!!text.trim() || hasAttachments) && ready && !reading;
+  const working = reading || pdfs.length > 0;
+  const canSend = (!!text.trim() || hasAttachments) && ready && !working;
+
+  const laptop = () => localHub() ?? (hub.connected ? { base: settings.hubUrl, key: settings.hubKey, kind: 'phone' as const } : null);
+  const readPdf = async (name: string, base64: string) => {
+    const target = laptop();
+    if (!target) throw new Error(NEEDS_LAPTOP);
+    const content = await hubExtract(target, name, base64);
+    if (!content.trim()) throw new Error(`${name} has no readable text. It may be a scanned image; try a photo of it instead.`);
+    return content;
+  };
+
+  // Something shared from another app: it fills the box, ready to send or to add a question to.
+  useEffect(() => {
+    if (!incoming) return;
+    setText(incoming.text);
+    setHeight(24);
+    setImages(incoming.images);
+    setFiles(incoming.files);
+    setPdfs(incoming.pdfs);
+    setProblem(incoming.notice ?? null);
+    onIncomingTaken?.();
+  }, [incoming, onIncomingTaken]);
+
+  // Shared PDFs are read by the laptop. Just after launch, wait until we know whether it's connected.
+  const settled = !!status && !status.starting;
+  useEffect(() => {
+    if (!pdfs.length || (!laptop() && !settled)) return;
+    const list = pdfs;
+    setPdfs([]);
+    setReading(true);
+    (async () => {
+      for (const p of list) {
+        try {
+          const content = await readPdf(p.name, p.base64);
+          setFiles((l) => [...l, { name: p.name, text: content }]);
+        } catch (e) {
+          setProblem((e as Error).message);
+        }
+      }
+      setReading(false);
+    })();
+  }, [pdfs, hub.connected, settled]);
 
   const submit = () => {
     if (!canSend || busy) return;
@@ -278,10 +326,8 @@ function Composer({ ready }: { ready: boolean }) {
       setReading(true);
       let content: string;
       if (/\.pdf$/i.test(doc.name)) {
-        const target = localHub() ?? (hub.connected ? { base: settings.hubUrl, key: settings.hubKey, kind: 'phone' as const } : null);
-        if (!target) throw new Error('Reading PDFs needs your laptop. Connect it in Settings → Home, or attach a text file.');
-        content = await hubExtract(target, doc.name, await readBase64(doc.uri));
-        if (!content.trim()) throw new Error('That PDF has no readable text. It may be a scanned image; try a photo of it instead.');
+        if (!laptop()) throw new Error(NEEDS_LAPTOP);
+        content = await readPdf(doc.name, await readBase64(doc.uri));
       } else {
         content = await readText(doc.uri);
       }
@@ -307,7 +353,7 @@ function Composer({ ready }: { ready: boolean }) {
         </Text>
       )}
       <Surface style={[styles.composerBox, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]} elevation={1}>
-        {(hasAttachments || reading) && (
+        {(hasAttachments || working) && (
           <View style={styles.attachRow}>
             {images.map((b, i) => (
               <View key={`i${i}`}>
@@ -325,7 +371,7 @@ function Composer({ ready }: { ready: boolean }) {
                 <IconButton icon="close" size={14} style={styles.fileRemove} accessibilityLabel="Remove file" onPress={() => setFiles((list) => list.filter((_, j) => j !== i))} />
               </View>
             ))}
-            {reading && <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant, alignSelf: 'center' }}>Reading file…</Text>}
+            {working && <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant, alignSelf: 'center' }}>Reading file…</Text>}
           </View>
         )}
         <View style={styles.composer}>
@@ -395,7 +441,9 @@ function Composer({ ready }: { ready: boolean }) {
   );
 }
 
-export function ChatView({ onOpenSettings }: { onOpenSettings: () => void }) {
+type ChatViewProps = { onOpenSettings: () => void; incoming?: Incoming | null; onIncomingTaken?: () => void };
+
+export function ChatView({ onOpenSettings, incoming, onIncomingTaken }: ChatViewProps) {
   const theme = useTheme();
   const { chat, busy, error, clearError, status, refreshStatus, noted, regenerate } = useStore();
   const scroll = useRef<ScrollViewInstance>(null);
@@ -458,7 +506,7 @@ export function ChatView({ onOpenSettings }: { onOpenSettings: () => void }) {
             <Button compact onPress={onOpenSettings}>Settings</Button>
           </View>
         )}
-        <Composer ready={ready} />
+        <Composer ready={ready} incoming={incoming} onIncomingTaken={onIncomingTaken} />
       </View>
       <Snackbar visible={copiedNote} onDismiss={() => setCopiedNote(false)} duration={1500}>Copied</Snackbar>
     </View>
