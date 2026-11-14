@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Linking, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import {
-  Avatar, Button, Divider, IconButton, List, ProgressBar, RadioButton, SegmentedButtons, Snackbar, Surface, Switch, Text, TextInput,
+  Avatar, Button, Chip, Divider, IconButton, List, ProgressBar, RadioButton, SegmentedButtons, Snackbar, Surface, Switch, Text, TextInput,
   useTheme,
 } from 'react-native-paper';
 import { APP_NAME } from '../config';
+import { findLaptops } from '../discover';
 import { engine } from '../engine';
 import type { ModelInfo } from '../engine/types';
 import { hubNewCode, hubPairing, hubPing, normaliseAddress } from '../hub';
@@ -100,7 +101,7 @@ function PairPhone() {
   return (
     <View style={styles.pad}>
       <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
-        On your phone, open {APP_NAME} → Settings → Home and enter:
+        On your phone, open {APP_NAME} → Settings → Home and tap Find my laptop (or type the address), then enter the code:
       </Text>
       <View style={styles.pairGrid}>
         <Text variant="labelLarge" style={{ color: theme.colors.onSurfaceVariant }}>Address</Text>
@@ -136,6 +137,9 @@ function ConnectLaptop() {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [search, setSearch] = useState<{ progress: number; found: string[]; done: boolean } | null>(null);
+  const cancelSearch = useRef<AbortController | null>(null);
+  useEffect(() => () => cancelSearch.current?.abort(), []);
 
   if (settings.hubUrl && settings.hubKey) {
     return (
@@ -188,11 +192,60 @@ function ConnectLaptop() {
     }
   };
 
+  const find = async () => {
+    setProblem(null);
+    const controller = new AbortController();
+    cancelSearch.current = controller;
+    setSearch({ progress: 0, found: [], done: false });
+    try {
+      const found = await findLaptops(
+        (a) => {
+          setSearch((s) => (s ? { ...s, found: [...s.found, a] } : s));
+          setAddress((current) => current || a); // fill in the first one found
+        },
+        (progress) => setSearch((s) => (s ? { ...s, progress } : s)),
+        controller.signal,
+      );
+      if (controller.signal.aborted) return;
+      setSearch((s) => (s ? { ...s, done: true } : s));
+      if (!found.length) {
+        setProblem(`No laptop found. Check it's on and ${APP_NAME} is running there, then try again. `
+          + "If it still isn't found, Windows Firewall may be blocking Python: allow it on private networks, or type the address.");
+      }
+    } catch (e) {
+      setSearch(null);
+      setProblem((e as Error).message);
+    }
+  };
+
+  const searching = !!search && !search.done;
+
   return (
     <View style={styles.pad}>
       <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
-        On the laptop, open {APP_NAME} → Settings → Home to see the address and code. Both need to be on the same Wi-Fi.
+        On the laptop, open {APP_NAME} → Settings → Home to see the code. Both need to be on the same Wi-Fi.
       </Text>
+      {searching ? (
+        <View style={styles.finding}>
+          <View style={styles.rowBetween}>
+            <Text variant="bodyMedium">Looking on your Wi-Fi… {Math.round(search.progress * 100)}%</Text>
+            <Button compact onPress={() => { cancelSearch.current?.abort(); setSearch(null); }}>Cancel</Button>
+          </View>
+          <ProgressBar progress={search.progress} style={styles.findBar} />
+        </View>
+      ) : (
+        <Button mode="contained-tonal" icon="laptop" onPress={find} style={styles.leftButton}>Find my laptop</Button>
+      )}
+      {!!search?.found.length && (
+        <View style={styles.foundRow}>
+          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+            {search.found.length === 1 ? 'Found:' : 'Found these. Tap yours:'}
+          </Text>
+          {search.found.map((a) => (
+            <Chip key={a} icon={address === a ? 'check' : 'laptop'} selected={address === a} onPress={() => setAddress(a)} compact>{a}</Chip>
+          ))}
+        </View>
+      )}
       <TextInput mode="outlined" dense label="Laptop address" placeholder="e.g. 192.168.1.20" value={address} onChangeText={setAddress} keyboardType="numbers-and-punctuation" autoCapitalize="none" />
       <TextInput mode="outlined" dense label="Code" value={code} onChangeText={setCode} autoCapitalize="characters" maxLength={8} />
       {problem && <Text variant="bodySmall" style={{ color: theme.colors.error }}>{problem}</Text>}
@@ -437,6 +490,10 @@ const styles = StyleSheet.create({
   radio: { justifyContent: 'center', alignItems: 'center', paddingLeft: 4, minWidth: 40 },
   statusDot: { width: 10, height: 10, borderRadius: 5 },
   keys: { alignSelf: 'center', fontFamily: FONT.medium },
+  finding: { gap: 6 },
+  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  findBar: { height: 4, borderRadius: 2 },
+  foundRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
   leftButton: { alignSelf: 'flex-start' },
   pairGrid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', rowGap: 6, columnGap: 16 },
   mono: { fontFamily: Platform.select({ web: 'ui-monospace, Consolas, monospace', android: 'monospace', default: 'Menlo' }), minWidth: '60%' },
