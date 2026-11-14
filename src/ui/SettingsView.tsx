@@ -331,7 +331,7 @@ export function SettingsView() {
             <TextInput
               mode="outlined"
               label="Custom instructions"
-              placeholder="e.g. Be direct. Explain code step by step. Use examples from estate agency software."
+              placeholder="e.g. Be direct. Explain code step by step. Use metric units."
               value={instructions}
               onChangeText={setInstructions}
               onBlur={() => updateSettings({ instructions: instructions.trim() })}

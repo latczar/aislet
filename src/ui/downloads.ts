@@ -32,7 +32,7 @@ export function startDownload(id: string, onDone: () => void) {
     })
     .catch((e: Error) => {
       const cancelled = controller.signal.aborted;
-      set(id, { progress: null, problem: cancelled ? null : `Download failed: ${e.message}. Check your connection and try again.` });
+      set(id, { progress: null, problem: cancelled ? null : `${e.message.replace(/\.$/, '')}.` });
     })
     .finally(() => controllers.delete(id));
 }

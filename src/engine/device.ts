@@ -1,7 +1,8 @@
 // Phone engine: a smaller model running on the phone itself (llama.cpp via llama.rn).
 // Works with no internet once a model has been downloaded. Built to stay cool: 4 CPU threads,
 // optional GPU/NPU, and the model is unloaded after a few idle minutes.
-import { Directory, File, Paths } from 'expo-file-system';
+import { Directory, DownloadTask, File, Paths } from 'expo-file-system';
+import { AppState } from 'react-native';
 import { initLlama, type LlamaContext, type RNLlamaOAICompatibleMessage } from 'llama.rn';
 import { normalise } from '../brain';
 import type { Accel, Message, Performance } from '../types';
@@ -52,6 +53,20 @@ function folder(): Directory {
   return dir;
 }
 const modelFile = (s: Spec) => new File(folder(), s.file);
+
+/** Resolves when the app is on screen (straight away if it already is), or when cancelled. */
+function whenInFront(signal: AbortSignal): Promise<void> {
+  if (AppState.currentState === 'active' || signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      sub.remove();
+      signal.removeEventListener('abort', done);
+      resolve();
+    };
+    const sub = AppState.addEventListener('change', (state) => { if (state === 'active') done(); });
+    signal.addEventListener('abort', done);
+  });
+}
 const doneMarker = (s: Spec) => new File(folder(), `${s.file}.complete`); // written only after a full download
 const isDownloaded = (s: Spec) => modelFile(s).exists && doneMarker(s).exists;
 const spec = (id: string) => [...CHAT_MODELS, SEARCH_MODEL, VISION_MODEL].find((m) => m.id === id);
@@ -155,14 +170,36 @@ const models: ModelManager = {
     const s = spec(id);
     if (!s) throw new Error('Unknown model.');
     const target = modelFile(s);
-    if (target.exists) target.delete();
     if (doneMarker(s).exists) doneMarker(s).delete();
-    const task = File.createDownloadTask(s.url, target, {
-      onProgress: ({ bytesWritten, totalBytes }) => onProgress(bytesWritten / (totalBytes > 0 ? totalBytes : s.size)),
+    if (target.exists && target.size > s.size) target.delete(); // not a partial of this file
+    const options = {
+      onProgress: ({ bytesWritten }: { bytesWritten: number }) => onProgress(bytesWritten / s.size),
       signal,
-    });
-    const result = await task.downloadAsync();
-    if (!result) throw new Error('The download was paused.');
+    };
+    // Android drops the connection when the app goes into the background, and Wi-Fi can blip.
+    // So carry on from the bytes already saved (an HTTP Range request) rather than starting again:
+    // straight away for an earlier partial download, and after a drop once the app is back in front.
+    for (let tries = 0; ; tries++) {
+      const have = target.exists ? target.size : 0;
+      try {
+        const result = have > 0
+          ? await DownloadTask.fromSavable({ url: s.url, fileUri: target.uri, isDirectory: false, resumeData: String(have) }, options).resumeAsync()
+          : await File.createDownloadTask(s.url, target, options).downloadAsync();
+        if (result) break;
+        throw new Error('paused');
+      } catch (e) {
+        if (signal.aborted) {
+          if (target.exists) target.delete(); // cancelled: don't leave gigabytes behind
+          throw e;
+        }
+        if ((target.exists ? target.size : 0) > have) tries = 0; // it got further, so this isn't a stuck download
+        if (tries >= 8) {
+          throw new Error(`The download keeps stopping, so it's paused at ${Math.round((have / s.size) * 100)}%. Check the Wi-Fi, then tap Download to carry on`);
+        }
+        await whenInFront(signal);
+        await new Promise((r) => setTimeout(r, Math.min(15000, 1000 * 2 ** tries))); // give the connection a moment
+      }
+    }
     // Downloads are pinned to an exact version; a size mismatch means a broken or altered file.
     if (target.size !== s.size) {
       target.delete();
