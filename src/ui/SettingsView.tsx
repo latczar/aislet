@@ -139,9 +139,53 @@ function ConnectLaptop() {
   const [problem, setProblem] = useState<string | null>(null);
   const [search, setSearch] = useState<{ progress: number; found: string[]; done: boolean } | null>(null);
   const cancelSearch = useRef<AbortController | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   useEffect(() => () => cancelSearch.current?.abort(), []);
 
+  // A router can give the laptop a new address. Look for it on the Wi-Fi again, keeping the same code.
+  const findAgain = async () => {
+    setProblem(null);
+    setNote(null);
+    const controller = new AbortController();
+    cancelSearch.current = controller;
+    setSearch({ progress: 0, found: [], done: false });
+    const result = { match: '' };
+    const checks: Promise<void>[] = [];
+    try {
+      await findLaptops(
+        (a) => {
+          checks.push(hubPing({ base: normaliseAddress(a), key: settings.hubKey, kind: 'phone' })
+            .then((info) => {
+              if (info.paired && !result.match) {
+                result.match = a;
+                controller.abort(); // found it: stop looking
+              }
+            })
+            .catch(() => undefined));
+        },
+        (progress) => setSearch((s) => (s ? { ...s, progress } : s)),
+        controller.signal,
+      );
+      await Promise.all(checks);
+    } catch (e) {
+      if (!result.match) {
+        setSearch(null);
+        setProblem((e as Error).message);
+        return;
+      }
+    }
+    setSearch(null);
+    if (result.match) {
+      await updateSettings({ hubUrl: normaliseAddress(result.match) });
+      setNote(`Found it at ${result.match}`);
+      refreshStatus();
+    } else if (!controller.signal.aborted) {
+      setProblem(`Couldn't find your laptop on this Wi-Fi. Check it's on and ${APP_NAME} is running there, or disconnect and type its address.`);
+    }
+  };
+
   if (settings.hubUrl && settings.hubKey) {
+    const looking = !!search && !search.done;
     return (
       <View>
         <List.Item
@@ -158,6 +202,15 @@ function ConnectLaptop() {
           )}
           right={() => <Button compact onPress={() => (hub.connected ? syncNow() : refreshStatus())}>{hub.connected ? 'Sync' : 'Retry'}</Button>}
         />
+        <Divider />
+        <List.Item
+          title="Laptop's address"
+          description={looking ? `Looking on your Wi-Fi… ${Math.round(search.progress * 100)}%` : note ?? settings.hubUrl.replace(/^https?:\/\//, '').replace(/:8766$/, '')}
+          right={() => (looking
+            ? <Button compact onPress={() => { cancelSearch.current?.abort(); setSearch(null); }}>Cancel</Button>
+            : <Button compact icon="magnify" onPress={findAgain}>Find again</Button>)}
+        />
+        {problem && <Text variant="bodySmall" style={[styles.refindProblem, { color: theme.colors.error }]}>{problem}</Text>}
         <Divider />
         <List.Item
           title="Use the laptop's AI at home"
@@ -495,6 +548,7 @@ const styles = StyleSheet.create({
   findBar: { height: 4, borderRadius: 2 },
   foundRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
   leftButton: { alignSelf: 'flex-start' },
+  refindProblem: { paddingHorizontal: 16, paddingBottom: 10 },
   pairGrid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', rowGap: 6, columnGap: 16 },
   mono: { fontFamily: Platform.select({ web: 'ui-monospace, Consolas, monospace', android: 'monospace', default: 'Menlo' }), minWidth: '60%' },
   progress: { paddingHorizontal: 16, paddingBottom: 12, gap: 6 },
