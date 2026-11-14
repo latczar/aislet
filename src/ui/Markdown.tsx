@@ -1,5 +1,5 @@
 // Small Markdown renderer for replies: paragraphs, headings, lists, tables, code, links, bold and italics.
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Linking, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { IconButton, Text, useTheme } from 'react-native-paper';
 import { copy } from './actions';
@@ -184,13 +184,15 @@ function Table({ head, align, rows, codeBg, link }: { head: string[]; align: Ali
   );
 }
 
-export function Markdown({ text }: { text: string }) {
+/** A reply, drawn from its Markdown. Memoised: while a reply streams, earlier replies aren't re-parsed. */
+export const Markdown = React.memo(function Markdown({ text }: { text: string }) {
   const theme = useTheme();
   const codeBg = theme.colors.surfaceVariant;
   const link = theme.colors.primary;
+  const blocks = useMemo(() => parse(text), [text]);
   return (
     <View style={styles.wrap}>
-      {parse(text).map((b, i) => {
+      {blocks.map((b, i) => {
         switch (b.kind) {
           case 'h':
             return (
@@ -219,7 +221,7 @@ export function Markdown({ text }: { text: string }) {
       })}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   wrap: { gap: 10 },

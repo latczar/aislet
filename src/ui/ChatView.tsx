@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated, Image, Platform, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, TextInput,
   type TextInputInstance, View, useWindowDimensions,
@@ -7,6 +7,7 @@ import { ActivityIndicator, Button, Icon, IconButton, Menu, ProgressBar, Snackba
 import { engine } from '../engine';
 import { hubExtract, localHub } from '../hub';
 import { useStore } from '../store';
+import type { Message } from '../types';
 import { copy, speak, stopSpeaking, tap } from './actions';
 import { cameraSupported, pickDocument, pickPhoto, readBase64, readText } from './attach';
 import { formatSize } from './confirm';
@@ -148,9 +149,11 @@ function Welcome({ onOpenSettings }: { onOpenSettings: () => void }) {
   );
 }
 
-function AssistantMessage({ text, last, streaming, noted }: { text: string; last: boolean; streaming: boolean; noted?: string[] }) {
+type AssistantProps = { text: string; last: boolean; streaming: boolean; busy: boolean; noted?: string[]; onRetry: () => void };
+
+// Memoised, like UserMessage: while a reply streams, only the message that's changing redraws.
+const AssistantMessage = React.memo(function AssistantMessage({ text, last, streaming, busy, noted, onRetry }: AssistantProps) {
   const theme = useTheme();
-  const { regenerate, busy } = useStore();
   const [speaking, setSpeaking] = useState(false);
   const [copied, setCopied] = useState(false);
   useEffect(() => () => stopSpeaking(), []);
@@ -177,7 +180,7 @@ function AssistantMessage({ text, last, streaming, noted }: { text: string; last
             {last && (
               <IconButton
                 icon="refresh" size={17} iconColor={theme.colors.onSurfaceVariant} style={styles.action}
-                disabled={busy} accessibilityLabel="Try again" onPress={() => { tap(); regenerate(); }}
+                disabled={busy} accessibilityLabel="Try again" onPress={() => { tap(); onRetry(); }}
               />
             )}
           </View>
@@ -193,7 +196,35 @@ function AssistantMessage({ text, last, streaming, noted }: { text: string; last
       </View>
     </View>
   );
-}
+});
+
+const UserMessage = React.memo(function UserMessage({ message: m, onCopied }: { message: Message; onCopied: () => void }) {
+  const theme = useTheme();
+  const shown = m.display ?? m.content;
+  return (
+    <View style={styles.userCol}>
+      {!!m.images?.length && (
+        <View style={styles.userThumbs}>
+          {m.images.map((b, j) => <Image key={j} source={{ uri: `data:image/jpeg;base64,${b}` }} style={styles.userThumb} />)}
+        </View>
+      )}
+      {m.files?.map((f, j) => (
+        <View key={`f${j}`} style={[styles.fileChip, { backgroundColor: theme.colors.surfaceVariant }]}>
+          <Icon source="file-document-outline" size={16} color={theme.colors.onSurfaceVariant} />
+          <Text variant="labelMedium" numberOfLines={1} style={styles.fileName}>{f.name}</Text>
+        </View>
+      ))}
+      {!!shown && (
+        <Pressable
+          onLongPress={async () => { await copy(shown); onCopied(); }}
+          style={[styles.userBubble, { backgroundColor: theme.colors.primaryContainer }]}
+        >
+          <Text variant="bodyLarge" style={{ color: theme.colors.onPrimaryContainer, lineHeight: 24 }}>{shown}</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+});
 
 function Composer({ ready }: { ready: boolean }) {
   const theme = useTheme();
@@ -369,6 +400,7 @@ export function ChatView({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { chat, busy, error, clearError, status, refreshStatus, noted, regenerate } = useStore();
   const scroll = useRef<ScrollViewInstance>(null);
   const [copiedNote, setCopiedNote] = useState(false);
+  const showCopied = useCallback(() => setCopiedNote(true), []);
   const messages = chat?.messages ?? [];
   const ready = !!status?.ready;
   const lastAi = messages.map((m) => m.role).lastIndexOf('assistant');
@@ -391,29 +423,12 @@ export function ChatView({ onOpenSettings }: { onOpenSettings: () => void }) {
         ) : (
           messages.map((m, i) =>
             m.role === 'user' ? (
-              <View key={i} style={styles.userCol}>
-                {!!m.images?.length && (
-                  <View style={styles.userThumbs}>
-                    {m.images.map((b, j) => <Image key={j} source={{ uri: `data:image/jpeg;base64,${b}` }} style={styles.userThumb} />)}
-                  </View>
-                )}
-                {m.files?.map((f, j) => (
-                  <View key={`f${j}`} style={[styles.fileChip, { backgroundColor: theme.colors.surfaceVariant }]}>
-                    <Icon source="file-document-outline" size={16} color={theme.colors.onSurfaceVariant} />
-                    <Text variant="labelMedium" numberOfLines={1} style={styles.fileName}>{f.name}</Text>
-                  </View>
-                ))}
-                {!!(m.display ?? m.content) && (
-                  <Pressable
-                    onLongPress={async () => { await copy(m.display ?? m.content); setCopiedNote(true); }}
-                    style={[styles.userBubble, { backgroundColor: theme.colors.primaryContainer }]}
-                  >
-                    <Text variant="bodyLarge" style={{ color: theme.colors.onPrimaryContainer, lineHeight: 24 }}>{m.display ?? m.content}</Text>
-                  </Pressable>
-                )}
-              </View>
+              <UserMessage key={i} message={m} onCopied={showCopied} />
             ) : (
-              <AssistantMessage key={i} text={m.content} last={i === lastAi} streaming={busy && i === messages.length - 1} noted={noted[i]} />
+              <AssistantMessage
+                key={i} text={m.content} last={i === lastAi} streaming={busy && i === messages.length - 1}
+                busy={busy} noted={noted[i]} onRetry={regenerate}
+              />
             ),
           )
         )}

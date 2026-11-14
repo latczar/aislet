@@ -525,6 +525,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const active = engineRef.current;
 
     let answer = '';
+    // Draw the growing reply at most ~15 times a second. Redrawing for every token costs battery and
+    // warms the phone while the model is already working hard.
+    let drawTimer: ReturnType<typeof setTimeout> | null = null;
+    const draw = () => {
+      drawTimer = null;
+      const shown = stripThinking(answer);
+      setChat((c) => {
+        if (!c) return c;
+        const messages = c.messages.slice();
+        messages[answerAt] = { role: 'assistant', content: shown };
+        return { ...c, messages };
+      });
+    };
     try {
       const s = settingsRef.current;
       if (userMsg.images?.length && !active.vision(s.modelId)) {
@@ -545,18 +558,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 ${interviewPrompt(s.name)}` : prompt };
       await active.chat([sys, ...base.messages.slice(-HISTORY), userMsg], s.modelId, (token) => {
         answer += token;
-        const shown = stripThinking(answer);
-        setChat((c) => {
-          if (!c) return c;
-          const messages = c.messages.slice();
-          messages[answerAt] = { role: 'assistant', content: shown };
-          return { ...c, messages };
-        });
+        drawTimer ??= setTimeout(draw, 66);
       }, MAX_TOKENS[s.length] ?? 1024);
     } catch (e) {
       setError((e as Error).message || 'Something went wrong.');
       refreshStatus();
     }
+    if (drawTimer) clearTimeout(drawTimer);
 
     answer = stripThinking(answer).trim();
     const finalChat: Chat = {
