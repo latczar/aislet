@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "backgroundColor": "#F1F3F2",
+    "backgroundColor": "#F4F4F5",
     "ios": {
       "supportsTablet": true
     },
@@ -14,7 +14,7 @@
       "package": "app.untethered.assistant",
       "versionCode": 4,
       "adaptiveIcon": {
-        "backgroundColor": "#2F6F5E",
+        "backgroundColor": "#18181B",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -32,8 +32,8 @@
       "favicon": "./assets/favicon.png",
       "name": "Untethered",
       "shortName": "Untethered",
-      "themeColor": "#2F6F5E",
-      "backgroundColor": "#F1F3F2",
+      "themeColor": "#18181B",
+      "backgroundColor": "#F4F4F5",
       "description": "Your private AI that works offline."
     },
     "plugins": [

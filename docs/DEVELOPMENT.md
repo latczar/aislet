@@ -53,6 +53,13 @@ TypeScript · React Native (Expo) · React Native Paper · Ollama on Windows · 
   ```
 
   This makes `release/untethered-pc.zip` (with a `.sha256`) and `release/Untethered.apk`.
+- **Logo and icons:**
+
+  ```bash
+  python scripts/make-icons.py
+  ```
+
+  This draws the mark (a broken ring with a free dot, white on #18181B) and writes every icon in `assets/`. It needs Pillow.
 - **Licences:**
 
   ```bash

@@ -188,7 +188,7 @@ function Table({ head, align, rows, codeBg, link }: { head: string[]; align: Ali
 export const Markdown = React.memo(function Markdown({ text }: { text: string }) {
   const theme = useTheme();
   const codeBg = theme.colors.surfaceVariant;
-  const link = theme.colors.primary;
+  const link = theme.colors.tertiary;
   const blocks = useMemo(() => parse(text), [text]);
   return (
     <View style={styles.wrap}>

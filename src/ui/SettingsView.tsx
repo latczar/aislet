@@ -591,7 +591,7 @@ export function SettingsView() {
           {'\n\n'}
           <Text
             variant="bodySmall"
-            style={{ color: theme.colors.primary }}
+            style={{ color: theme.colors.tertiary }}
             onPress={() => Linking.openURL('https://github.com/latczar/untethered/blob/main/THIRD_PARTY_LICENSES.md')}
           >
             Open-source licences
