@@ -21,6 +21,9 @@ export interface SyncData {
 
 export const HUB_PORT = 8766;
 
+/** The PC window's key no longer matches the hub (for example, the hub's data was reset). Reopening fetches the new one. */
+export const STALE_PC_KEY = 'This window needs reconnecting to the hub. Close it and open Untethered from the Start menu.';
+
 /** Headers that let the hub know who's asking. */
 export function hubHeaders(t: Pick<HubTarget, 'key' | 'kind'>, method: string, path: string, body: string): Record<string, string> {
   if (!t.key) return {};
@@ -47,6 +50,7 @@ async function call<T>(t: HubTarget, path: string, init: { method?: string; body
   const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Couldn't reach the laptop.")), timeoutMs));
   const res = await Promise.race([request, timeout]);
   const data = await res.json().catch(() => ({}));
+  if (!res.ok && res.status === 401 && t.kind === 'pc') throw new Error(STALE_PC_KEY);
   if (!res.ok) throw new Error((data as { error?: string }).error || `The laptop replied with an error (${res.status}).`);
   return data as T;
 }

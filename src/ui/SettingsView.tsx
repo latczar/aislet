@@ -8,7 +8,7 @@ import { APP_NAME } from '../config';
 import { findLaptops } from '../discover';
 import { engine } from '../engine';
 import type { ModelInfo } from '../engine/types';
-import { hubNewCode, hubPairing, hubPing, normaliseAddress } from '../hub';
+import { STALE_PC_KEY, hubNewCode, hubPairing, hubPing, normaliseAddress } from '../hub';
 import { useStore } from '../store';
 import type { Accel, AnswerLength, Appearance, Performance } from '../types';
 import { formatWhen } from './confirm';
@@ -96,7 +96,7 @@ function PairPhone() {
   useEffect(() => {
     hubPairing().then(setInfo).catch((e) => setProblem((e as Error).message));
   }, []);
-  if (problem) return <Text variant="bodyMedium" style={[styles.pad, { color: theme.colors.error }]}>The hub isn't running: {problem}</Text>;
+  if (problem) return <Text variant="bodyMedium" style={[styles.pad, { color: theme.colors.error }]}>{problem === STALE_PC_KEY ? problem : `The hub isn't running: ${problem}`}</Text>;
   if (!info) return <Text variant="bodyMedium" style={styles.pad}>Loading…</Text>;
   return (
     <View style={styles.pad}>

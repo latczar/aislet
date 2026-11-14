@@ -9,7 +9,7 @@ import {
 import { engine as localEngine } from './engine';
 import { createOllamaEngine } from './engine/ollama';
 import type { Engine, EngineStatus } from './engine/types';
-import { type HubInfo, type HubTarget, hubHeaders, hubPing, hubSync, localHub } from './hub';
+import { type HubInfo, type HubTarget, STALE_PC_KEY, hubHeaders, hubPing, hubSync, localHub } from './hub';
 import { KEYS, load, newId, remove, save, today } from './storage';
 import { exportFile, pickFile } from './transfer';
 import type { Backup, Chat, ChatSummary, Memory, MemoryCategory, Message, Note, NoteHit, Settings } from './types';
@@ -261,7 +261,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       try {
         info = await hubPing(target); // a paired ping also asks the hub to start Ollama if it isn't running
         connected = info.paired;
-        setHub((h) => ({ ...h, connected, name: info!.name, problem: connected ? undefined : 'Not paired. Check the code.' }));
+        setHub((h) => ({ ...h, connected, name: info!.name, problem: connected ? undefined : target.kind === 'pc' ? STALE_PC_KEY : 'Not paired. Check the code.' }));
       } catch (e) {
         setHub((h) => ({ ...h, connected: false, problem: (e as Error).message }));
       }
