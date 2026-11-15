@@ -1,5 +1,5 @@
-// Phone: talk instead of typing. Uses the phone's own speech recogniser, on-device when available,
-// so what you say stays on the phone.
+// Phone: talk instead of typing. Uses the phone's own speech recogniser, on-device only, so what you say
+// stays on the phone. Phones that can't recognise speech offline get a message instead of an online recogniser.
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
 import { useRef, useState } from 'react';
 
@@ -63,13 +63,17 @@ export function useVoice(onText: (text: string, final: boolean) => void) {
       return;
     }
     onDevice.current = ExpoSpeechRecognitionModule.supportsOnDeviceRecognition();
-    lang.current = onDevice.current ? await offlineEnglish() : PREFERRED;
+    if (!onDevice.current) {
+      setError("This phone can't recognise speech offline, so voice is off to keep what you say on the phone. Typing works as normal.");
+      return;
+    }
+    lang.current = await offlineEnglish();
     ExpoSpeechRecognitionModule.start({
       lang: lang.current,
       interimResults: true,
       continuous: false,
       addsPunctuation: true,
-      requiresOnDeviceRecognition: onDevice.current,
+      requiresOnDeviceRecognition: true,
     });
   };
 

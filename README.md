@@ -29,7 +29,7 @@ To link them, open Settings → Home on the computer and scan the QR code with t
 ## Why Untethered
 
 - **Works with no internet.** Aeroplane mode, off-grid, abroad without data: it still answers.
-- **Private by design.** No account, no cloud, no analytics. Your phone and computer talk directly over your own Wi-Fi.
+- **Private by design.** No account, no cloud, no analytics. Your phone and computer talk directly over your own Wi-Fi. [How private is it?](#how-private-is-it)
 - **Its own offline library.** It answers from Wikipedia, WikiMed, Appropedia and other Kiwix libraries on your phone, and says which article it used.
 
 ## What it does
@@ -58,7 +58,15 @@ To link them, open Settings → Home on the computer and scan the QR code with t
 **Your data stays yours**
 - On Android, an encrypted backup of your memory and notes is saved each day to a folder you choose. Restore it with your passphrase.
 - Export and import memory and notes as a file.
-- The internet is only used to download models and the libraries you choose. Every request from the phone to the computer is signed with your pairing code, and the hub's security tests are in this repository.
+- Nothing you say goes online. See below for exactly what does.
+
+## How private is it?
+
+- **What goes online:** downloads, and nothing else. The phone downloads AI models from Hugging Face when you tap Download. The computer's installer downloads the app, and Ollama downloads its models. Libraries are .zim files you add yourself.
+- **What never does:** your chats, memory, notes, photos, PDFs and voice. They're handled on your phone, or on your computer over your own Wi-Fi. There's no account, no analytics and no ads, and Android's cloud backup is off.
+- **Voice:** the phone only uses its offline speech recognition. Phones without it don't get voice typing, rather than sending audio online, and the computer has no voice input for the same reason.
+- **Phone to computer:** they talk directly on your home network. Every request is signed with your pairing code, which itself never crosses the network, and replayed or tampered requests are refused. A pairing QR code only works after you confirm it on the phone.
+- **Check it yourself:** the [security model](docs/DEVELOPMENT.md#security-model) explains each protection, and the [hub's attack tests](pc/tests/hub_attack_test.py) try path tricks, forged, stale and replayed requests, cross-site requests and guessing the code. Or turn on aeroplane mode: everything except downloads still works.
 
 ---
 

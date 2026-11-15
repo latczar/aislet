@@ -843,6 +843,23 @@ def check_rows(nodes: list[Node], rows: dict[str, str], screen_name: str, dp: fl
     return lefts, rights
 
 
+PRIVACY_ROWS = ['What you say stays on your devices', 'Online only for downloads', 'Your laptop, directly',
+                'No account, no tracking', "How it's checked"]
+
+
+def check_privacy() -> str:
+    """Settings → Privacy says what goes online (downloads only). Nothing is tapped, so nothing opens."""
+    go_tab('Settings')
+    scroll_to_top()
+    scroll_to('the Privacy section', timeout_swipes=14, text='Privacy')
+    for title in PRIVACY_ROWS:
+        scroll_to(f'the "{title}" row', timeout_swipes=4, text=title)
+    if not find(screen(), contains='Hugging Face'):
+        scroll_to('where models come from', timeout_swipes=2, up=True, contains='Hugging Face')
+    scroll_to_top()
+    return f'{len(PRIVACY_ROWS)} rows, downloads named as the only use of the internet'
+
+
 def check_layout() -> str:
     """List rows line up: one left edge for titles, one right edge for buttons, none stretched or out of place."""
     dp = px_per_dp()
@@ -1308,6 +1325,7 @@ CHECKS = {
     'performance': check_performance,
     'haptics': check_haptics,
     'backup': check_backup,
+    'privacy': check_privacy,
     'layout': check_layout,
     'library': check_library,
 }

@@ -50,9 +50,27 @@ function speakable(markdown: string): string {
     .trim();
 }
 
+let voices: (Speech.Voice & { localService?: boolean })[] = [];
+
+/** A voice that runs on this device. Some voices (Chrome's "Google" ones, Android's "-network" ones) send the text
+ * to a server, so they're never used. */
+async function offlineVoice(language: string): Promise<string | undefined | null> {
+  if (!voices.length) voices = await Speech.getAvailableVoicesAsync().catch(() => []);
+  const offline = voices.filter((v) => (Platform.OS === 'web' ? v.localService === true : !/network/i.test(v.identifier)));
+  const lang = language.toLowerCase();
+  const same = (v: Speech.Voice) => v.language.toLowerCase().replace('_', '-');
+  const pick = offline.find((v) => same(v) === lang) ?? offline.find((v) => same(v).split('-')[0] === lang.split('-')[0]);
+  // On the PC a voice must be chosen, or the browser may pick an online one. Null: there's no offline voice.
+  return pick?.identifier ?? (Platform.OS === 'web' ? null : undefined);
+}
+
 export function speak(text: string, onDone: () => void) {
   Speech.stop();
-  Speech.speak(speakable(text), { language: 'en-GB', onDone, onStopped: onDone, onError: onDone });
+  const language = 'en-GB';
+  offlineVoice(language).then((voice) => {
+    if (voice === null) return onDone();
+    Speech.speak(speakable(text), { language, voice, onDone, onStopped: onDone, onError: onDone });
+  });
 }
 
 export function stopSpeaking() {

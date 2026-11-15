@@ -620,6 +620,41 @@ function Backups({ onToast }: { onToast: (message: string) => void }) {
   );
 }
 
+/** Exactly what goes online, and what never does. Keep this true: check it whenever something new uses the network. */
+const PRIVACY = Platform.OS === 'web'
+  ? [
+    { icon: 'shield-lock-outline', title: 'What you say stays here', text: 'Chats, memory, notes and files stay on this computer and your paired phone. The AI runs on this computer.' },
+    { icon: 'download-outline', title: 'Online only for downloads', text: "The installer downloads the app, and Ollama downloads the AI models. The app itself doesn't use the internet." },
+    { icon: 'lan', title: 'Your phone talks to it directly', text: 'Over your home Wi-Fi, never through the internet. Every request is signed with your pairing code.' },
+    { icon: 'account-off-outline', title: 'No account, no tracking', text: 'No sign-in, no analytics and no ads.' },
+  ]
+  : [
+    { icon: 'shield-lock-outline', title: 'What you say stays on your devices', text: 'Chats, memory, notes, photos and voice are handled on this phone, or on your laptop over your own Wi-Fi.' },
+    { icon: 'download-outline', title: 'Online only for downloads', text: 'AI models download from Hugging Face when you tap Download or Get. Libraries are files you add yourself.' },
+    { icon: 'lan', title: 'Your laptop, directly', text: 'Phone and laptop talk over your home Wi-Fi, never through the internet. Every request is signed with your pairing code.' },
+    { icon: 'account-off-outline', title: 'No account, no tracking', text: "No sign-in, no analytics, no ads. Android's cloud backup is off; backups go only to the folder you choose." },
+  ];
+
+function Privacy() {
+  return (
+    <>
+      {PRIVACY.map((p) => (
+        <View key={p.icon}>
+          <Row title={p.title} description={p.text} left={(l) => <List.Icon {...l} icon={p.icon} />} />
+          <Divider />
+        </View>
+      ))}
+      <Row
+        title="How it's checked"
+        description="The security model, and the tests that attack the laptop hub"
+        left={(l) => <List.Icon {...l} icon="check-decagram-outline" />}
+        right={(r) => <List.Icon {...r} icon="open-in-new" />}
+        onPress={() => Linking.openURL('https://github.com/latczar/untethered/blob/main/docs/DEVELOPMENT.md#security-model')}
+      />
+    </>
+  );
+}
+
 export function SettingsView() {
   const theme = useTheme();
   const { settings, updateSettings, status, refreshStatus, exportData, importData, clearChats, chats, memories, notes, hub, libraries } = useStore();
@@ -840,6 +875,10 @@ export function SettingsView() {
               if (await confirm('Delete all chats?', "This can't be undone. Your memory and notes stay.")) clearChats();
             }}
           />
+        </Section>
+
+        <Section title="Privacy" footer="Try it in aeroplane mode: everything except downloads still works.">
+          <Privacy />
         </Section>
 
         {engine.models && (
