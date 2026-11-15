@@ -54,6 +54,6 @@ It uploads only the files that changed, and the site updates within seconds. Add
 
 Don't run `wrangler pages project create` in this repository: newer Wrangler versions try to turn the whole app into a Workers project, edit `package.json` and run `npm install`.
 
-### Turn off Cloudflare's own analytics
+### Cloudflare's own analytics stays off
 
-Cloudflare adds its Web Analytics script to every page on the aislet.app zone. The site's Content Security Policy (in `site/_headers`) blocks it, so nothing is sent, but it shows as an error in the browser console. To stop Cloudflare adding it: in the Cloudflare dashboard, open the **aislet.app** domain, go to **Analytics & Logs**, then **Web Analytics**, and turn off automatic setup (or disable the aislet.app site there).
+New Cloudflare domains add a Real User Monitoring script (from `static.cloudflareinsights.com`) to every page. For aislet.app it was switched off on 16 Nov 2026: in the dashboard, the **aislet.app** domain, **Speed**, **Real user monitoring**, **Disable completely**. If it ever comes back, the site's Content Security Policy (in `site/_headers`) still blocks it, so nothing is sent; it would only show as an error in the browser console.
