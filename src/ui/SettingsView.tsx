@@ -933,7 +933,12 @@ export function SettingsView() {
           />
         </Section>
 
-        <Section title="Privacy" footer="Try it in aeroplane mode: everything except downloads still works.">
+        <Section
+          title="Privacy"
+          footer={Platform.OS === 'web'
+            ? 'Try it with this computer offline: everything except downloads still works.'
+            : 'Try it with Wi-Fi and mobile data off: everything except downloads still works.'}
+        >
           <Privacy />
         </Section>
 

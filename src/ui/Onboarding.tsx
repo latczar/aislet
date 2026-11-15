@@ -65,7 +65,7 @@ function GetModel({ onDone }: { onDone: () => void }) {
         <Surface style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]} elevation={0}>
           <Text variant="titleMedium" style={{ fontFamily: FONT.semibold }}>On this phone</Text>
           <Text variant="bodyMedium" style={muted}>
-            {model.name}, {formatSize(model.size)}. Download it once on Wi-Fi; after that it works anywhere, even in aeroplane mode.
+            {model.name}, {formatSize(model.size)}. Download it once on Wi-Fi; after that it works anywhere, even with no signal.
           </Text>
           {onPhone ? (
             <Text variant="labelLarge" style={{ color: theme.colors.primary }}>Downloaded and ready</Text>

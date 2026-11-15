@@ -30,7 +30,7 @@ To link them, open Settings → Home on the computer and scan the QR code with t
 
 ## Why Untethered
 
-- **Works with no internet.** Aeroplane mode, off-grid, abroad without data: it still answers.
+- **Works with no internet.** On a plane, off-grid, abroad without data: it still answers.
 - **Private by design.** No account, no cloud, no analytics. Your phone and computer talk directly over your own Wi-Fi. [How private is it?](#how-private-is-it)
 - **Its own offline library.** It answers from Wikipedia, WikiMed, Appropedia and other Kiwix libraries on your phone, and says which article it used.
 
@@ -68,7 +68,7 @@ To link them, open Settings → Home on the computer and scan the QR code with t
 - **What never does:** your chats, memory, notes, photos, PDFs and voice. They're handled on your phone, or on your computer over your own Wi-Fi. There's no account, no analytics and no ads, and Android's cloud backup is off.
 - **Voice:** the phone only uses its offline speech recognition. Phones without it don't get voice typing, rather than sending audio online, and the computer has no voice input for the same reason.
 - **Phone to computer:** they talk directly on your home network. Every request is signed with your pairing code, which itself never crosses the network, and replayed or tampered requests are refused. A pairing QR code only works after you confirm it on the phone.
-- **Check it yourself:** the [security model](docs/DEVELOPMENT.md#security-model) explains each protection, and the [hub's attack tests](pc/tests/hub_attack_test.py) try path tricks, forged, stale and replayed requests, cross-site requests and guessing the code. Or turn on aeroplane mode: everything except downloads still works.
+- **Check it yourself:** the [security model](docs/DEVELOPMENT.md#security-model) explains each protection, and the [hub's attack tests](pc/tests/hub_attack_test.py) try path tricks, forged, stale and replayed requests, cross-site requests and guessing the code. Or switch off Wi-Fi and mobile data: everything except downloads still works.
 
 ---
 

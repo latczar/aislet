@@ -86,7 +86,7 @@ function SetupCard({ onOpenSettings }: { onOpenSettings: () => void }) {
     <Surface style={[styles.setup, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]} elevation={0}>
       <Text variant="titleMedium" style={{ fontFamily: FONT.semibold }}>Set up your private AI</Text>
       <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
-        Download {model.name} once ({formatSize(model.size)}, a few minutes on Wi-Fi). After that it runs entirely on this phone, even in aeroplane mode.
+        Download {model.name} once ({formatSize(model.size)}, a few minutes on Wi-Fi). After that it runs entirely on this phone, even with no signal.
       </Text>
       {dl.progress !== null ? (
         <View style={styles.setupProgress}>

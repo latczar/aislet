@@ -1,4 +1,4 @@
-Untethered is a private AI assistant that runs on your own devices. No account, no subscription, no cloud: it keeps working in aeroplane mode.
+Untethered is a private AI assistant that runs on your own devices. No account, no subscription, no cloud: it keeps working with no signal.
 
 <b>What it does</b>
 <ul>
