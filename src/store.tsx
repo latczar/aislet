@@ -308,8 +308,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!loaded) return;
     refreshStatus();
+    let lastCheck = Date.now();
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') refreshStatus();
+      // Coming back to the app re-checks the AI, but not straight after the last check (a PC window that
+      // has just opened also reports gaining focus, which used to ask everything twice).
+      if (state === 'active' && Date.now() - lastCheck > 10_000) {
+        lastCheck = Date.now();
+        refreshStatus();
+      }
     });
     return () => sub.remove();
   }, [loaded, refreshStatus]);

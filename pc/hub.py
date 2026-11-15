@@ -30,6 +30,7 @@ import socket
 import subprocess
 import sys
 import threading
+import re
 import time
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -272,6 +273,11 @@ _files: dict[str, Path] = {}
 _files_scanned = 0.0
 
 
+# Built files whose names carry a content hash (index-<md5>.js, Inter_400Regular.<md5>.ttf) never change, so the
+# browser may keep them; a rebuild gives them new names. Everything else (index.html) is checked each time.
+HASHED_NAME = re.compile(r"[.-][0-9a-f]{32}\.[A-Za-z0-9]+$")
+
+
 def app_file(path: str) -> Path | None:
     """Exact match against the list of files in dist/. Never builds a path from the request,
     so tricks like \\\\other-computer\\share can't make Windows reach out to another machine."""
@@ -466,10 +472,22 @@ class Handler(BaseHTTPRequestHandler):
         if not file.is_file():
             return self.send_json({"error": "The PC app hasn't been built. Run: npm run build:pc"}, 404)
         body = file.read_bytes()
+        if HASHED_NAME.search(file.name):
+            cache, etag = "public, max-age=31536000, immutable", None
+        else:
+            cache, etag = "no-cache", '"' + hashlib.sha256(body).hexdigest()[:32] + '"'
+            if self.headers.get("If-None-Match") == etag:  # unchanged since the browser last fetched it
+                self.send_response(304)
+                self.send_header("ETag", etag)
+                self.send_header("Cache-Control", cache)
+                self.end_headers()
+                return
         self.send_response(200)
         self.send_header("Content-Type", TYPES.get(file.suffix, "application/octet-stream"))
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Cache-Control", cache)
+        if etag:
+            self.send_header("ETag", etag)
         self.end_headers()
         self.wfile.write(body)
 
