@@ -704,8 +704,11 @@ def check_performance() -> str:
     go_tab('Settings')
     scroll_to_top()
     scroll_to('Speed and heat', contains='Speed and heat')
-    scroll_to('the performance buttons', text='Performance')
-    scroll_list()  # the label can show while its buttons are still behind the tab bar
+    label = scroll_to('the performance buttons', text='Performance')
+    h = screen_height()
+    if label.cy > h * 0.55:  # its buttons may still be behind the tab bar: bring them up a little, keeping the label on screen
+        shell(f'input swipe 540 {int(h * 0.6)} 540 {int(h * 0.4)} 300')
+        time.sleep(0.6)
     original = current_mode()
     if not original:
         raise CheckFailed('could not tell which performance mode is on')
