@@ -1,0 +1,22 @@
+Untethered is a private AI assistant that runs on your own devices. No account, no subscription, no cloud: it keeps working in aeroplane mode.
+
+<b>What it does</b>
+<ul>
+<li>Chats offline with an AI model on your phone (Qwen3.5 4B, downloaded once on Wi-Fi).</li>
+<li>Reads photos, PDFs and text files, and takes shares from any app.</li>
+<li>Answers from offline Kiwix libraries (.zim files) such as Wikipedia, and names the article it used.</li>
+<li>Learns lasting facts about you, which you can see, edit or forget.</li>
+<li>Pairs with your computer by QR code. At home the phone uses the computer's bigger AI (through Ollama), and memory and notes stay in sync.</li>
+<li>Talk instead of typing, with the phone's offline speech recognition.</li>
+<li>Saves an encrypted backup of your memory and notes each day, to a folder you choose.</li>
+</ul>
+
+<b>Privacy</b>
+The internet is only used to download AI models. Chats, memory, notes, photos and voice stay on your devices. No analytics, no ads, no trackers.
+
+<b>Permissions</b>
+<ul>
+<li>All files access (optional): reads Kiwix libraries in Untethered/Libraries, and moves them out of Kiwix's folder without copying them. You switch it on yourself in Settings.</li>
+<li>Microphone (optional): voice typing.</li>
+<li>Internet: model downloads, and reaching your own computer on your home Wi-Fi.</li>
+</ul>

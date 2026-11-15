@@ -22,7 +22,9 @@ curl -fsSL https://raw.githubusercontent.com/latczar/untethered/main/install/ins
 
 Linux is tested on Ubuntu 24.04. The Mac version hasn't been tested yet; if you try it, please say how it went in an issue.
 
-**Android:** download `Untethered.apk` from the [latest release](https://github.com/latczar/untethered/releases/latest), install it and follow the set-up.
+**Android:** download `Untethered.apk` from the [latest release](https://github.com/latczar/untethered/releases/latest), install it and follow the set-up. To get updates automatically, [add it to Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/latczar/untethered).
+
+To check you have the genuine app: the package is `app.untethered.assistant`, and the SHA-256 of its signing certificate is `25:C6:D2:76:14:C5:E6:1B:20:58:6B:A2:62:64:E9:A8:8F:B0:49:95:20:17:AD:98:C2:14:4B:F6:90:1C:1E:9A`.
 
 To link them, open Settings → Home on the computer and scan the QR code with the phone's camera. Untethered opens and asks before it pairs. (Or, on the phone, open Settings → Home, tap **Find my laptop** and enter the code shown on the computer.) Both need to be on the same Wi-Fi.
 
