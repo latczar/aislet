@@ -55,6 +55,7 @@ export interface LibraryState {
 
 interface Store {
   loaded: boolean;
+  startView: string;   // the screen that was open last time (Shell starts there)
   settings: Settings;
   updateSettings(patch: Partial<Settings>): Promise<void>;
   status: EngineStatus | null;
@@ -121,6 +122,7 @@ function withAttachments(text: string, a?: Attachments): Message {
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [loaded, setLoaded] = useState(false);
+  const [startView, setStartView] = useState('chat');
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [status, setStatus] = useState<EngineStatus | null>(null);
   const [memories, setMemories] = useState<Memory[]>([]);
@@ -323,7 +325,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       settingsRef.current = s;
       setMemories(await load<Memory[]>(KEYS.memories, []));
       setNotes(await load<Note[]>(KEYS.notes, []));
-      setChats(await load<ChatSummary[]>(KEYS.chats, []));
+      const summaries = await load<ChatSummary[]>(KEYS.chats, []);
+      setChats(summaries);
+      // Come back to the chat and screen you left, even when Android closed the app in the background.
+      const lastId = await load<string>(KEYS.lastChat, '');
+      if (lastId && summaries.some((c) => c.id === lastId)) {
+        const last = await load<Chat | null>(KEYS.chat(lastId), null);
+        if (last) setChat(last);
+      }
+      setStartView(await load<string>(KEYS.lastView, 'chat'));
       setLoaded(true);
     })();
   }, []);
@@ -411,6 +421,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     });
     return () => sub.remove();
   }, [loaded, refreshStatus, refreshLibraries]);
+
+  useEffect(() => {
+    if (loaded) save(KEYS.lastChat, chat?.id ?? '').catch(() => undefined);
+  }, [loaded, chat?.id]);
 
   const updateSettings = useCallback(async (patch: Partial<Settings>) => {
     const next = { ...settingsRef.current, ...patch };
@@ -789,7 +803,7 @@ ${interviewPrompt(s.name)}` : prompt };
   }, [restore]);
 
   const value: Store = {
-    loaded, settings, updateSettings, status, refreshStatus, engine, hub, syncNow, memories, addMemory, removeMemory, proposeTidy, applyTidy,
+    loaded, startView, settings, updateSettings, status, refreshStatus, engine, hub, syncNow, memories, addMemory, removeMemory, proposeTidy, applyTidy,
     notes, saveNote, deleteNote, chats, chat, openChat, newChat, deleteChat, clearChats, busy, error, clearError, noted,
     send, regenerate, startInterview, stop, exportData, importData, snapshot, restore,
     libraries, refreshLibraries, allowLibraries, moveLibraries, removeLibrary,

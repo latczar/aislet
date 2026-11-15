@@ -9,6 +9,8 @@ export const KEYS = {
   memoryIndex: 'memory-index', // meaning vectors for facts, to pick the relevant ones
   chats: 'chats',
   chat: (id: string) => `chat:${id}`,
+  lastChat: 'last-chat', // the chat that was open, to come back to it
+  lastView: 'last-view', // the screen that was open (Chat, Memory, Notes or Settings)
 };
 
 export async function load<T>(key: string, fallback: T): Promise<T> {

@@ -12,6 +12,7 @@ import { MemoryView } from './MemoryView';
 import { NotesView } from './NotesView';
 import { SettingsView } from './SettingsView';
 import { backUp } from '../backup';
+import { KEYS, save } from '../storage';
 import { useKeyboardInset } from './keyboard';
 import { type Incoming, useIncomingShare } from './share';
 import { focusSoon, useShortcuts } from './shortcuts';
@@ -29,8 +30,8 @@ export function Shell() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { newChat, busy, stop, snapshot } = useStore();
-  const [view, setView] = useState<ViewKey>('chat');
+  const { newChat, busy, stop, snapshot, startView } = useStore();
+  const [view, setView] = useState<ViewKey>(() => (ROUTES.some((r) => r.key === startView) ? (startView as ViewKey) : 'chat'));
   const [chatsOpen, setChatsOpen] = useState(false);
   const [shared, setShared] = useState<Incoming | null>(null);     // arrived from another app
   const [incoming, setIncoming] = useState<Incoming | null>(null); // handed to the message box
@@ -52,6 +53,11 @@ export function Shell() {
     setShared(null);
   }, [shared, busy, newChat]);
   const takeIncoming = useCallback(() => setIncoming(null), []);
+
+  // Remember the screen, so coming back to the app opens it again.
+  useEffect(() => {
+    save(KEYS.lastView, view).catch(() => undefined);
+  }, [view]);
 
   // The daily encrypted backup (phone, when it's on): checked at launch and whenever the app comes back.
   useEffect(() => {

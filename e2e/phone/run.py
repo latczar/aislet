@@ -341,6 +341,7 @@ def check_launch() -> str:
     # A fresh task (NEW_TASK | CLEAR_TASK), so a browser tab the app opened earlier can't stay on top.
     shell(f'am start -W -n {PKG}/.MainActivity -f 0x10008000')
     wait_for('the Chat tab', timeout=20, text='Chat')
+    go_tab('Chat')  # the app reopens on the screen that was open last time
     status = wait_for('a ready AI (status ending "private")', timeout=90, contains='· private')
     if foreground() != PKG:
         raise CheckFailed('the app is not in front after launching')
@@ -1190,11 +1191,55 @@ def check_backup() -> str:
         scroll_to_top()
 
 
+RESUME_PROMPT = 'E2E check resume: reply with one word, ok'
+
+
+def relaunch() -> None:
+    """Close the app the way Android does in the background, then open it again from the home screen."""
+    safe_front('closing the app')
+    key(3)
+    time.sleep(1)
+    shell(f'am force-stop {PKG}')
+    safe_front('opening the app')
+    shell(f'am start -W -n {PKG}/.MainActivity -f 0x10008000')
+    wait_for('the tabs after reopening', timeout=20, text='Chat')
+
+
+def check_resume() -> str:
+    """After Android closes the app, opening it again shows the chat and the screen you left."""
+    try:
+        tap(open_new_chat())
+        wait_keyboard(True)
+        type_text(RESUME_PROMPT)
+        time.sleep(0.5)
+        tap(find(screen(), desc='Send')[0])
+        wait_for('the sent message', timeout=10, text=RESUME_PROMPT)
+        hide_keyboard()
+        end = time.time() + 120
+        while not (find(screen(), desc='Copy') and not find(screen(), desc='Stop')):
+            if time.time() > end:
+                raise CheckFailed('no reply within 120 s')
+            time.sleep(1.5)
+        relaunch()
+        wait_for('the same chat after reopening', timeout=15, text=RESUME_PROMPT)
+        go_tab('Notes')
+        relaunch()
+        wait_for('the Notes screen after reopening', timeout=15, text='New note')
+        go_tab('Chat')
+        wait_for('the same chat on the Chat tab', timeout=10, text=RESUME_PROMPT)
+        return 'the chat and the Notes screen came back after the app was closed'
+    finally:
+        go_tab('Chat')
+        if not delete_test_chat():
+            print('  note: could not find the resume test chat to delete', file=sys.stderr)
+
+
 CHECKS = {
     'launch': check_launch,
     'chat_typing': check_chat_typing,
     'chat_send': check_chat_send,
     'share': check_share,
+    'resume': check_resume,
     'text_fields': check_text_fields,
     'find_laptop': check_find_laptop,
     'memory': check_memory,
