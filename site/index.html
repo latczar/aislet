@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Aislet: a private AI that works offline, with its own library</title>
-<meta name="description" content="Aislet is a free, open-source AI for Android and Windows that works with no internet. It answers from offline Wikipedia, WikiMed and Appropedia, and names the article it used. No account, no cloud.">
+<meta name="description" content="Aislet is a free, open-source AI for your Android phone and your computer that works with no internet. It answers from offline Wikipedia, WikiMed and Appropedia, and names the article it used. No account, no cloud.">
 <link rel="canonical" href="https://aislet.app/">
 <meta name="theme-color" content="#18181B">
 <meta name="color-scheme" content="light">
@@ -16,7 +16,7 @@
 <meta property="og:site_name" content="Aislet">
 <meta property="og:url" content="https://aislet.app/">
 <meta property="og:title" content="Aislet: a library and an AI in your pocket">
-<meta property="og:description" content="A private AI for Android and Windows. No signal needed, sources shown. Free and open source, no account.">
+<meta property="og:description" content="A private AI for your phone and computer. No signal needed, sources shown. Free and open source, no account.">
 <meta property="og:image" content="https://aislet.app/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -28,9 +28,9 @@
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "Aislet",
-  "description": "A private AI for Android and Windows that works offline and answers from offline libraries such as Wikipedia, naming its source.",
+  "description": "A private AI for Android phones and Windows, Linux or Mac computers that works offline and answers from offline libraries such as Wikipedia, naming its source.",
   "applicationCategory": "UtilitiesApplication",
-  "operatingSystem": "Android 8.0 or later, Windows 10 or 11",
+  "operatingSystem": "Android 8.0 or later; Windows 10 or 11, Linux, macOS",
   "url": "https://aislet.app/",
   "downloadUrl": "https://github.com/latczar/aislet/releases/latest",
   "license": "https://www.gnu.org/licenses/gpl-3.0.html",
@@ -65,7 +65,7 @@
       <p class="hero__lead">No signal needed, sources shown.</p>
       <div class="actions">
         <a class="button button--light" href="https://github.com/latczar/aislet/releases/latest/download/Aislet.apk">Download for Android</a>
-        <a class="button button--ghost" href="#windows">Install on Windows</a>
+        <a class="button button--ghost" href="#computer">Install on a computer</a>
       </div>
       <p class="hero__note">Free and open source. No account, no cloud.</p>
     </div>
@@ -138,7 +138,7 @@
       </li>
       <li>
         <h3>Phone and laptop together</h3>
-        <p>Pair them once on your home Wi-Fi, with no account. At home the phone uses the computer’s AI, and memory and notes stay in sync.</p>
+        <p>Pair them by scanning a QR code, with no account. At home the phone uses the computer’s AI, and memory and notes stay in sync.</p>
       </li>
       <li>
         <h3>Share from any app</h3>
@@ -198,17 +198,23 @@
           <p><code class="hash">25:C6:D2:76:14:C5:E6:1B:20:58:6B:A2:62:64:E9:A8:8F:B0:49:95:20:17:AD:98:C2:14:4B:F6:90:1C:1E:9A</code></p>
         </details>
       </div>
-      <div class="install__col" id="windows">
-        <h3>Windows computer</h3>
-        <p>Windows 10 or 11. Open PowerShell and run:</p>
+      <div class="install__col" id="computer">
+        <h3>Computer</h3>
+        <p><strong>Windows 10 or 11:</strong> open PowerShell and run:</p>
         <div class="command">
-          <code id="install-command">irm https://raw.githubusercontent.com/latczar/aislet/main/install/install.ps1 | iex</code>
-          <button class="command__copy" type="button" data-copy="install-command" hidden>Copy</button>
+          <code id="install-windows">irm https://raw.githubusercontent.com/latczar/aislet/main/install/install.ps1 | iex</code>
+          <button class="command__copy" type="button" data-copy="install-windows" hidden>Copy</button>
         </div>
-        <p class="small">It adds Ollama and Python if they’re missing, picks an AI model to suit your graphics card, and puts Aislet in the Start menu. Linux and Mac are coming in the next version.</p>
+        <p class="small">It adds Ollama and Python if they’re missing, picks an AI model to suit your graphics card, and puts Aislet in the Start menu.</p>
+        <p><strong>Linux and Mac:</strong> install <a href="https://ollama.com/download">Ollama</a> first, then open a terminal and run:</p>
+        <div class="command">
+          <code id="install-unix">curl -fsSL https://raw.githubusercontent.com/latczar/aislet/main/install/install.sh | sh</code>
+          <button class="command__copy" type="button" data-copy="install-unix" hidden>Copy</button>
+        </div>
+        <p class="small">Linux is tested on Ubuntu 24.04. The Mac version hasn’t been tested yet; if you try it, please <a href="https://github.com/latczar/aislet/issues">say how it went</a>.</p>
       </div>
     </div>
-    <p class="install__pair">To link them, open Settings, then Home, on both and follow the steps. They need to be on the same Wi-Fi.</p>
+    <p class="install__pair">To link them, open Settings, then Home, on the computer and scan the QR code with the phone’s camera. Both need to be on the same Wi-Fi.</p>
   </div>
 </section>
 
@@ -234,7 +240,7 @@
     <div class="faq">
       <details>
         <summary>What do I need?</summary>
-        <p>An Android phone with Android 8 or later; 8 GB of memory is recommended for the AI that runs on the phone. The computer side is optional and runs on Windows 10 or 11 with Ollama, which the installer adds for you.</p>
+        <p>An Android phone with Android 8 or later; 8 GB of memory is recommended for the AI that runs on the phone. The computer side is optional and runs on Windows 10 or 11, Linux or Mac, with Ollama. On Windows the installer adds Ollama for you.</p>
       </details>
       <details>
         <summary>Does it really work with no internet?</summary>
@@ -253,8 +259,8 @@
         <p>Yes. No subscription, no ads, no account. It’s open source under the GPL, version 3 or later.</p>
       </details>
       <details>
-        <summary>Is there an iPhone or Mac version?</summary>
-        <p>Not for iPhone. The computer side for Linux and Mac is coming in the next version; follow the project on GitHub to hear when.</p>
+        <summary>Is there an iPhone version?</summary>
+        <p>Not yet: the phone app is Android only. The computer side runs on Windows, Linux and Mac.</p>
       </details>
       <details>
         <summary>Can it get things wrong?</summary>
