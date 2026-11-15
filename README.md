@@ -18,16 +18,39 @@ irm https://raw.githubusercontent.com/latczar/untethered/main/install/install.ps
 
 To link them, open Settings → Home on the phone, tap **Find my laptop** (or type the address), then enter the code shown in Settings → Home on the computer. Both need to be on the same Wi-Fi.
 
+## Why Untethered
+
+- **Works with no internet.** Aeroplane mode, off-grid, abroad without data: it still answers.
+- **Private by design.** No account, no cloud, no analytics. Your phone and computer talk directly over your own Wi-Fi.
+- **Its own offline library.** It answers from Wikipedia, WikiMed, Appropedia and other Kiwix libraries on your phone, and says which article it used.
+
 ## What it does
 
-- **Chats offline** using AI models on your own devices.
-- **Learns about you** as you talk, and you can see and edit what it knows.
-- **Reads your notes, photos and PDFs.** On Android, share text, a screenshot or a PDF from any app to Untethered to ask about it.
-- **Answers from offline libraries.** On Android, Untethered searches Kiwix libraries (.zim files) such as Wikipedia or Appropedia for each question and names the article it used. It can move the libraries you already have in Kiwix, without copying them.
-- **Syncs your phone and computer** over home Wi-Fi, and at home the phone uses the computer's bigger AI.
-- **Backs up automatically** on Android: an encrypted copy of your memory and notes each day, in a folder you choose. Restore it with your passphrase.
+**Ask anything**
+- Chats offline using AI models on your phone and your computer.
+- Reads photos, PDFs and text files. On Android, share text, a screenshot or a PDF from any app to Untethered to ask about it.
+- On Android, talk instead of typing, and have answers read aloud, using the phone's offline speech.
+- Shows tables and dividers, and code you can copy with one tap.
+- Picks up where you left off: the chat and screen you had open come back.
 
-Everything stays on your devices. Nothing is collected.
+**Knows you, and you stay in charge**
+- Learns lasting facts about you as you talk. See them, edit them or forget them in Memory.
+- "Get to know me" asks a few questions so it starts off knowing you, and "Tidy up" finds duplicate or out-of-date facts for you to approve.
+- Searches your notes when it answers, and follows your own instructions and preferred answer length.
+
+**Answers from offline libraries** (Android)
+- Searches Kiwix libraries (.zim files) for each question, gives the best passages to the AI, and names the article it used.
+- Moves the libraries you already have in Kiwix into Untethered, without copying them.
+
+**Phone and computer together**
+- Pair them in a minute: tap **Find my laptop** on the phone and enter the code from the computer.
+- At home, the phone uses the computer's bigger AI, and your memory and notes stay in sync.
+- Choose Cool, Balanced or Max on the phone to trade speed against heat.
+
+**Your data stays yours**
+- On Android, an encrypted backup of your memory and notes is saved each day to a folder you choose. Restore it with your passphrase.
+- Export and import memory and notes as a file.
+- The internet is only used to download models and the libraries you choose. Every request from the phone to the computer is signed with your pairing code, and the hub's security tests are in this repository.
 
 ---
 
