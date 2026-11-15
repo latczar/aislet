@@ -1,0 +1,15 @@
+// Deploys site/ to aislet.app as static assets on Cloudflare (no server code).
+// From the project folder:  npx wrangler deploy --config deploy/wrangler.jsonc
+{
+  "$schema": "https://unpkg.com/wrangler/config-schema.json",
+  "name": "aislet",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "../site",
+    "not_found_handling": "404-page",
+    "html_handling": "auto-trailing-slash"
+  },
+  "routes": [
+    { "pattern": "aislet.app", "custom_domain": true }
+  ]
+}
