@@ -62,6 +62,8 @@ def shell(command: str, timeout: float = 30) -> str:
         front = foreground()
         if front != PKG and not any(l in front for l in LAUNCHERS) and not (picker_open and PICKER in front):
             raise CheckFailed(f'stopped: another app is in front ({front or "unknown"})')
+        if panel_open():
+            raise CheckFailed('stopped: the notification panel is open (someone is using the phone)')
     return adb('shell', command, timeout=timeout)
 
 
@@ -88,6 +90,11 @@ def type_text(text: str) -> None:
 def clear_focused_field() -> None:
     shell('input keycombination 113 29')  # Ctrl+A
     key(67)  # delete
+
+
+def panel_open() -> bool:
+    """The notification or quick-settings panel is pulled down. The app underneath still counts as in front."""
+    return 'NotificationShade' in adb('shell', 'dumpsys window | grep -m1 mCurrentFocus', check=False)
 
 
 def foreground() -> str:
@@ -1158,6 +1165,8 @@ def preflight(force: bool) -> None:
     front = foreground()
     if not force and front != PKG and not any(l in front for l in LAUNCHERS):
         sys.exit(f'Another app is in front ({front}). Go to the home screen first, or pass --force.')
+    if not force and panel_open():
+        sys.exit('The notification panel is open. Close it and leave the phone on the home screen.')
     if PKG not in shell(f'pm list packages {PKG}'):
         sys.exit(f'{PKG} is not installed.')
 
