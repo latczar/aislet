@@ -1,4 +1,4 @@
-// Small Markdown renderer for replies: paragraphs, headings, lists, tables, code, links, bold and italics.
+// Small Markdown renderer for replies: paragraphs, headings, lists, tables, code, dividers, links, bold and italics.
 import React, { useMemo, useState } from 'react';
 import { Linking, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { IconButton, Text, useTheme } from 'react-native-paper';
@@ -10,6 +10,8 @@ const LIST = /^(\s*)([-*•+]|\d+[.)])\s+/;
 const HEADING = /^#{1,6}\s/;
 const FENCE = /^\s*```/;
 const TABLE_RULE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+// A divider: three or more of the same -, * or _ on a line of their own, spaces allowed ("---", "* * *").
+const DIVIDER = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
 const MONO = Platform.select({ web: 'ui-monospace, Consolas, monospace', android: 'monospace', default: 'Menlo' });
 
 type Align = 'left' | 'center' | 'right';
@@ -17,6 +19,7 @@ type Block =
   | { kind: 'p'; text: string }
   | { kind: 'h'; text: string; level: number }
   | { kind: 'code'; text: string; lang: string }
+  | { kind: 'divider' }
   | { kind: 'list'; items: { text: string; marker: string; indent: number }[] }
   | { kind: 'table'; head: string[]; align: Align[]; rows: string[][] };
 
@@ -39,7 +42,7 @@ function isTableStart(lines: string[], i: number): boolean {
 }
 
 function startsBlock(lines: string[], i: number): boolean {
-  return FENCE.test(lines[i]) || LIST.test(lines[i]) || HEADING.test(lines[i]) || isTableStart(lines, i);
+  return FENCE.test(lines[i]) || DIVIDER.test(lines[i]) || LIST.test(lines[i]) || HEADING.test(lines[i]) || isTableStart(lines, i);
 }
 
 function parse(src: string): Block[] {
@@ -63,9 +66,13 @@ function parse(src: string): Block[] {
       while (i < lines.length && lines[i].includes('|') && lines[i].trim()) rows.push(cells(lines[i++]));
       const width = head.length;
       blocks.push({ kind: 'table', head, align, rows: rows.map((r) => Array.from({ length: width }, (_, c) => r[c] ?? '')) });
+    } else if (DIVIDER.test(line)) {
+      // Checked before lists, so "- - -" and "* * *" are dividers, not list items.
+      blocks.push({ kind: 'divider' });
+      i++;
     } else if (LIST.test(line)) {
       const items: { text: string; marker: string; indent: number }[] = [];
-      while (i < lines.length && LIST.test(lines[i])) {
+      while (i < lines.length && LIST.test(lines[i]) && !DIVIDER.test(lines[i])) {
         const [, spaces, mark] = lines[i].match(LIST)!;
         const ordered = /\d/.test(mark);
         items.push({ text: lines[i].replace(LIST, ''), marker: ordered ? `${parseInt(mark, 10)}.` : '•', indent: Math.min(3, Math.floor(spaces.length / 2)) });
@@ -204,6 +211,8 @@ export const Markdown = React.memo(function Markdown({ text }: { text: string })
             return <CodeBlock key={i} text={b.text} lang={b.lang} />;
           case 'table':
             return <Table key={i} head={b.head} align={b.align} rows={b.rows} codeBg={codeBg} link={link} />;
+          case 'divider':
+            return <View key={i} style={[styles.divider, { backgroundColor: theme.colors.outlineVariant }]} />;
           case 'list':
             return (
               <View key={i} style={styles.list}>
@@ -241,6 +250,7 @@ const styles = StyleSheet.create({
   trBorder: { borderTopWidth: StyleSheet.hairlineWidth },
   td: { paddingHorizontal: 10, paddingVertical: 7, lineHeight: 20 },
   tdBorder: { borderLeftWidth: StyleSheet.hairlineWidth },
+  divider: { height: StyleSheet.hairlineWidth, marginVertical: 4 },
   list: { gap: 6 },
   item: { flexDirection: 'row', gap: 8 },
   marker: { minWidth: 18, lineHeight: 24 },
