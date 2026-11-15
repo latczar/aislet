@@ -17,6 +17,7 @@ import { FONT, STATUS_COLOURS } from './theme';
 import type { Incoming } from './share';
 import { registerFocus } from './shortcuts';
 import { useVoice, voiceSupported } from './voice';
+import { useBackCloses } from './back';
 
 const SUGGESTIONS = [
   { icon: 'calendar-check-outline', title: 'Plan my day', sub: 'Turn my to-dos into a simple plan', prompt: 'Help me plan my day. Ask me what I need to get done first.' },
@@ -240,6 +241,8 @@ function Composer({ ready, incoming, onIncomingTaken }: ComposerProps) {
   const [files, setFiles] = useState<{ name: string; text: string }[]>([]);
   const [pdfs, setPdfs] = useState<{ name: string; base64: string }[]>([]); // shared PDFs waiting for the laptop
   const [menu, setMenu] = useState(false);
+  const closeMenu = useCallback(() => setMenu(false), []);
+  useBackCloses(menu, closeMenu);
   const [reading, setReading] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const before = useRef('');
@@ -377,7 +380,7 @@ function Composer({ ready, incoming, onIncomingTaken }: ComposerProps) {
         <View style={styles.composer}>
         <Menu
           visible={menu}
-          onDismiss={() => setMenu(false)}
+          onDismiss={closeMenu}
           anchor={
             <IconButton
               icon="paperclip" size={22} iconColor={theme.colors.onSurfaceVariant} disabled={!ready || busy}

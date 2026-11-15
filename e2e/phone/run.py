@@ -366,7 +366,7 @@ def message_box() -> Node:
 
 
 def check_chat_typing() -> str:
-    """Typing in the message box shows the text, and the box and Send stay above the keyboard."""
+    """Typing in the message box shows the text, the box and Send stay above the keyboard, and Back closes the attach menu."""
     tap(open_new_chat())
     top = wait_keyboard(True)
     text = 'E2E typing check 123'
@@ -404,7 +404,17 @@ def check_chat_typing() -> str:
     if message_box().height >= grown:
         raise CheckFailed('box did not shrink after clearing')
     hide_keyboard()
-    return f'box {one_line}px, grows to {grown}px (limit {limit:.0f}px), keyboard top {top}'
+
+    # The attach menu opens, and Back closes it without leaving the app.
+    tap(wait_for('the attach button', desc='Attach a photo or file'))
+    wait_for('the attach menu', timeout=5, text='PDF or text file')
+    key(4)
+    time.sleep(1)
+    if foreground() != PKG:
+        raise CheckFailed('Back with the attach menu open left the app')
+    if find(screen(), text='PDF or text file'):
+        raise CheckFailed('Back did not close the attach menu')
+    return f'box {one_line}px, grows to {grown}px (limit {limit:.0f}px), keyboard top {top}; Back closes the attach menu'
 
 
 def delete_test_chat() -> bool:
@@ -621,12 +631,19 @@ def check_pair_link() -> str:
         raise CheckFailed('the pairing card does not warn to pair only with your own laptop')
     tap(cancel[0])
     wait_gone('the pairing card', timeout=5, text=title)
+    # Back also cancels, and stays in the app.
+    open_link(f'untethered://pair?u={PAIR_ADDRESS}&c={PAIR_CODE}')
+    wait_for('the pairing card again', timeout=10, text=title)
+    key(4)
+    wait_gone('the pairing card after Back', timeout=5, text=title)
+    if foreground() != PKG:
+        raise CheckFailed('Back on the pairing card left the app')
     after = home_pairing()
     if after != before:
         raise CheckFailed(f'pairing changed after Cancel: {before} → {after}')
     if connected:
         wait_for('the connected status after Cancel', timeout=20, contains='Connected to')
-    return f'outside address ignored; asked about {PAIR_ADDRESS} from cold; Cancel left it {after}'
+    return f'outside address ignored; asked about {PAIR_ADDRESS} from cold; Cancel and Back left it {after}'
 
 
 def scroll_list() -> bool:
