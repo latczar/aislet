@@ -571,6 +571,64 @@ def check_find_laptop() -> str:
     raise CheckFailed('Find my laptop found nothing within 60 s')
 
 
+# Made up: no laptop answers at this address, and the code is never a real one (it only uses the hub's letters).
+PAIR_ADDRESS = '192.168.255.254'
+PAIR_CODE = 'E2ETESTS'
+
+
+def open_link(url: str) -> None:
+    """Open a link in Untethered, as the camera app does after scanning a QR code."""
+    out = shell(f"am start -W -a android.intent.action.VIEW -d '{url}' -p {PKG}")
+    if 'Error' in out:
+        raise CheckFailed(f'Android did not open the link in Untethered: {out.strip()}')
+
+
+def home_pairing() -> str:
+    """'paired' or 'not paired', from Settings → Home. Changes nothing."""
+    go_tab('Settings')
+    scroll_to_top()
+    try:
+        scroll_to('the Home section', timeout_swipes=8, contains="Use the laptop's AI")
+        return 'paired'
+    except CheckFailed:
+        scroll_to('Find my laptop', timeout_swipes=4, text='Find my laptop')
+        return 'not paired'
+
+
+def check_pair_link() -> str:
+    """A pairing link (the laptop's QR code) shows the address and asks first; Cancel changes nothing."""
+    before = home_pairing()
+    connected = before == 'paired' and bool(find(screen(), contains='Connected to'))
+    # A link to an address outside the home network is turned away without asking.
+    open_link(f'untethered://pair?u=203.0.113.9&c={PAIR_CODE}')
+    wait_for('the "not on a home network" message', timeout=10, contains="isn't on a home network")
+    if find(screen(), contains='Pair with the laptop at'):
+        raise CheckFailed('asked to pair with an address outside the home network')
+    # From cold, as when the camera app opens the link: the app starts and asks.
+    safe_front('closing the app')
+    key(3)
+    time.sleep(1)
+    shell(f'am force-stop {PKG}')
+    open_link(f'untethered://pair?u={PAIR_ADDRESS}&c={PAIR_CODE}')
+    title = f'Pair with the laptop at {PAIR_ADDRESS}?'
+    card = wait_for('the pairing card', timeout=20, text=title)
+    nodes = screen()
+    pair = [n for n in find(nodes, text='Pair') if n.cy > card.cy]
+    cancel = [n for n in find(nodes, text='Cancel') if n.cy > card.cy]
+    if not pair or not cancel:
+        raise CheckFailed('the pairing card has no Pair and Cancel buttons')
+    if not find(nodes, contains='Only pair if'):
+        raise CheckFailed('the pairing card does not warn to pair only with your own laptop')
+    tap(cancel[0])
+    wait_gone('the pairing card', timeout=5, text=title)
+    after = home_pairing()
+    if after != before:
+        raise CheckFailed(f'pairing changed after Cancel: {before} → {after}')
+    if connected:
+        wait_for('the connected status after Cancel', timeout=20, contains='Connected to')
+    return f'outside address ignored; asked about {PAIR_ADDRESS} from cold; Cancel left it {after}'
+
+
 def scroll_list() -> bool:
     """Swipe up about a third of the screen. False when nothing moved: the end of the list."""
     before = [(n.label, n.y1) for n in screen()]
@@ -1245,6 +1303,7 @@ CHECKS = {
     'resume': check_resume,
     'text_fields': check_text_fields,
     'find_laptop': check_find_laptop,
+    'pair_link': check_pair_link,
     'memory': check_memory,
     'performance': check_performance,
     'haptics': check_haptics,

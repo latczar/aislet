@@ -13,6 +13,7 @@ import { PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StoreProvider, useStore } from './src/store';
 import { Onboarding } from './src/ui/Onboarding';
+import { PairPrompt } from './src/ui/PairPrompt';
 import { Shell } from './src/ui/Shell';
 import { darkTheme, lightTheme } from './src/ui/theme';
 
@@ -36,6 +37,7 @@ function Themed() {
   return (
     <PaperProvider theme={theme} settings={{ icon: renderIcon }}>
       {settings.onboarded ? <Shell /> : <Onboarding />}
+      <PairPrompt />
       <StatusBar style={dark ? 'light' : 'dark'} />
     </PaperProvider>
   );

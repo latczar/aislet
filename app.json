@@ -2,6 +2,7 @@
   "expo": {
     "name": "Untethered",
     "slug": "untethered",
+    "scheme": "untethered",
     "version": "1.0.6",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

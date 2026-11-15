@@ -10,12 +10,14 @@ import { engine } from '../engine';
 import type { ModelInfo } from '../engine/types';
 import { STALE_PC_KEY, hubNewCode, hubPairing, hubPing, normaliseAddress } from '../hub';
 import { KIWIX_FOLDER, LIBRARY_FOLDER, describeBook } from '../library';
+import { makePairLink } from '../pairLink';
 import { useStore } from '../store';
 import type { Accel, AnswerLength, Appearance, Performance } from '../types';
 import { Field } from './Field';
 import { formatWhen } from './confirm';
 import { confirm, formatSize } from './confirm';
 import { cancelDownload, startDownload, useDownload } from './downloads';
+import { PairQr } from './PairQr';
 import { Lead, Row } from './rows';
 import { SHORTCUTS } from './shortcuts';
 import { FONT, STATUS_COLOURS } from './theme';
@@ -193,7 +195,7 @@ function Libraries({ onToast }: { onToast: (message: string) => void }) {
   );
 }
 
-/** PC: show the address and code to type into the phone. */
+/** PC: a QR code for the phone's camera, and the address and code to type in instead. */
 function PairPhone() {
   const theme = useTheme();
   const { hub } = useStore();
@@ -204,23 +206,42 @@ function PairPhone() {
   }, []);
   if (problem) return <Text variant="bodyMedium" style={[styles.pad, { color: theme.colors.error }]}>{problem === STALE_PC_KEY ? problem : `The hub isn't running: ${problem}`}</Text>;
   if (!info) return <Text variant="bodyMedium" style={styles.pad}>Loading…</Text>;
+  const muted = { color: theme.colors.onSurfaceVariant };
+  const address = info.urls[0];
   return (
     <View style={styles.pad}>
-      <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
-        On your phone, open {APP_NAME} → Settings → Home and tap Find my laptop (or type the address), then enter the code:
+      {address ? (
+        <View style={styles.pairTop}>
+          <PairQr link={makePairLink(address, info.code)} />
+          <View style={styles.pairText}>
+            <Text variant="titleMedium" style={{ fontFamily: FONT.semibold }}>Scan with your phone</Text>
+            <Text variant="bodyMedium" style={muted}>
+              Point your phone's camera at the code and open the link it shows. {APP_NAME} asks before it pairs.
+            </Text>
+            <Text variant="bodySmall" style={muted}>
+              Install {APP_NAME} on the phone first. Both need to be on the same Wi-Fi.
+            </Text>
+          </View>
+        </View>
+      ) : (
+        <Text variant="bodyMedium" style={muted}>Connect this laptop to Wi-Fi to pair your phone.</Text>
+      )}
+      <Divider />
+      <Text variant="bodyMedium" style={muted}>
+        Or, on the phone, open {APP_NAME} → Settings → Home, tap Find my laptop (or type the address), then enter the code:
       </Text>
       <View style={styles.pairGrid}>
         <View style={styles.pairRow}>
-          <Text variant="labelLarge" style={[styles.pairLabel, { color: theme.colors.onSurfaceVariant }]}>Address</Text>
-          <Text variant="titleMedium" selectable style={styles.mono}>{info.urls[0]?.replace('http://', '').replace(':8766', '') ?? 'Connect to Wi-Fi first'}</Text>
+          <Text variant="labelLarge" style={[styles.pairLabel, muted]}>Address</Text>
+          <Text variant="titleMedium" selectable style={styles.mono}>{address?.replace('http://', '').replace(':8766', '') ?? 'Connect to Wi-Fi first'}</Text>
         </View>
         <View style={styles.pairRow}>
-          <Text variant="labelLarge" style={[styles.pairLabel, { color: theme.colors.onSurfaceVariant }]}>Code</Text>
+          <Text variant="labelLarge" style={[styles.pairLabel, muted]}>Code</Text>
           <Text variant="titleLarge" selectable style={[styles.mono, { color: theme.colors.primary, letterSpacing: 3 }]}>{info.code}</Text>
         </View>
       </View>
-      <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-        Both need to be on the same Wi-Fi. The first time, Windows may ask whether Python can use the network: choose Allow.
+      <Text variant="bodySmall" style={muted}>
+        The first time, Windows may ask whether Python can use the network: choose Allow.
         {hub.lastSync ? ` Last synced ${formatWhen(hub.lastSync)}.` : ''}
       </Text>
       <Button
@@ -898,6 +919,8 @@ const styles = StyleSheet.create({
   leftButton: { alignSelf: 'flex-start' },
   formButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
   refindProblem: { paddingHorizontal: 16, paddingBottom: 10 },
+  pairTop: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 20 },
+  pairText: { flex: 1, minWidth: 220, gap: 8 },
   pairGrid: { gap: 6 },
   pairRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   pairLabel: { width: 64 },

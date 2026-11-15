@@ -16,7 +16,7 @@ irm https://raw.githubusercontent.com/latczar/untethered/main/install/install.ps
 
 **Android:** download `Untethered.apk` from the [latest release](https://github.com/latczar/untethered/releases/latest), install it and follow the set-up.
 
-To link them, open Settings → Home on the phone, tap **Find my laptop** (or type the address), then enter the code shown in Settings → Home on the computer. Both need to be on the same Wi-Fi.
+To link them, open Settings → Home on the computer and scan the QR code with the phone's camera. Untethered opens and asks before it pairs. (Or, on the phone, open Settings → Home, tap **Find my laptop** and enter the code shown on the computer.) Both need to be on the same Wi-Fi.
 
 ## Why Untethered
 
@@ -43,7 +43,7 @@ To link them, open Settings → Home on the phone, tap **Find my laptop** (or ty
 - Moves the libraries you already have in Kiwix into Untethered, without copying them.
 
 **Phone and computer together**
-- Pair them in a minute: tap **Find my laptop** on the phone and enter the code from the computer.
+- Pair them in a minute: scan the QR code on the computer with the phone's camera.
 - At home, the phone uses the computer's bigger AI, and your memory and notes stay in sync.
 - Choose Cool, Balanced or Max on the phone to trade speed against heat.
 

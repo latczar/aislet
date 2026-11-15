@@ -41,7 +41,7 @@ function GetModel({ onDone }: { onDone: () => void }) {
           </View>
           <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
             {status?.ready
-              ? 'All set. It runs on this computer and works with no internet.'
+              ? 'All set. It runs on this computer and works with no internet. To add your phone, open Settings → Home and scan the code with it.'
               : !status ? 'Looking for Ollama on this computer…'
                 : status.starting ? status.problem
                   : `${status.problem ?? ''} The installer sets this up; you can also install Ollama from ollama.com.`}
@@ -53,24 +53,27 @@ function GetModel({ onDone }: { onDone: () => void }) {
     );
   }
 
-  const downloaded = !!model?.downloaded || !!status?.ready;
+  const onPhone = !!model?.downloaded;
+  const paired = !!settings.hubUrl && !!settings.hubKey;
+  const ready = onPhone || !!status?.ready;
+  const muted = { color: theme.colors.onSurfaceVariant };
   return (
     <View style={styles.block}>
       <Text variant="headlineSmall" style={styles.title}>Get your private AI</Text>
-      <Text variant="bodyLarge" style={{ color: theme.colors.onSurfaceVariant }}>
-        Download it once on Wi-Fi. After that it runs entirely on this phone, even in aeroplane mode.
-      </Text>
+      <Text variant="bodyLarge" style={muted}>Choose where it runs. You can use both, and change this later in Settings.</Text>
       {model && (
         <Surface style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]} elevation={0}>
-          <Text variant="titleMedium" style={{ fontFamily: FONT.semibold }}>{model.name}</Text>
-          <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>{model.note} {formatSize(model.size)}.</Text>
-          {downloaded ? (
+          <Text variant="titleMedium" style={{ fontFamily: FONT.semibold }}>On this phone</Text>
+          <Text variant="bodyMedium" style={muted}>
+            {model.name}, {formatSize(model.size)}. Download it once on Wi-Fi; after that it works anywhere, even in aeroplane mode.
+          </Text>
+          {onPhone ? (
             <Text variant="labelLarge" style={{ color: theme.colors.primary }}>Downloaded and ready</Text>
           ) : dl.progress !== null ? (
             <View style={styles.progress}>
               <ProgressBar progress={dl.progress} style={styles.bar} />
               <View style={styles.rowBetween}>
-                <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>{Math.round(dl.progress * 100)}% · keep the app open</Text>
+                <Text variant="labelMedium" style={muted}>{Math.round(dl.progress * 100)}% · keep the app open</Text>
                 <Button compact onPress={() => cancelDownload(model.id)}>Cancel</Button>
               </View>
             </View>
@@ -80,14 +83,25 @@ function GetModel({ onDone }: { onDone: () => void }) {
           {dl.problem && <Text variant="bodySmall" style={{ color: theme.colors.error }}>{dl.problem}</Text>}
         </Surface>
       )}
-      <Button mode="contained" onPress={onDone} contentStyle={styles.big} disabled={dl.progress !== null && !downloaded}>
-        {downloaded ? 'Start' : 'Skip for now'}
+      <Surface style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]} elevation={0}>
+        <Text variant="titleMedium" style={{ fontFamily: FONT.semibold }}>On your laptop</Text>
+        {paired ? (
+          <View style={styles.row}>
+            <View style={[styles.dot, { backgroundColor: status?.ready ? STATUS_COLOURS.ready : STATUS_COLOURS.checking }]} />
+            <Text variant="bodyMedium" style={{ flex: 1 }}>
+              Paired with {settings.hubUrl.replace(/^https?:\/\//, '').replace(/:8766$/, '')}. {status?.ready ? 'Its AI is ready.' : 'Checking its AI…'}
+            </Text>
+          </View>
+        ) : (
+          <Text variant="bodyMedium" style={muted}>
+            With {APP_NAME} on your laptop, open Settings → Home there and scan the code with this phone's camera. At home,
+            the phone then uses the laptop's bigger AI and syncs with it.
+          </Text>
+        )}
+      </Surface>
+      <Button mode="contained" onPress={onDone} contentStyle={styles.big} disabled={dl.progress !== null && !ready}>
+        {ready ? 'Start' : 'Skip for now'}
       </Button>
-      {!downloaded && (
-        <Text variant="bodySmall" style={[styles.center, { color: theme.colors.onSurfaceVariant }]}>
-          You can also connect to your computer later in Settings → Home and use its AI.
-        </Text>
-      )}
     </View>
   );
 }
@@ -114,8 +128,8 @@ export function Onboarding() {
             <Image source={require('../../assets/icon.png')} style={styles.logo} />
             <Text variant="displaySmall" style={styles.title}>Welcome to {APP_NAME}</Text>
             <Text variant="bodyLarge" style={{ color: theme.colors.onSurfaceVariant }}>
-              Your private AI. It runs on your own devices, works without the internet, and learns about you as you chat.
-              Nothing you say is sent to anyone.
+              A private AI on your own phone and laptop. It works without the internet and learns about you as you chat.
+              Nothing you say leaves your devices.
             </Text>
             <Field
               mode="outlined"
@@ -152,5 +166,4 @@ const styles = StyleSheet.create({
   progress: { gap: 6 },
   bar: { height: 6, borderRadius: 3 },
   big: { height: 52 },
-  center: { textAlign: 'center' },
 });
