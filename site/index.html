@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aislet: a private AI that works offline, with its own library</title>
+<meta name="description" content="Aislet is a free, open-source AI for Android and Windows that works with no internet. It answers from offline Wikipedia, WikiMed and Appropedia, and names the article it used. No account, no cloud.">
+<link rel="canonical" href="https://aislet.app/">
+<meta name="theme-color" content="#18181B">
+<meta name="color-scheme" content="light">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Aislet">
+<meta property="og:url" content="https://aislet.app/">
+<meta property="og:title" content="Aislet: a library and an AI in your pocket">
+<meta property="og:description" content="A private AI for Android and Windows. No signal needed, sources shown. Free and open source, no account.">
+<meta property="og:image" content="https://aislet.app/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The Aislet logo, a broken ring with a free dot, beside the words: A library and an AI in your pocket. No signal needed, sources shown.">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="/styles.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Aislet",
+  "description": "A private AI for Android and Windows that works offline and answers from offline libraries such as Wikipedia, naming its source.",
+  "applicationCategory": "UtilitiesApplication",
+  "operatingSystem": "Android 8.0 or later, Windows 10 or 11",
+  "url": "https://aislet.app/",
+  "downloadUrl": "https://github.com/latczar/aislet/releases/latest",
+  "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+  "isAccessibleForFree": true,
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
+<script src="/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="band band--dark">
+  <nav class="container nav" aria-label="Main">
+    <a class="brand" href="/" aria-label="Aislet, home">
+      <svg class="brand__mark" viewBox="0 0 100 100" aria-hidden="true"><path d="M84.09 52.79A38.23 38.23 0 1 1 47.21 15.91" fill="none" stroke="currentColor" stroke-width="15.29" stroke-linecap="round"/><circle cx="89.68" cy="10.32" r="10.32" fill="currentColor"/></svg>
+      <span>Aislet</span>
+    </a>
+    <ul class="nav__links">
+      <li class="nav__wide"><a href="#library">Library</a></li>
+      <li class="nav__wide"><a href="#features">Features</a></li>
+      <li class="nav__wide"><a href="#privacy">Privacy</a></li>
+      <li class="nav__wide"><a href="#faq">FAQ</a></li>
+      <li><a href="#download">Download</a></li>
+      <li><a href="https://github.com/latczar/aislet">GitHub</a></li>
+    </ul>
+  </nav>
+
+  <div class="container hero">
+    <div class="hero__text">
+      <h1 class="hero__head">A library and an AI in your pocket.</h1>
+      <p class="hero__lead">No signal needed, sources shown.</p>
+      <div class="actions">
+        <a class="button button--light" href="https://github.com/latczar/aislet/releases/latest">Download for Android</a>
+        <a class="button button--ghost" href="#windows">Install on Windows</a>
+      </div>
+      <p class="hero__note">Free and open source. No account, no cloud.</p>
+    </div>
+
+    <figure class="hero__figure">
+      <div class="chat" role="img" aria-label="An example chat. Question: How long should I boil water to make it safe to drink? Aislet's answer ends by naming its source: From Wikipedia, Portable water purification.">
+        <div class="chat__bar">
+          <span class="chat__title">Boiling water to drink</span>
+          <span class="chat__sub">On this phone, private</span>
+        </div>
+        <p class="chat__you">How long should I boil water to make it safe to drink?</p>
+        <div class="chat__ai">
+          <span class="chat__avatar" aria-hidden="true"><svg viewBox="0 0 100 100"><path d="M69.77 51.62A22.18 22.18 0 1 1 48.38 30.23" fill="none" stroke="currentColor" stroke-width="8.87" stroke-linecap="round"/><circle cx="73.01" cy="26.99" r="5.99" fill="currentColor"/></svg></span>
+          <div class="chat__text">
+            <p>Bring it to a rolling boil and keep it boiling for at least one minute. Above about 2,000 metres, boil it for three minutes, because water boils at a lower temperature up there.</p>
+            <p>Let it cool with a lid on, and keep it in a clean, covered container.</p>
+            <p class="chat__source">(From Wikipedia: Portable water purification)</p>
+          </div>
+        </div>
+      </div>
+      <figcaption>An example answer from the offline Wikipedia library.</figcaption>
+    </figure>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="section" id="library" aria-labelledby="library-head">
+  <div class="container split">
+    <div class="split__side">
+      <h2 class="section__head" id="library-head">It looks it up, then tells you where.</h2>
+      <p class="section__lead">For each question, Aislet searches the libraries on your phone, gives the best passages to the AI and names the article it used. You can check any answer against the page it came from.</p>
+    </div>
+    <ul class="libraries">
+      <li><h3>Wikipedia</h3><p>The encyclopedia, in full or in smaller selections.</p></li>
+      <li><h3>WikiMed</h3><p>Wikipedia’s medical articles, for health questions.</p></li>
+      <li><h3>Appropedia</h3><p>Practical guides to water, energy, food and building.</p></li>
+      <li><h3>Any Kiwix library</h3><p>Already use Kiwix? Aislet moves your .zim files in without copying them.</p></li>
+    </ul>
+  </div>
+</section>
+
+<section class="section section--tint" aria-labelledby="shots-head">
+  <div class="container">
+    <h2 class="section__head" id="shots-head">Everyday help, done on the device.</h2>
+    <div class="shots">
+      <figure class="shot">
+        <video class="shot__media" src="/img/demo.mp4" poster="/img/demo-poster.webp" width="480" height="936" muted loop playsinline preload="none" aria-label="Typing a message from a landlord about a plumber’s visit, and Aislet drafting a polite reply"></video>
+        <figcaption><strong>Drafts a reply.</strong> Paste a message and say what you want to say back.</figcaption>
+      </figure>
+      <figure class="shot">
+        <img class="shot__media" src="/img/summarise-pdf.webp" width="540" height="1053" loading="lazy" alt="A building notice about a water shut-off, shared as a PDF, and Aislet summarising it">
+        <figcaption><strong>Summarises what you share.</strong> Send a PDF, photo or link from any Android app.</figcaption>
+      </figure>
+      <figure class="shot">
+        <img class="shot__media" src="/img/settings-ai.webp" width="540" height="1053" loading="lazy" alt="The AI settings: the laptop’s model, the phone’s own Qwen3.5 model, and speed and heat options">
+        <figcaption><strong>Uses your laptop at home.</strong> The phone borrows the computer’s bigger AI over Wi-Fi.</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="features" aria-labelledby="features-head">
+  <div class="container">
+    <h2 class="section__head" id="features-head">Yours to look after, not a service.</h2>
+    <ul class="features">
+      <li>
+        <h3>Memory you can see</h3>
+        <p>It learns lasting facts about you as you talk. Read them, change them, or let Tidy up find the duplicates and the out-of-date ones.</p>
+      </li>
+      <li>
+        <h3>Phone and laptop together</h3>
+        <p>Pair them once on your home Wi-Fi, with no account. At home the phone uses the computer’s AI, and memory and notes stay in sync.</p>
+      </li>
+      <li>
+        <h3>Share from any app</h3>
+        <p>Send text, a screenshot or a PDF to Aislet from any Android app, then ask about it.</p>
+      </li>
+      <li>
+        <h3>Encrypted backups</h3>
+        <p>Each day it saves an encrypted copy of your memory and notes to a folder you choose. Your passphrase restores it.</p>
+      </li>
+      <li>
+        <h3>Works in aeroplane mode</h3>
+        <p>On a plane, off-grid or abroad without data, it still answers. Only downloads need a connection.</p>
+      </li>
+      <li>
+        <h3>Talk instead of typing</h3>
+        <p>Speak a question and hear the answer, using your phone’s own offline speech.</p>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<section class="section band band--dark" id="privacy" aria-labelledby="privacy-head">
+  <div class="container">
+    <h2 class="section__head" id="privacy-head">How private is it?</h2>
+    <div class="ledger">
+      <div class="ledger__col">
+        <h3>What goes online</h3>
+        <p>Downloads, and nothing else: AI models when you tap Download, the computer app when you install it, and the libraries you choose to add.</p>
+      </div>
+      <div class="ledger__col">
+        <h3>What never does</h3>
+        <p>Your chats, memory, notes, photos, PDFs and voice. There’s no account, no analytics and no ads, and Android’s cloud backup is off.</p>
+      </div>
+    </div>
+    <ul class="proofs">
+      <li><h3>Voice stays on the phone</h3><p>Aislet only uses the phone’s offline speech recognition. If a phone has none, there’s no voice typing rather than audio sent online.</p></li>
+      <li><h3>Phone and computer talk directly</h3><p>Every request is signed with your pairing code, which never crosses the network. Replayed or altered requests are refused.</p></li>
+      <li><h3>Check it yourself</h3><p>Turn off Wi-Fi and mobile data: everything except downloads still works. Or read the <a href="https://github.com/latczar/aislet/blob/main/docs/DEVELOPMENT.md#security-model">security model</a> and the <a href="https://github.com/latczar/aislet/blob/main/pc/tests/hub_attack_test.py">attack tests</a>.</p></li>
+    </ul>
+  </div>
+</section>
+
+<section class="section" id="download" aria-labelledby="download-head">
+  <div class="container">
+    <h2 class="section__head" id="download-head">Get Aislet</h2>
+    <div class="install">
+      <div class="install__col" id="android">
+        <h3>Android phone</h3>
+        <p>Android 8 or later. A phone with 8 GB of memory runs the built-in AI best.</p>
+        <div class="actions">
+          <a class="button button--dark" href="https://github.com/latczar/aislet/releases/latest">Download the APK</a>
+        </div>
+        <p class="small">Open the file to install it, then follow the set-up. For automatic updates, <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/latczar/aislet">add it to Obtainium</a>.</p>
+        <details class="genuine">
+          <summary>Check it’s the genuine app</summary>
+          <p>The package is <code>app.untethered.assistant</code>, and the SHA-256 of its signing certificate is:</p>
+          <p><code class="hash">25:C6:D2:76:14:C5:E6:1B:20:58:6B:A2:62:64:E9:A8:8F:B0:49:95:20:17:AD:98:C2:14:4B:F6:90:1C:1E:9A</code></p>
+        </details>
+      </div>
+      <div class="install__col" id="windows">
+        <h3>Windows computer</h3>
+        <p>Windows 10 or 11. Open PowerShell and run:</p>
+        <div class="command">
+          <code id="install-command">irm https://raw.githubusercontent.com/latczar/aislet/main/install/install.ps1 | iex</code>
+          <button class="command__copy" type="button" data-copy="install-command" hidden>Copy</button>
+        </div>
+        <p class="small">It adds Ollama and Python if they’re missing, picks an AI model to suit your graphics card, and puts Aislet in the Start menu. Linux and Mac are coming in the next version.</p>
+      </div>
+    </div>
+    <p class="install__pair">To link them, open Settings, then Home, on both and follow the steps. They need to be on the same Wi-Fi.</p>
+  </div>
+</section>
+
+<section class="section section--tint" id="source" aria-labelledby="source-head">
+  <div class="container split">
+    <div class="split__side">
+      <h2 class="section__head" id="source-head">Open source, so you can check for yourself.</h2>
+    </div>
+    <div class="split__main">
+      <p class="section__lead">Aislet is free software under the GPL, version 3 or later. Read every line, build it yourself, or report a problem on GitHub.</p>
+      <div class="actions">
+        <a class="button button--dark" href="https://github.com/latczar/aislet">View the code on GitHub</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="faq" aria-labelledby="faq-head">
+  <div class="container split">
+    <div class="split__side">
+      <h2 class="section__head" id="faq-head">Questions</h2>
+    </div>
+    <div class="faq">
+      <details>
+        <summary>What do I need?</summary>
+        <p>An Android phone with Android 8 or later; 8 GB of memory is recommended for the AI that runs on the phone. The computer side is optional and runs on Windows 10 or 11 with Ollama, which the installer adds for you.</p>
+      </details>
+      <details>
+        <summary>Does it really work with no internet?</summary>
+        <p>Yes. Once the AI model and any libraries are downloaded, chats, memory, notes, libraries and voice all work in aeroplane mode. At home, the phone and computer talk over your own Wi-Fi, not the internet.</p>
+      </details>
+      <details>
+        <summary>How do I add Wikipedia or another library?</summary>
+        <p>Download a .zim file from <a href="https://library.kiwix.org">library.kiwix.org</a>, such as Wikipedia or WikiMed, then turn on Libraries in Aislet’s settings and follow the steps there. If the Kiwix app already has your libraries, Aislet can move them across without making a second copy.</p>
+      </details>
+      <details>
+        <summary>Which AI does it use?</summary>
+        <p>Open models that run on your own devices: Qwen3.5 on the phone, and on the computer a model sized to your graphics card, through Ollama. Nothing is sent to an AI company.</p>
+      </details>
+      <details>
+        <summary>Is it free?</summary>
+        <p>Yes. No subscription, no ads, no account. It’s open source under the GPL, version 3 or later.</p>
+      </details>
+      <details>
+        <summary>Is there an iPhone or Mac version?</summary>
+        <p>Not for iPhone. The computer side for Linux and Mac is coming in the next version; follow the project on GitHub to hear when.</p>
+      </details>
+      <details>
+        <summary>Can it get things wrong?</summary>
+        <p>Yes, like any AI. That’s why answers from a library name the article they came from, so you can read it yourself.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="band band--dark footer">
+  <div class="container footer__grid">
+    <div class="footer__brand">
+      <a class="brand" href="/" aria-label="Aislet, home">
+        <svg class="brand__mark" viewBox="0 0 100 100" aria-hidden="true"><path d="M84.09 52.79A38.23 38.23 0 1 1 47.21 15.91" fill="none" stroke="currentColor" stroke-width="15.29" stroke-linecap="round"/><circle cx="89.68" cy="10.32" r="10.32" fill="currentColor"/></svg>
+        <span>Aislet</span>
+      </a>
+      <p>This site has no cookies and no analytics, and loads nothing from anywhere else.</p>
+    </div>
+    <ul class="footer__links">
+      <li><a href="https://github.com/latczar/aislet">GitHub</a></li>
+      <li><a href="https://github.com/latczar/aislet/releases">Releases</a></li>
+      <li><a href="https://github.com/latczar/aislet/issues">Report a problem</a></li>
+      <li><a href="https://github.com/latczar/aislet/blob/main/LICENSE">Licence</a></li>
+    </ul>
+    <p class="footer__legal">© 2026 Lattrell Caesar. Licensed under GPL-3.0-or-later. Aislet isn’t affiliated with Kiwix, the Wikimedia Foundation, Appropedia, Alibaba (Qwen), Ollama, Hugging Face or Google. AI can make mistakes.</p>
+  </div>
+</footer>
+</body>
+</html>
