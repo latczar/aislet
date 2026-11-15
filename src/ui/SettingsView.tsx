@@ -3,6 +3,7 @@ import { Linking, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import {
   Avatar, Button, Chip, Divider, IconButton, List, ProgressBar, RadioButton, SegmentedButtons, Snackbar, Surface, Switch, Text, useTheme,
 } from 'react-native-paper';
+import { type BackupStatus, backUp, backupStatus, backupSupported, openBackup, pickBackupFile, setUpBackups, turnOffBackups } from '../backup';
 import { APP_NAME } from '../config';
 import { findLaptops } from '../discover';
 import { engine } from '../engine';
@@ -438,6 +439,164 @@ function ConnectLaptop() {
   );
 }
 
+/** Phone: automatic encrypted backups, and restoring one. These rows open the "Your data" card. */
+function Backups({ onToast }: { onToast: (message: string) => void }) {
+  const theme = useTheme();
+  const { snapshot, restore } = useStore();
+  const [status, setStatus] = useState<BackupStatus>({ on: false });
+  const [mode, setMode] = useState<null | 'setup' | 'restore'>(null);
+  const [pass, setPass] = useState('');
+  const [again, setAgain] = useState('');
+  const [file, setFile] = useState<{ name: string; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const refresh = () => { backupStatus().then(setStatus).catch(() => undefined); };
+  useEffect(refresh, []);
+
+  const close = () => {
+    setMode(null);
+    setPass('');
+    setAgain('');
+    setFile(null);
+    setProblem(null);
+  };
+  // Making the key from a passphrase takes a few seconds; let the button show it's working first.
+  const nextFrame = () => new Promise((r) => setTimeout(r, 60));
+
+  const setUp = async () => {
+    if (pass.length < 8) return setProblem('Use at least 8 characters.');
+    if (pass !== again) return setProblem("The passphrases don't match.");
+    setProblem(null);
+    setBusy(true);
+    try {
+      await nextFrame();
+      const s = await setUpBackups(pass, snapshot());
+      setStatus(s);
+      close();
+      onToast(`Backed up to ${s.folder}`);
+    } catch (e) {
+      setProblem((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const backUpNow = async () => {
+    setBusy(true);
+    try {
+      await backUp(snapshot(), true);
+      onToast('Backed up');
+    } catch (e) {
+      onToast((e as Error).message);
+    } finally {
+      setBusy(false);
+      refresh();
+    }
+  };
+
+  const turnOff = async () => {
+    if (await confirm('Turn off automatic backups?', 'Backups already saved stay in their folder.', 'Turn off')) {
+      await turnOffBackups();
+      refresh();
+    }
+  };
+
+  const chooseBackup = async () => {
+    close();
+    const picked = await pickBackupFile();
+    if (!picked) return;
+    setFile(picked);
+    setMode('restore');
+  };
+
+  const restoreIt = async () => {
+    if (!file) return;
+    setProblem(null);
+    setBusy(true);
+    try {
+      await nextFrame();
+      const summary = await restore(await openBackup(file.text, pass));
+      close();
+      onToast(summary);
+    } catch (e) {
+      setProblem((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const muted = { color: theme.colors.onSurfaceVariant };
+  return (
+    <>
+      <Row
+        title="Automatic backups"
+        description={status.on
+          ? status.problem ?? `Daily to ${status.folder}, encrypted`
+          : 'Saves an encrypted copy of your memory and notes each day, to a folder you choose'}
+        descriptionStyle={status.problem ? { color: theme.colors.error } : undefined}
+        left={(p) => <List.Icon {...p} icon="shield-lock-outline" />}
+        right={(p) => (
+          <Switch
+            style={p.style}
+            value={status.on || mode === 'setup'}
+            disabled={busy}
+            onValueChange={(v) => (v ? (close(), setMode('setup')) : mode === 'setup' ? close() : turnOff())}
+          />
+        )}
+      />
+      {mode === 'setup' && (
+        <View style={styles.pad}>
+          <Text variant="bodyMedium" style={muted}>
+            Choose a passphrase, then the folder to save backups in. You'll need the passphrase to restore a backup, on this
+            phone or a new one. It can't be recovered if you forget it.
+          </Text>
+          <Field dense label="Passphrase" value={pass} onChangeText={setPass} secureTextEntry autoCapitalize="none" autoCorrect={false} />
+          <Field dense label="Passphrase again" value={again} onChangeText={setAgain} secureTextEntry autoCapitalize="none" autoCorrect={false} />
+          {problem && <Text variant="bodySmall" style={{ color: theme.colors.error }}>{problem}</Text>}
+          <View style={styles.formButtons}>
+            <Button onPress={close} disabled={busy}>Cancel</Button>
+            <Button mode="contained" onPress={setUp} loading={busy} disabled={busy || !pass || !again}>Choose folder</Button>
+          </View>
+        </View>
+      )}
+      {status.on && (
+        <>
+          <Divider />
+          <Row
+            title="Back up now"
+            description={status.last ? `Last backup ${formatWhen(status.last)}` : 'Not backed up yet'}
+            left={(p) => <List.Icon {...p} icon="content-save-outline" />}
+            right={(p) => (
+              <Button mode="contained-tonal" compact style={p.style} onPress={backUpNow} disabled={busy}>Back up</Button>
+            )}
+          />
+        </>
+      )}
+      <Divider />
+      <Row
+        title="Restore an encrypted backup"
+        description="Adds anything new from a backup file; nothing is overwritten"
+        left={(p) => <List.Icon {...p} icon="backup-restore" />}
+        onPress={chooseBackup}
+        disabled={busy}
+      />
+      {mode === 'restore' && file && (
+        <View style={styles.pad}>
+          <Text variant="bodyMedium" style={muted}>Enter the passphrase for {file.name}.</Text>
+          <Field dense label="Passphrase" value={pass} onChangeText={setPass} secureTextEntry autoCapitalize="none" autoCorrect={false} />
+          {problem && <Text variant="bodySmall" style={{ color: theme.colors.error }}>{problem}</Text>}
+          <View style={styles.formButtons}>
+            <Button onPress={close} disabled={busy}>Cancel</Button>
+            <Button mode="contained" onPress={restoreIt} loading={busy} disabled={busy || !pass}>Restore</Button>
+          </View>
+        </View>
+      )}
+      <Divider />
+    </>
+  );
+}
+
 export function SettingsView() {
   const theme = useTheme();
   const { settings, updateSettings, status, refreshStatus, exportData, importData, clearChats, chats, memories, notes, hub, libraries } = useStore();
@@ -622,8 +781,11 @@ export function SettingsView() {
 
         <Section
           title="Your data"
-          footer="Export makes a file with your memory and notes. Import it on your other device to bring them over. Chats stay where they are."
+          footer={backupSupported
+            ? 'Backups and exports hold your memory and notes; chats stay where they are. Export makes a plain file to bring them to your other device.'
+            : 'Export makes a file with your memory and notes. Import it on your other device to bring them over. Chats stay where they are.'}
         >
+          {backupSupported && <Backups onToast={setToast} />}
           <Row
             title="Export memory and notes"
             description={`${memories.length} facts · ${notes.length} notes`}
@@ -734,6 +896,7 @@ const styles = StyleSheet.create({
   findBar: { height: 4, borderRadius: 2 },
   foundRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
   leftButton: { alignSelf: 'flex-start' },
+  formButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
   refindProblem: { paddingHorizontal: 16, paddingBottom: 10 },
   pairGrid: { gap: 6 },
   pairRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },

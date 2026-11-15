@@ -60,8 +60,10 @@ def shell(command: str, timeout: float = 30) -> str:
     # lands in another app if someone picks up the phone during a run.
     if command.startswith(('input ', 'am start')):
         front = foreground()
-        if front != PKG and not any(l in front for l in LAUNCHERS):
+        if front != PKG and not any(l in front for l in LAUNCHERS) and not (picker_open and PICKER in front):
             raise CheckFailed(f'stopped: another app is in front ({front or "unknown"})')
+        if panel_open():
+            raise CheckFailed('stopped: the notification panel is open (someone is using the phone)')
     return adb('shell', command, timeout=timeout)
 
 
@@ -88,6 +90,11 @@ def type_text(text: str) -> None:
 def clear_focused_field() -> None:
     shell('input keycombination 113 29')  # Ctrl+A
     key(67)  # delete
+
+
+def panel_open() -> bool:
+    """The notification or quick-settings panel is pulled down. The app underneath still counts as in front."""
+    return 'NotificationShade' in adb('shell', 'dumpsys window | grep -m1 mCurrentFocus', check=False)
 
 
 def foreground() -> str:
@@ -234,6 +241,7 @@ def px_per_dp() -> float:
 
 
 def scroll_to(what: str, timeout_swipes: int = 10, up: bool = False, **match) -> Node:
+    hide_keyboard()  # a swipe that starts on the keyboard types instead of scrolling
     h = screen_height()
     for _ in range(timeout_swipes):
         hits = [n for n in find(screen(), **match) if 150 < n.cy < h - 300]
@@ -248,6 +256,7 @@ def scroll_to(what: str, timeout_swipes: int = 10, up: bool = False, **match) ->
 
 
 def scroll_to_top() -> None:
+    hide_keyboard()
     h = screen_height()
     for _ in range(4):
         shell(f'input swipe 540 {int(h * 0.3)} 540 {int(h * 0.8)} 200')
@@ -1030,6 +1039,157 @@ def check_library() -> str:
         adb('shell', f'rm -rf {LIBRARY_DIR}', check=False)
 
 
+# The backup check drives Android's own folder and file picker, which Untethered opens. Only while it does
+# may taps go to the picker as well as to Untethered.
+PICKER = 'documentsui'
+picker_open = False
+BACKUP_DIR = '/sdcard/Documents/E2E-untethered-backups'
+BACKUP_FACT = 'E2E backup fact: restored from a backup'
+PASSPHRASE = 'E2E pass 4242 x'
+
+
+def picker_tap(label: str, timeout: float = 15) -> None:
+    """Tap something in the system picker (labels may be shown in capitals)."""
+    end = time.time() + timeout
+    while time.time() < end:
+        if PICKER not in foreground():
+            raise CheckFailed(f'the system picker is not in front ({foreground()})')
+        for n in screen():
+            if n.text.lower() == label.lower() or (label.endswith('*') and n.text.startswith(label[:-1])):
+                tap_xy(n.cx, n.cy)
+                time.sleep(1.2)
+                return
+        time.sleep(0.5)
+    raise CheckFailed(f'no "{label}" in the system picker')
+
+
+def backup_switch() -> Node:
+    row = scroll_to('Automatic backups', text='Automatic backups')
+    switches = [n for n in screen() if n.cls.endswith('Switch') and abs(n.cy - row.cy) < 120]
+    if not switches:
+        raise CheckFailed('no switch on the "Automatic backups" row')
+    return switches[0]
+
+
+def type_into(label: str, text: str) -> None:
+    hide_keyboard()
+    tap(labelled_field(label))
+    wait_keyboard(True)
+    clear_focused_field()
+    type_text(text)
+    time.sleep(0.4)
+
+
+def add_fact(fact: str) -> None:
+    go_tab('Memory')
+    scroll_to_top()
+    tap(editable(screen())[0])  # the add-a-fact box is the only text box on the Memory screen
+    wait_keyboard(True)
+    clear_focused_field()
+    type_text(fact)
+    time.sleep(0.4)
+    hide_keyboard()
+    tap(wait_for('the Add button', text='Add'))
+    time.sleep(0.8)
+
+
+def check_backup() -> str:
+    """Encrypted backups: turn on with a passphrase and a folder, then restore a forgotten fact from the file."""
+    global picker_open
+    go_tab('Settings')
+    scroll_to_top()
+    if backup_switch().checked:
+        # Backups are already set up: leave them as they are and only check "Back up now".
+        before = [n.text for n in screen() if n.text.startswith('Last backup')]
+        tap(wait_for('the Back up button', text='Back up'))
+        time.sleep(4)
+        after = [n.text for n in screen() if n.text.startswith('Last backup')]
+        if not after:
+            raise CheckFailed('no "Last backup" time after Back up now')
+        return f'backups were already on, so only Back up now was checked ({before[:1]} → {after[:1]})'
+
+    turned_on = False
+    try:
+        adb('shell', f'mkdir -p {BACKUP_DIR}')
+        add_fact(BACKUP_FACT)
+
+        # Turn on: passphrase, then the folder.
+        go_tab('Settings')
+        scroll_to_top()
+        tap(backup_switch())
+        wait_for('the passphrase box', text='Passphrase again')
+        type_into('Passphrase', PASSPHRASE)
+        type_into('Passphrase again', PASSPHRASE)
+        hide_keyboard()
+        tap(wait_for('the Choose folder button', text='Choose folder'))
+        end = time.time() + 15
+        while PICKER not in foreground():
+            if time.time() > end:
+                raise CheckFailed('the folder picker did not open')
+            time.sleep(0.5)
+        picker_open = True
+        picker_tap('E2E-untethered-backups')
+        picker_tap('Use this folder')
+        picker_tap('Allow')
+        picker_open = False
+        turned_on = True
+        wait_for('backups on, saving to the test folder', timeout=60, contains='Daily to Documents/E2E-untethered-backups')
+        files = [f for f in shell(f'ls {BACKUP_DIR}').split() if f.startswith('untethered-backup-')]
+        if len(files) != 1:
+            raise CheckFailed(f'expected one backup file, found {files}')
+        content = shell(f"cat '{BACKUP_DIR}/{files[0]}'")
+        if '"app":"untethered-backup"' not in content or '"cipher":"AES-256-GCM"' not in content:
+            raise CheckFailed('the backup file is not in the expected format')
+        if 'E2E backup fact' in content:
+            raise CheckFailed('the backup file holds the fact in plain text; it should be encrypted')
+
+        # Forget the fact, then restore it from the file.
+        go_tab('Memory')
+        if not forget('E2E backup fact'):
+            raise CheckFailed('could not forget the test fact before restoring')
+        go_tab('Settings')
+        tap(scroll_to('the Restore row', text='Restore an encrypted backup'))
+        end = time.time() + 15
+        while PICKER not in foreground():
+            if time.time() > end:
+                raise CheckFailed('the file picker did not open')
+            time.sleep(0.5)
+        picker_open = True
+        picker_tap('untethered-backup-*')
+        picker_open = False
+        wait_for('the restore passphrase box', timeout=15, contains='Enter the passphrase for untethered-backup-')
+        type_into('Passphrase', 'wrong passphrase 1')
+        hide_keyboard()
+        tap(wait_for('the Restore button', text='Restore'))
+        wait_for('the wrong-passphrase message', timeout=60, contains="passphrase doesn't open this backup")
+        type_into('Passphrase', PASSPHRASE)
+        hide_keyboard()
+        tap(wait_for('the Restore button', text='Restore'))
+        wait_gone('the restore passphrase box', timeout=60, contains='Enter the passphrase for')
+        go_tab('Memory')
+        if not has_fact('E2E backup fact'):
+            raise CheckFailed('the forgotten fact did not come back from the backup')
+        return f'backed up to the test folder (encrypted, {len(content)} bytes), wrong passphrase refused, fact restored'
+    finally:
+        picker_open = False
+        if foreground() not in (PKG,) and PICKER in foreground():
+            key(4)  # leave the picker if a step failed inside it
+            time.sleep(1)
+        go_tab('Memory')
+        forget('E2E backup fact')
+        if turned_on:
+            go_tab('Settings')
+            if backup_switch().checked:
+                tap(backup_switch())
+                confirm_alert('Turn off')
+        else:
+            go_tab('Settings')
+            if find(screen(), text='Choose folder'):
+                tap(wait_for('Cancel', text='Cancel'))
+        adb('shell', f'rm -rf {BACKUP_DIR}', check=False)
+        scroll_to_top()
+
+
 CHECKS = {
     'launch': check_launch,
     'chat_typing': check_chat_typing,
@@ -1040,6 +1200,7 @@ CHECKS = {
     'memory': check_memory,
     'performance': check_performance,
     'haptics': check_haptics,
+    'backup': check_backup,
     'layout': check_layout,
     'library': check_library,
 }
@@ -1055,6 +1216,8 @@ def preflight(force: bool) -> None:
     front = foreground()
     if not force and front != PKG and not any(l in front for l in LAUNCHERS):
         sys.exit(f'Another app is in front ({front}). Go to the home screen first, or pass --force.')
+    if not force and panel_open():
+        sys.exit('The notification panel is open. Close it and leave the phone on the home screen.')
     if PKG not in shell(f'pm list packages {PKG}'):
         sys.exit(f'{PKG} is not installed.')
 

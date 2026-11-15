@@ -8,7 +8,9 @@ source /etc/profile.d/android.sh
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$ANDROID_HOME/platform-tools"  # Linux tools only, never the Windows ones
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # the project folder (on /mnt/c when run from Windows)
-WORK=/root/assistant-app   # building on the Linux disk is much faster than on /mnt/c
+# Building on the Linux disk is much faster than on /mnt/c. Set UNTETHERED_WORK to build a second checkout
+# (for example a git worktree) in its own folder, so two builds never share one.
+WORK="${UNTETHERED_WORK:-/root/assistant-app}"
 
 # A swap file inside Ubuntu, so WSL's 6 GB limit (set in .wslconfig) can't freeze the build.
 if ! swapon --show | grep -q /swapfile; then

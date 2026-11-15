@@ -92,6 +92,8 @@ interface Store {
   allowLibraries(): Promise<void>;          // opens Android's "All files access" page
   moveLibraries(): Promise<string>;         // moves .zim files found elsewhere into Untethered; returns a summary
   removeLibrary(path: string): Promise<void>;
+  snapshot(): Backup;                    // memory, notes, name and instructions, for a backup
+  restore(backup: Backup): Promise<string>; // adds anything new from a backup; returns a summary
 }
 
 const StoreContext = createContext<Store | null>(null);
@@ -396,10 +398,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!loaded) return;
     refreshStatus();
     refreshLibraries();
+    let lastCheck = Date.now();
     const sub = AppState.addEventListener('change', (state) => {
       if (state !== 'active') return;
-      refreshStatus();
       refreshLibraries(); // e.g. back from granting "All files access"
+      // Re-check the AI too, but not straight after the last check (a PC window that has just opened also
+      // reports gaining focus, which used to ask everything twice).
+      if (Date.now() - lastCheck > 10_000) {
+        lastCheck = Date.now();
+        refreshStatus();
+      }
     });
     return () => sub.remove();
   }, [loaded, refreshStatus, refreshLibraries]);
@@ -735,24 +743,20 @@ ${interviewPrompt(s.name)}` : prompt };
   const clearError = useCallback(() => setError(null), []);
 
   // ---- Moving memory and notes by file (when the laptop isn't reachable) ----
-  const exportData = useCallback(async () => {
+  const snapshot = useCallback((): Backup => {
     const s = settingsRef.current;
-    const backup: Backup = {
+    return {
       app: 'assistant', version: 1, exported: new Date().toISOString(),
       name: s.name, instructions: s.instructions, memories: memRef.current, notes: notesRef.current,
     };
-    await exportFile(backup);
   }, []);
 
-  const importData = useCallback(async () => {
-    const text = await pickFile();
-    if (text === null) return null;
-    let backup: Backup;
-    try {
-      backup = JSON.parse(text);
-    } catch {
-      throw new Error("That file isn't a backup from this app.");
-    }
+  const exportData = useCallback(async () => {
+    await exportFile(snapshot());
+  }, [snapshot]);
+
+  // Adds anything new from a backup (an export or an encrypted backup); nothing is overwritten.
+  const restore = useCallback(async (backup: Backup) => {
     if (backup?.app !== 'assistant' || !Array.isArray(backup.memories) || !Array.isArray(backup.notes)) {
       throw new Error("That file isn't a backup from this app.");
     }
@@ -772,10 +776,22 @@ ${interviewPrompt(s.name)}` : prompt };
     return `Added ${facts} ${facts === 1 ? 'fact' : 'facts'} and ${added} ${added === 1 ? 'note' : 'notes'}.`;
   }, [addMemory, saveNotes, updateSettings]);
 
+  const importData = useCallback(async () => {
+    const text = await pickFile();
+    if (text === null) return null;
+    let backup: Backup;
+    try {
+      backup = JSON.parse(text);
+    } catch {
+      throw new Error("That file isn't a backup from this app.");
+    }
+    return restore(backup);
+  }, [restore]);
+
   const value: Store = {
     loaded, settings, updateSettings, status, refreshStatus, engine, hub, syncNow, memories, addMemory, removeMemory, proposeTidy, applyTidy,
     notes, saveNote, deleteNote, chats, chat, openChat, newChat, deleteChat, clearChats, busy, error, clearError, noted,
-    send, regenerate, startInterview, stop, exportData, importData,
+    send, regenerate, startInterview, stop, exportData, importData, snapshot, restore,
     libraries, refreshLibraries, allowLibraries, moveLibraries, removeLibrary,
   };
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

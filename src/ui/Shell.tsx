@@ -1,6 +1,6 @@
 // Layout: a sidebar on the PC, a header and bottom tabs on the phone.
 import React, { useCallback, useEffect, useState } from 'react';
-import { Image, Modal, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { AppState, Image, Modal, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { BottomNavigation, Button, Divider, Drawer, IconButton, Text, useTheme } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { APP_NAME } from '../config';
@@ -11,6 +11,7 @@ import { ChatHeader, ChatView } from './ChatView';
 import { MemoryView } from './MemoryView';
 import { NotesView } from './NotesView';
 import { SettingsView } from './SettingsView';
+import { backUp } from '../backup';
 import { useKeyboardInset } from './keyboard';
 import { type Incoming, useIncomingShare } from './share';
 import { focusSoon, useShortcuts } from './shortcuts';
@@ -28,7 +29,7 @@ export function Shell() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { newChat, busy, stop } = useStore();
+  const { newChat, busy, stop, snapshot } = useStore();
   const [view, setView] = useState<ViewKey>('chat');
   const [chatsOpen, setChatsOpen] = useState(false);
   const [shared, setShared] = useState<Incoming | null>(null);     // arrived from another app
@@ -51,6 +52,17 @@ export function Shell() {
     setShared(null);
   }, [shared, busy, newChat]);
   const takeIncoming = useCallback(() => setIncoming(null), []);
+
+  // The daily encrypted backup (phone, when it's on): checked at launch and whenever the app comes back.
+  useEffect(() => {
+    const check = () => { backUp(snapshot()).catch(() => undefined); }; // a failure shows in Settings
+    const first = setTimeout(check, 5000); // after the app has settled
+    const sub = AppState.addEventListener('change', (s) => { if (s === 'active') check(); });
+    return () => {
+      clearTimeout(first);
+      sub.remove();
+    };
+  }, [snapshot]);
 
   const content =
     view === 'chat' ? <ChatView onOpenSettings={() => setView('settings')} incoming={incoming} onIncomingTaken={takeIncoming} />

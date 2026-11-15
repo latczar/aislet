@@ -25,6 +25,7 @@ To link them, open Settings → Home on the phone, tap **Find my laptop** (or ty
 - **Reads your notes, photos and PDFs.** On Android, share text, a screenshot or a PDF from any app to Untethered to ask about it.
 - **Answers from offline libraries.** On Android, Untethered searches Kiwix libraries (.zim files) such as Wikipedia or Appropedia for each question and names the article it used. It can move the libraries you already have in Kiwix, without copying them.
 - **Syncs your phone and computer** over home Wi-Fi, and at home the phone uses the computer's bigger AI.
+- **Backs up automatically** on Android: an encrypted copy of your memory and notes each day, in a folder you choose. Restore it with your passphrase.
 
 Everything stays on your devices. Nothing is collected.
 
