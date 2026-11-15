@@ -40,6 +40,7 @@ const md = [
   '- **llama.cpp and ggml** (compiled into the Android app through llama.rn): MIT licence, copyright (c) 2023-2026 The ggml authors.',
   '- **Inter typeface** by Rasmus Andersson: SIL Open Font License 1.1 (see @expo-google-fonts/inter below).',
   '- **Material Design Icons** by Pictogrammers: Apache License 2.0 (bundled through @expo/vector-icons).',
+  '- **Kiwix libkiwix and libzim** (compiled into the Android app through org.kiwix:libkiwix 2.2.4, which reads offline libraries): GPL-3.0 and GPL-2.0-or-later. They include Xapian (GPL-2.0-or-later), ICU (Unicode licence), zstd (BSD 3-Clause) and xz (public domain). Source: https://github.com/kiwix/java-libkiwix. ReLinker, which loads them, is Apache 2.0.',
   '- **Ollama** (installed separately on Windows by the installer): MIT licence.',
   '- **pypdf** (installed separately for the laptop hub): BSD 3-Clause licence.',
   '- **Python** (installed separately): Python Software Foundation License.',

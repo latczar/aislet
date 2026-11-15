@@ -54,6 +54,7 @@ export interface Settings {
   performance: Performance;
   haptics: boolean;    // phone: a light buzz on taps
   onboarded: boolean;  // finished the first-run set-up
+  useLibraries: boolean; // search offline libraries (Kiwix .zim files) when answering
 }
 
 /** Everything that moves between devices with Export / Import. */

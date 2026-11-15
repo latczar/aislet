@@ -19,7 +19,8 @@ fi
 
 echo "== copy source"
 mkdir -p "$WORK"
-rsync -a --delete --exclude node_modules --exclude android --exclude ios --exclude dist \
+# /android and /ios only at the top: modules/*/android is source code and must be copied.
+rsync -a --delete --exclude node_modules --exclude /android --exclude /ios --exclude dist \
   --exclude .expo --exclude build --exclude .lock-hash "$SRC/" "$WORK/"
 cd "$WORK"
 

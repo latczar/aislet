@@ -695,6 +695,7 @@ def check_performance() -> str:
     scroll_to_top()
     scroll_to('Speed and heat', contains='Speed and heat')
     scroll_to('the performance buttons', text='Performance')
+    scroll_list()  # the label can show while its buttons are still behind the tab bar
     original = current_mode()
     if not original:
         raise CheckFailed('could not tell which performance mode is on')
@@ -984,6 +985,51 @@ def check_share() -> str:
     return ', '.join(details)
 
 
+LIBRARY_DIR = f'/sdcard/Android/data/{PKG}/files/libraries'  # the app's own folder: no "All files access" needed
+LIBRARY_FIXTURE = Path(__file__).resolve().parent / 'fixtures' / 'e2e-library.zim'  # made by make_test_library.py
+LIBRARY_PROMPT = 'E2E check: how long does the Lumen-7 lantern run on batteries'
+
+
+def check_library() -> str:
+    """A made-up library in the app's folder shows in Settings, and an answer uses its made-up fact."""
+    try:
+        shell(f'mkdir -p {LIBRARY_DIR}')
+        adb('push', str(LIBRARY_FIXTURE), f'{LIBRARY_DIR}/e2e-library.zim')
+        check_launch()  # a fresh start lists it
+        go_tab('Settings')
+        scroll_to('the test library in Settings, Libraries', text='E2E Test Library')
+        scroll_to_top()
+        tap(open_new_chat())
+        wait_keyboard(True)
+        type_text(LIBRARY_PROMPT)
+        time.sleep(0.5)
+        send = find(screen(), desc='Send')
+        if not send:
+            raise CheckFailed('no Send button')
+        tap(send[0])
+        wait_for('the sent message in the thread', timeout=10, text=LIBRARY_PROMPT)
+        hide_keyboard()
+        started, end = time.time(), time.time() + 180
+        while True:
+            nodes = screen()
+            if find(nodes, desc='Copy') and not find(nodes, desc='Stop'):
+                break
+            if find(nodes, text='Dismiss'):
+                raise CheckFailed('the reply failed with an error card')
+            if time.time() > end:
+                raise CheckFailed('no reply within 180 s')
+            time.sleep(1.5)
+        reply = ' '.join(n.text for n in screen() if n.text and n.text != LIBRARY_PROMPT)
+        if '42' not in reply:
+            raise CheckFailed(f'the reply did not use the library (no "42 hours"): {reply[:160]!r}')
+        cited = 'E2E Test Library' in reply
+        return f'listed in Settings; reply in {time.time() - started:.0f} s used the made-up fact' + (', and named the library' if cited else '')
+    finally:
+        if not delete_test_chat():
+            print('  note: could not find the test chat to delete', file=sys.stderr)
+        adb('shell', f'rm -rf {LIBRARY_DIR}', check=False)
+
+
 CHECKS = {
     'launch': check_launch,
     'chat_typing': check_chat_typing,
@@ -995,6 +1041,7 @@ CHECKS = {
     'performance': check_performance,
     'haptics': check_haptics,
     'layout': check_layout,
+    'library': check_library,
 }
 
 

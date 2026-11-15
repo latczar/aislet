@@ -9,6 +9,7 @@ TypeScript · React Native (Expo) · React Native Paper · Ollama on Windows · 
 - `src/brain.ts`: prompts, memory and notes search.
 - `src/ui`: the screens.
 - `src/ui/share.ts`: "Share to Untethered" on Android. The share filters are the `expo-sharing` plugin's options in `app.json`: single text, images and PDFs, or several images. A share opens a new chat with the text, photos (as JPEGs, at most 3) or files in the message box, ready to send. Shared PDFs are read by the laptop, as when attached. Only shared files are resolved: resolving shared text would make `expo-sharing` open any web link in it, and nothing in Untethered goes online by itself.
+- `src/library.ts` and `modules/untethered-library`: offline libraries. The native module wraps Kiwix's reader (`org.kiwix:libkiwix`, GPL-3.0) to search Kiwix `.zim` files on the phone. For each question the app looks for overview articles by title, runs Kiwix's full-text search, picks the best passages (by meaning when an embedding model is available, otherwise by shared words) and puts up to three in the prompt. Libraries live in `Untethered/Libraries` on the phone. Reading them, and moving Kiwix's own files out of `Android/media/org.kiwix.kiwixmobile` (which Android deletes with Kiwix), needs "All files access". The app's own folder `Android/data/app.untethered.assistant/files/libraries` works without it. The PC has no libraries yet: Smart App Control blocks the unsigned libzim DLL, so `pip install libzim` can't load on Windows.
 - `pc/hub.py`: the laptop hub. It serves the PC app on :8766 and handles sync, Ollama passthrough and PDF text.
 - `install/install.ps1`: the Windows installer. `scripts/package.ps1` makes the release files.
 
@@ -110,6 +111,7 @@ python e2e/phone/run.py
 | `memory` | Two facts are added, "Tidy up" runs, and the facts are forgotten again. Suggestions are applied only when memory held nothing else; otherwise they're cancelled. |
 | `performance` | Cool, Max and Balanced each switch over and show their description, then the original mode is put back. |
 | `haptics` | The "Vibrate on taps" switch in Settings turns off and on, then is put back as it was. |
+| `library` | A made-up library (`fixtures/e2e-library.zim`, made by `make_test_library.py`) pushed to the app's own folder shows in Settings → Libraries, and asking about its made-up lantern gets an answer with its made-up fact (42 hours). The file and the chat are deleted afterwards. Your own libraries and "All files access" are never touched. |
 | `layout` | List rows on Memory and Settings line up. Titles start at one left edge and buttons end at one right edge, the same on every card. No button is stretched or off-centre on its row. |
 
 The checks use made-up text starting "E2E" and clean up after themselves:

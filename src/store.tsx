@@ -10,6 +10,11 @@ import { engine as localEngine } from './engine';
 import { createOllamaEngine } from './engine/ollama';
 import type { Engine, EngineStatus } from './engine/types';
 import { type HubInfo, type HubTarget, STALE_PC_KEY, hubHeaders, hubPing, hubSync, localHub } from './hub';
+import {
+  KIWIX_FOLDER, LIBRARY_FOLDER, type LibraryBook, type LibraryHit, OTHER_FOLDERS, libraryCandidates, overviewTitles, searchQuery,
+  titleQueries,
+} from './library';
+import { nativeLibrary } from './libraryNative';
 import { KEYS, load, newId, remove, save, today } from './storage';
 import { exportFile, pickFile } from './transfer';
 import { setHaptics } from './ui/actions';
@@ -18,6 +23,7 @@ import type { Backup, Chat, ChatSummary, Memory, MemoryCategory, Message, Note, 
 const DEFAULT_SETTINGS: Settings = {
   name: '', learn: true, modelId: 'qwen3.5-4b', instructions: '', length: 'balanced', appearance: 'light',
   hubUrl: '', hubKey: '', useLaptop: true, accel: 'cpu', performance: 'balanced', haptics: true, onboarded: false,
+  useLibraries: true,
 };
 const HISTORY = 20; // messages of the current chat the model sees
 const DELETED_KEY = 'deleted';
@@ -36,6 +42,15 @@ export interface HubState {
   lastSync?: number;
   syncing: boolean;
   problem?: string;
+}
+
+/** Offline libraries on this device. `supported` is false on the PC and on builds without the reader. */
+export interface LibraryState {
+  supported: boolean;
+  access: boolean;                            // phone: "All files access" is on
+  books: LibraryBook[];                       // in Untethered's own folder
+  elsewhere: LibraryBook[];                   // .zim files in Kiwix's folder, Download or Documents
+  folder: string;                             // where Untethered keeps them
 }
 
 interface Store {
@@ -72,6 +87,11 @@ interface Store {
   stop(): void;
   exportData(): Promise<void>;
   importData(): Promise<string | null>; // a summary of what was added, or null if cancelled
+  libraries: LibraryState;
+  refreshLibraries(): Promise<void>;
+  allowLibraries(): Promise<void>;          // opens Android's "All files access" page
+  moveLibraries(): Promise<string>;         // moves .zim files found elsewhere into Untethered; returns a summary
+  removeLibrary(path: string): Promise<void>;
 }
 
 const StoreContext = createContext<Store | null>(null);
@@ -116,6 +136,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const notesRef = useRef(notes);
+  const [libraries, setLibraries] = useState<LibraryState>({ supported: !!nativeLibrary, access: false, books: [], elsewhere: [], folder: '' });
+  const librariesRef = useRef(libraries);
+  librariesRef.current = libraries;
   notesRef.current = notes;
   const chatRef = useRef(chat);
   chatRef.current = chat;
@@ -303,14 +326,83 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
+  // ---- Offline libraries (Kiwix .zim files) on this phone ----
+  const refreshLibraries = useCallback(async () => {
+    if (!nativeLibrary) return;
+    const root = nativeLibrary.storage();
+    const folder = `${root}/${LIBRARY_FOLDER}`;
+    const access = nativeLibrary.hasAccess();
+    // The app's own folder needs no permission (the phone tests put a made-up library there).
+    const own = await nativeLibrary.find([folder, nativeLibrary.appFolder()].filter(Boolean)).catch(() => []);
+    const books = (await Promise.all(own.map((f) => nativeLibrary!.info(f.path).catch(() => null))))
+      .filter((b): b is LibraryBook => !!b)
+      .sort((a, b) => a.title.localeCompare(b.title));
+    const found = access ? await nativeLibrary.find([KIWIX_FOLDER, ...OTHER_FOLDERS].map((d) => `${root}/${d}`)).catch(() => []) : [];
+    const elsewhere = (await Promise.all(found.filter((f) => !f.path.startsWith(`${folder}/`)).map((f) => nativeLibrary!.info(f.path).catch(() => null))))
+      .filter((b): b is LibraryBook => !!b);
+    setLibraries({ supported: true, access, books, elsewhere, folder });
+  }, []);
+
+  const allowLibraries = useCallback(async () => {
+    await nativeLibrary?.requestAccess(); // the page opens; the list refreshes when the app comes back
+  }, []);
+
+  const moveLibraries = useCallback(async () => {
+    const { elsewhere, folder } = librariesRef.current;
+    if (!nativeLibrary || !elsewhere.length) return 'Nothing to move.';
+    let moved = 0;
+    const problems: string[] = [];
+    for (const f of elsewhere) {
+      try {
+        await nativeLibrary.move(f.path, folder);
+        moved++;
+      } catch (e) {
+        problems.push((e as Error).message);
+      }
+    }
+    await refreshLibraries();
+    if (problems.length) throw new Error(`Moved ${moved} of ${elsewhere.length}. ${problems[0]}`);
+    return `Moved ${moved} ${moved === 1 ? 'library' : 'libraries'} into Untethered.`;
+  }, [refreshLibraries]);
+
+  const removeLibrary = useCallback(async (path: string) => {
+    await nativeLibrary?.remove(path);
+    await refreshLibraries();
+  }, [refreshLibraries]);
+
+  /** Passages from this phone's libraries that may help answer `question`. */
+  const searchLibraries = useCallback(async (question: string, vec: number[] | null): Promise<LibraryHit[]> => {
+    const books = librariesRef.current.books.filter((b) => b.searchable && !b.problem);
+    if (!nativeLibrary || !settingsRef.current.useLibraries || !books.length) return [];
+    const query = searchQuery(question);
+    if (!query) return [];
+    const lib = nativeLibrary;
+    const paths = books.map((b) => b.path);
+    // Overview articles found by title ("Compost") go first, then what the full-text search found.
+    const titled = overviewTitles(query, await lib.titles(paths, titleQueries(query), 3).catch(() => []));
+    const overviews = await Promise.all(titled.map(async (t) => ({ ...t, rank: 0, html: await lib.read(t.book, t.path, 60000).catch(() => '') })));
+    const pages = await lib.search(paths, query, 5, 60000);
+    const candidates = libraryCandidates(question, [...overviews, ...pages], 4);
+    if (!candidates.length) return [];
+    // Judge by meaning when an embedding model is available, otherwise by sharing most of the question's words.
+    const vectors = vec ? await engineRef.current.embed(candidates.map((c) => `${c.title}\n${c.text}`), 'document').catch(() => null) : null;
+    const scored = vectors && vec
+      ? candidates.map((c, i) => ({ ...c, score: similarity(vec, vectors[i]) })).filter((c) => c.score >= 0.55)
+      : candidates.filter((c) => (c.match ?? 0) >= 0.6);
+    return scored.sort((a, b) => b.score - a.score).slice(0, 3);
+  }, []);
+
   useEffect(() => {
     if (!loaded) return;
     refreshStatus();
+    refreshLibraries();
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') refreshStatus();
+      if (state !== 'active') return;
+      refreshStatus();
+      refreshLibraries(); // e.g. back from granting "All files access"
     });
     return () => sub.remove();
-  }, [loaded, refreshStatus]);
+  }, [loaded, refreshStatus, refreshLibraries]);
 
   const updateSettings = useCallback(async (patch: Partial<Settings>) => {
     const next = { ...settingsRef.current, ...patch };
@@ -549,13 +641,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           : "This model can't read photos.");
       }
       // One meaning vector for the question serves both the notes search and choosing memories.
-      const needVec = notesRef.current.length > 0 || memRef.current.length > MEMORY_LIMIT;
+      const needVec = notesRef.current.length > 0 || memRef.current.length > MEMORY_LIMIT || librariesRef.current.books.length > 0;
       const queryVec = needVec ? (await active.embed([userMsg.content], 'query').catch(() => null))?.[0] ?? null : null;
       const hits = await searchNotes(userMsg.content, queryVec).catch(() => []);
+      const library = await searchLibraries(userMsg.display ?? userMsg.content, queryVec).catch(() => []);
       const recentAsks = base.messages.filter((m) => m.role === 'user').slice(-2).map((m) => m.display ?? m.content);
       const memories = await pickMemories([...recentAsks, userMsg.content].join('\n'), queryVec, base.mode === 'interview' ? 80 : MEMORY_LIMIT)
         .catch(() => memRef.current.slice(-MEMORY_LIMIT));
-      const prompt = systemPrompt(s, memories, hits, active.where);
+      const prompt = systemPrompt(s, memories, hits, active.where, library);
       const sys: Message = { role: 'system', content: base.mode === 'interview' ? `${prompt}
 
 ${interviewPrompt(s.name)}` : prompt };
@@ -604,7 +697,7 @@ ${interviewPrompt(s.name)}` : prompt };
       }
     }
     if (added.length) setNoted((n) => ({ ...n, [answerAt]: added }));
-  }, [searchNotes, pickMemories, saveChat, addMemory, refreshStatus]);
+  }, [searchNotes, searchLibraries, pickMemories, saveChat, addMemory, refreshStatus]);
 
   const send = useCallback(async (text: string, attachments?: Attachments) => {
     const t = text.trim();
@@ -683,6 +776,7 @@ ${interviewPrompt(s.name)}` : prompt };
     loaded, settings, updateSettings, status, refreshStatus, engine, hub, syncNow, memories, addMemory, removeMemory, proposeTidy, applyTidy,
     notes, saveNote, deleteNote, chats, chat, openChat, newChat, deleteChat, clearChats, busy, error, clearError, noted,
     send, regenerate, startInterview, stop, exportData, importData,
+    libraries, refreshLibraries, allowLibraries, moveLibraries, removeLibrary,
   };
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

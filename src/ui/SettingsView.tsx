@@ -8,6 +8,7 @@ import { findLaptops } from '../discover';
 import { engine } from '../engine';
 import type { ModelInfo } from '../engine/types';
 import { STALE_PC_KEY, hubNewCode, hubPairing, hubPing, normaliseAddress } from '../hub';
+import { KIWIX_FOLDER, LIBRARY_FOLDER, describeBook } from '../library';
 import { useStore } from '../store';
 import type { Accel, AnswerLength, Appearance, Performance } from '../types';
 import { Field } from './Field';
@@ -84,6 +85,110 @@ function ModelRow({ model, selected, onSelect, onChanged, icon = 'text-search' }
       )}
       {dl.problem && <Text variant="bodySmall" style={[styles.progress, { color: theme.colors.error }]}>{dl.problem}</Text>}
     </View>
+  );
+}
+
+/** Phone: offline libraries (Kiwix .zim files) searched when answering. */
+function Libraries({ onToast }: { onToast: (message: string) => void }) {
+  const theme = useTheme();
+  const { libraries, settings, updateSettings, allowLibraries, moveLibraries, removeLibrary } = useStore();
+  const [moving, setMoving] = useState(false);
+  const { access, books, elsewhere } = libraries;
+
+  const fromKiwix = elsewhere.every((b) => b.path.includes(`/${KIWIX_FOLDER}/`));
+  const names = elsewhere.map((b) => b.title).join(', ');
+  return (
+    <>
+      {!access && (
+        <Row
+          title="Allow access to libraries"
+          description={'Answer from Kiwix libraries (.zim files) such as Wikipedia. Needs "All files access".'}
+          left={(p) => <List.Icon {...p} icon="folder-key-outline" />}
+          right={(p) => <Button mode="contained-tonal" compact style={p.style} onPress={() => allowLibraries().catch((e) => onToast((e as Error).message))}>Allow</Button>}
+        />
+      )}
+      {(access || books.length > 0) && (
+        <>
+          {!access && <Divider />}
+          <Row
+            title="Use libraries in answers"
+            description="Searched on this phone for every question, even when the laptop's AI answers"
+            left={(p) => <List.Icon {...p} icon="bookshelf" />}
+            right={(p) => <Switch style={p.style} value={settings.useLibraries} onValueChange={(v) => updateSettings({ useLibraries: v })} />}
+          />
+        </>
+      )}
+      {books.map((b) => (
+        <View key={b.path}>
+          <Divider />
+          <Row
+            title={b.title}
+            description={describeBook(b, formatSize(b.size))}
+            left={(p) => <List.Icon {...p} icon={b.problem ? 'alert-circle-outline' : 'book-open-page-variant-outline'} />}
+            right={(p) => (
+              <IconButton
+                icon="trash-can-outline"
+                style={[styles.iconAction, p.style]}
+                iconColor={theme.colors.onSurfaceVariant}
+                accessibilityLabel={`Delete ${b.title}`}
+                onPress={async () => {
+                  if (await confirm(`Delete ${b.title}?`, `This deletes the file and frees ${formatSize(b.size)}. You can download it again from library.kiwix.org.`)) {
+                    await removeLibrary(b.path).catch((e) => onToast((e as Error).message));
+                  }
+                }}
+              />
+            )}
+          />
+        </View>
+      ))}
+      {elsewhere.length > 0 && (
+        <>
+          <Divider />
+          <Row
+            title={fromKiwix ? `Move ${elsewhere.length === 1 ? 'a library' : `${elsewhere.length} libraries`} from Kiwix` : `Move ${elsewhere.length === 1 ? 'a library' : `${elsewhere.length} libraries`} into Untethered`}
+            description={`${names}. They're moved, not copied, so no extra space is used.`}
+            left={(p) => <List.Icon {...p} icon="folder-move-outline" />}
+            right={(p) => (
+              <Button
+                mode="contained-tonal"
+                compact
+                style={p.style}
+                loading={moving}
+                disabled={moving}
+                onPress={async () => {
+                  const ok = await confirm(
+                    `Move ${elsewhere.length === 1 ? elsewhere[0].title : `${elsewhere.length} libraries`}?`,
+                    `They'll be in ${LIBRARY_FOLDER} on your phone. ${fromKiwix ? "Kiwix won't see them afterwards, and you can uninstall Kiwix without losing them." : 'Other apps can still open them there.'}`,
+                    'Move',
+                  );
+                  if (!ok) return;
+                  setMoving(true);
+                  try {
+                    onToast(await moveLibraries());
+                  } catch (e) {
+                    onToast((e as Error).message);
+                  } finally {
+                    setMoving(false);
+                  }
+                }}
+              >
+                Move
+              </Button>
+            )}
+          />
+        </>
+      )}
+      {access && books.length === 0 && elsewhere.length === 0 && (
+        <>
+          <Divider />
+          <Row
+            title="No libraries yet"
+            description={`Download a .zim file from library.kiwix.org, such as Wikipedia or WikiMed, and put it in ${LIBRARY_FOLDER} on your phone.`}
+            left={(p) => <List.Icon {...p} icon="book-plus-outline" />}
+          />
+        </>
+      )}
+    </>
   );
 }
 
@@ -335,7 +440,7 @@ function ConnectLaptop() {
 
 export function SettingsView() {
   const theme = useTheme();
-  const { settings, updateSettings, status, refreshStatus, exportData, importData, clearChats, chats, memories, notes, hub } = useStore();
+  const { settings, updateSettings, status, refreshStatus, exportData, importData, clearChats, chats, memories, notes, hub, libraries } = useStore();
   const [allModels, setAllModels] = useState(false);
   const [advanced, setAdvanced] = useState(false);
   const [name, setName] = useState(settings.name);
@@ -444,6 +549,12 @@ export function SettingsView() {
             </>
           )}
         </Section>
+
+        {libraries.supported && (
+          <Section title="Libraries" footer="Passages that match your question go to the AI, which says which article it used.">
+            <Libraries onToast={setToast} />
+          </Section>
+        )}
 
         <Section
           title="Speed and heat"

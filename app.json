@@ -26,7 +26,8 @@
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE"
       ],
-      "allowBackup": false
+      "allowBackup": false,
+      "permissions": ["android.permission.MANAGE_EXTERNAL_STORAGE"]
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -43,7 +44,11 @@
         {
           "android": {
             "minSdkVersion": 26,
-            "usesCleartextTraffic": true
+            "usesCleartextTraffic": true,
+            "extraProguardRules": "-keep class org.kiwix.** { *; }",
+            "packagingOptions": {
+              "pickFirst": ["**/libc++_shared.so"]
+            }
           }
         }
       ],
@@ -72,7 +77,8 @@
           "speechRecognitionPermission": "Untethered turns your speech into text when you tap the microphone."
         }
       ],
-      "./plugins/withReleaseSigning"
+      "./plugins/withReleaseSigning",
+      "./plugins/withBackupOff"
     ]
   }
 }
