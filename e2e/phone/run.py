@@ -1196,7 +1196,8 @@ def check_backup() -> str:
         go_tab('Settings')
         scroll_to_top()
         tap(backup_switch())
-        wait_for('the passphrase box', text='Passphrase again')
+        time.sleep(1.5)  # the form opens with its first box focused and the keyboard up
+        scroll_to('the passphrase box', timeout_swipes=4, text='Passphrase again')
         type_into('Passphrase', PASSPHRASE)
         type_into('Passphrase again', PASSPHRASE)
         hide_keyboard()
@@ -1236,7 +1237,8 @@ def check_backup() -> str:
         picker_open = True
         picker_tap('untethered-backup-*')
         picker_open = False
-        wait_for('the restore passphrase box', timeout=15, contains='Enter the passphrase for untethered-backup-')
+        time.sleep(2)  # the form opens under the Restore row, which may be low on the screen
+        scroll_to('the restore passphrase box', timeout_swipes=4, contains='Enter the passphrase for untethered-backup-')
         type_into('Passphrase', 'wrong passphrase 1')
         hide_keyboard()
         tap(wait_for('the Restore button', text='Restore'))

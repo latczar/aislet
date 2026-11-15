@@ -574,7 +574,7 @@ function Backups({ onToast }: { onToast: (message: string) => void }) {
             Choose a passphrase, then the folder to save backups in. You'll need the passphrase to restore a backup, on this
             phone or a new one. It can't be recovered if you forget it.
           </Text>
-          <Field dense label="Passphrase" value={pass} onChangeText={setPass} secureTextEntry autoCapitalize="none" autoCorrect={false} />
+          <Field dense label="Passphrase" value={pass} onChangeText={setPass} secureTextEntry autoCapitalize="none" autoCorrect={false} autoFocus />
           <Field dense label="Passphrase again" value={again} onChangeText={setAgain} secureTextEntry autoCapitalize="none" autoCorrect={false} />
           {problem && <Text variant="bodySmall" style={{ color: theme.colors.error }}>{problem}</Text>}
           <View style={styles.formButtons}>
@@ -607,7 +607,8 @@ function Backups({ onToast }: { onToast: (message: string) => void }) {
       {mode === 'restore' && file && (
         <View style={styles.pad}>
           <Text variant="bodyMedium" style={muted}>Enter the passphrase for {file.name}.</Text>
-          <Field dense label="Passphrase" value={pass} onChangeText={setPass} secureTextEntry autoCapitalize="none" autoCorrect={false} />
+          {/* Focusing it opens the keyboard and scrolls the form into view, so it can't open out of sight. */}
+          <Field dense label="Passphrase" value={pass} onChangeText={setPass} secureTextEntry autoCapitalize="none" autoCorrect={false} autoFocus />
           {problem && <Text variant="bodySmall" style={{ color: theme.colors.error }}>{problem}</Text>}
           <View style={styles.formButtons}>
             <Button onPress={close} disabled={busy}>Cancel</Button>
