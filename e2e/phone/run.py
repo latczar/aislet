@@ -860,6 +860,9 @@ def check_privacy() -> str:
     return f'{len(PRIVACY_ROWS)} rows, downloads named as the only use of the internet'
 
 
+SAME_AS_PHONE = 'Same as the phone'  # the menu's first item: the phone's own language
+
+
 def voice_row() -> tuple[Node, str]:
     """The Voice language row's Change button, and the language it shows."""
     scroll_to('the Voice language row', timeout_swipes=8, text='Voice language')
@@ -897,8 +900,8 @@ def check_voice_language() -> str:
         return 'this phone has no offline speech packs, so there is nothing to choose'
     change, before = voice_row()
     tap(change)
-    auto = wait_for('the language menu', timeout=5, text='Automatic (English)')
-    languages = [n for n in menu_items(auto) if n.text != 'Automatic (English)']
+    auto = wait_for('the language menu', timeout=5, text=SAME_AS_PHONE)
+    languages = [n for n in menu_items(auto) if n.text != SAME_AS_PHONE]
     if not languages:
         raise CheckFailed('the menu lists no installed languages')
     names = [n.text for n in languages]
@@ -907,11 +910,11 @@ def check_voice_language() -> str:
     time.sleep(1)
     if foreground() != PKG:
         raise CheckFailed('Back with the language menu open left the app')
-    if find(screen(), text='Automatic (English)'):
+    if find(screen(), text=SAME_AS_PHONE):
         raise CheckFailed('Back did not close the language menu')
     tap(voice_row()[0])
-    auto = wait_for('the language menu again', timeout=5, text='Automatic (English)')
-    languages = [n for n in menu_items(auto) if n.text != 'Automatic (English)']
+    auto = wait_for('the language menu again', timeout=5, text=SAME_AS_PHONE)
+    languages = [n for n in menu_items(auto) if n.text != SAME_AS_PHONE]
     pick = next((n for n in languages if n.text != before), languages[0])
     tap(pick)
     time.sleep(1)
@@ -923,8 +926,9 @@ def check_voice_language() -> str:
         change, now = voice_row()
         if now != before:  # put it back
             tap(change)
-            auto = wait_for('the language menu', timeout=5, text='Automatic (English)')
-            tap(next(n for n in menu_items(auto) if n.text == before))
+            auto = wait_for('the language menu', timeout=5, text=SAME_AS_PHONE)
+            item = SAME_AS_PHONE if before.startswith(SAME_AS_PHONE) else before  # the row says "Same as the phone: …"
+            tap(next(n for n in menu_items(auto) if n.text == item))
             time.sleep(1)
     if voice_row()[1] != before:
         raise CheckFailed(f'could not put the voice language back to {before}')

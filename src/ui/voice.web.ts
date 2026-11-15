@@ -1,5 +1,7 @@
 // PC: voice input is off. Browser speech recognition sends audio to online services, which would
 // break the "stays on this device" promise.
+import { deviceLanguage } from './languages';
+
 export const voiceSupported = false;
 
 export function useVoice(_onText: (text: string, final: boolean) => void) {
@@ -8,9 +10,9 @@ export function useVoice(_onText: (text: string, final: boolean) => void) {
 
 export function setVoiceLanguage(_language: string) {}
 
-/** Read-aloud on the PC stays in English. */
+/** Read-aloud on the PC uses the browser's language. */
 export function speechLanguage(): string {
-  return 'en-GB';
+  return deviceLanguage();
 }
 
 export async function offlineLanguages(): Promise<string[]> {

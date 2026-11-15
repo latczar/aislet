@@ -2,12 +2,11 @@
 // stays on the phone. Phones that can't recognise speech offline get a message instead of an online recogniser.
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
 import { useRef, useState } from 'react';
-import { languageName } from './languages';
+import { deviceLanguage, languageName } from './languages';
 
 export const voiceSupported = true;
 
-const PREFERRED = 'en-GB';
-let chosen = ''; // Settings → Voice language; empty means English, as installed
+let chosen = ''; // Settings → Voice language; empty means the phone's own language
 
 /** Set from Settings. Used for talking and for reading answers aloud. */
 export function setVoiceLanguage(language: string) {
@@ -16,7 +15,7 @@ export function setVoiceLanguage(language: string) {
 
 /** The language answers are read aloud in. */
 export function speechLanguage(): string {
-  return chosen || PREFERRED;
+  return chosen || deviceLanguage();
 }
 
 /** The languages this phone can recognise offline: its installed speech packs. */
@@ -30,11 +29,16 @@ export async function offlineLanguages(): Promise<string[]> {
   }
 }
 
-/** The chosen language, or English: UK if its pack is installed, else another installed English, else UK. */
+/** The chosen language, or the phone's own: its exact pack if installed, else an installed pack of the same
+ * language (an en-US pack for an en-GB phone), else the phone's language, for which Android offers the pack. */
 async function listeningLanguage(): Promise<string> {
   if (chosen) return chosen;
+  const phone = deviceLanguage();
+  const base = phone.split('-')[0].toLowerCase();
   const installed = await offlineLanguages();
-  return installed.find((l) => l.toLowerCase() === 'en-gb') ?? installed.find((l) => /^en-/i.test(l)) ?? PREFERRED;
+  return installed.find((l) => l.toLowerCase() === phone.toLowerCase())
+    ?? installed.find((l) => l.split('-')[0].toLowerCase() === base)
+    ?? phone;
 }
 
 export function useVoice(onText: (text: string, final: boolean) => void) {
@@ -42,7 +46,7 @@ export function useVoice(onText: (text: string, final: boolean) => void) {
   const [error, setError] = useState<string | null>(null);
   const callback = useRef(onText);
   callback.current = onText;
-  const lang = useRef(PREFERRED);
+  const lang = useRef(deviceLanguage());
   const onDevice = useRef(false);
 
   useSpeechRecognitionEvent('start', () => setListening(true));

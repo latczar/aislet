@@ -15,7 +15,7 @@ import { useStore } from '../store';
 import type { Accel, AnswerLength, Appearance, Performance } from '../types';
 import { useBackCloses } from './back';
 import { Field } from './Field';
-import { languageName } from './languages';
+import { deviceLanguage, languageName } from './languages';
 import { formatWhen } from './confirm';
 import { confirm, formatSize } from './confirm';
 import { cancelDownload, startDownload, useDownload } from './downloads';
@@ -624,6 +624,8 @@ function Backups({ onToast }: { onToast: (message: string) => void }) {
   );
 }
 
+const SAME_AS_PHONE = 'Same as the phone';
+
 /** Phone: the language for talking and reading aloud, from the phone's installed offline speech packs. */
 function VoiceLanguage() {
   const { settings, updateSettings } = useStore();
@@ -638,7 +640,7 @@ function VoiceLanguage() {
     setOpen(false);
     updateSettings({ voiceLang: language });
   };
-  const current = settings.voiceLang ? languageName(settings.voiceLang) : 'Automatic (English)';
+  const current = settings.voiceLang ? languageName(settings.voiceLang) : `${SAME_AS_PHONE}: ${languageName(deviceLanguage())}`;
   return (
     <Row
       title="Voice language"
@@ -654,7 +656,7 @@ function VoiceLanguage() {
             anchorPosition="bottom"
             anchor={<Button mode="contained-tonal" compact disabled={!languages?.length} onPress={() => setOpen(true)}>Change</Button>}
           >
-            <Menu.Item title="Automatic (English)" trailingIcon={settings.voiceLang ? undefined : 'check'} onPress={() => choose('')} />
+            <Menu.Item title={SAME_AS_PHONE} trailingIcon={settings.voiceLang ? undefined : 'check'} onPress={() => choose('')} />
             {(languages ?? []).map((l) => (
               <Menu.Item key={l} title={languageName(l)} trailingIcon={settings.voiceLang === l ? 'check' : undefined} onPress={() => choose(l)} />
             ))}

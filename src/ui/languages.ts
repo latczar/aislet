@@ -1,4 +1,7 @@
-// Names for speech languages ("en-GB" → "English (UK)"). Hermes has no Intl.DisplayNames, so the common ones are here.
+// Names for speech languages ("en-GB" → "English (UK)"), and the device's own language.
+// Hermes has no Intl.DisplayNames, so the common names are here.
+import { I18nManager, Platform } from 'react-native';
+
 const LANGUAGES: Record<string, string> = {
   af: 'Afrikaans', ar: 'Arabic', bg: 'Bulgarian', bn: 'Bengali', ca: 'Catalan', cmn: 'Chinese', cs: 'Czech', cy: 'Welsh',
   da: 'Danish', de: 'German', el: 'Greek', en: 'English', es: 'Spanish', et: 'Estonian', fa: 'Persian', fi: 'Finnish',
@@ -29,4 +32,22 @@ export function languageName(code: string): string {
   }
   name ||= lang;
   return region ? `${name} (${REGIONS[region.toUpperCase()] ?? region.toUpperCase()})` : name;
+}
+
+/** The language the phone (or the PC's browser) is set to, e.g. "fr-FR". Voice uses it unless Settings says otherwise. */
+export function deviceLanguage(): string {
+  if (Platform.OS === 'web') return (typeof navigator !== 'undefined' && navigator.language) || 'en-US';
+  try {
+    // Android gives e.g. "en_GB", or "zh_CN_#Hans" with a script.
+    const id = (I18nManager.getConstants() as { localeIdentifier?: string | null }).localeIdentifier;
+    const [lang, region] = (id ?? '').split(/[-_]/).filter((p) => p && !p.startsWith('#'));
+    if (lang) return region ? `${lang}-${region}` : lang;
+  } catch {
+    // fall through
+  }
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().locale || 'en-US';
+  } catch {
+    return 'en-US';
+  }
 }
