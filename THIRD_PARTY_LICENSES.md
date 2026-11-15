@@ -1,6 +1,6 @@
 # Third-party licences
 
-Untethered is built with the open-source packages below. Their licences and copyright notices are reproduced here as those licences require.
+Aislet is built with the open-source packages below. Their licences and copyright notices are reproduced here as those licences require.
 
 AI models are not included in the app: they are downloaded by the user from their publishers on Hugging Face or through Ollama, under their own licences (Qwen3.5, Qwen3 and nomic-embed-text v1.5 are Apache 2.0).
 

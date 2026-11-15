@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Untethered",
+    "name": "Aislet",
     "slug": "untethered",
-    "scheme": "untethered",
+    "scheme": "aislet",
     "version": "1.0.7",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -32,11 +32,11 @@
     },
     "web": {
       "favicon": "./assets/favicon.png",
-      "name": "Untethered",
-      "shortName": "Untethered",
+      "name": "Aislet",
+      "shortName": "Aislet",
       "themeColor": "#18181B",
       "backgroundColor": "#F4F4F5",
-      "description": "Your private AI that works offline."
+      "description": "Private offline AI with its own library."
     },
     "plugins": [
       "llama.rn",
@@ -67,15 +67,15 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Untethered uses your photos when you attach one to a chat.",
-          "cameraPermission": "Untethered uses the camera when you take a photo to ask about."
+          "photosPermission": "Aislet uses your photos when you attach one to a chat.",
+          "cameraPermission": "Aislet uses the camera when you take a photo to ask about."
         }
       ],
       [
         "expo-speech-recognition",
         {
-          "microphonePermission": "Untethered listens when you tap the microphone to talk.",
-          "speechRecognitionPermission": "Untethered turns your speech into text when you tap the microphone."
+          "microphonePermission": "Aislet listens when you tap the microphone to talk.",
+          "speechRecognitionPermission": "Aislet turns your speech into text when you tap the microphone."
         }
       ],
       "./plugins/withReleaseSigning",

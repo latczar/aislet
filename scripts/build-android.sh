@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the Android app (APK) inside WSL, then copy it to build/Assistant.apk on Windows.
 # Run from Windows (PowerShell):
-#   wsl -d Ubuntu-24.04 -u root -- bash /mnt/c/path/to/untethered/scripts/build-android.sh
+#   wsl -d Ubuntu-24.04 -u root -- bash /mnt/c/path/to/aislet/scripts/build-android.sh
 # First time only: run scripts/wsl-android-setup.sh the same way.
 set -euo pipefail
 source /etc/profile.d/android.sh

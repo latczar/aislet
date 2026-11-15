@@ -1,4 +1,5 @@
-• Pair with your computer by scanning its QR code with the phone's camera. Untethered asks before it pairs.
+• Untethered is now called Aislet. Your chats, memory, notes and pairing carry over.
+• Pair with your computer by scanning its QR code with the phone's camera. Aislet asks before it pairs.
 • The computer side now runs on Linux too (Mac untested).
 • Settings → Privacy says exactly what goes online: downloads only.
 • Choose the voice language from your phone's offline speech packs. Voice is now offline-only.

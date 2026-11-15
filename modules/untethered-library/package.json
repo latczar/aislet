@@ -2,6 +2,6 @@
   "name": "untethered-library",
   "version": "1.0.0",
   "private": true,
-  "description": "Reads Kiwix .zim libraries on Android for Untethered (uses Kiwix's libkiwix, GPL-3.0).",
+  "description": "Reads Kiwix .zim libraries on Android for Aislet (uses Kiwix's libkiwix, GPL-3.0).",
   "license": "GPL-3.0-or-later"
 }

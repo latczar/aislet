@@ -1,4 +1,4 @@
-Untethered is a private AI assistant that runs on your own devices. No account, no subscription, no cloud: it keeps working with no signal.
+Aislet (say "eye-let") is a private AI assistant that runs on your own devices. No account, no subscription, no cloud: it keeps working with no signal.
 
 <b>What it does</b>
 <ul>
@@ -16,7 +16,7 @@ The internet is only used to download AI models. Chats, memory, notes, photos an
 
 <b>Permissions</b>
 <ul>
-<li>All files access (optional): reads Kiwix libraries in Untethered/Libraries, and moves them out of Kiwix's folder without copying them. You switch it on yourself in Settings.</li>
+<li>All files access (optional): reads Kiwix libraries in Aislet/Libraries, and moves them out of Kiwix's folder without copying them. You switch it on yourself in Settings.</li>
 <li>Microphone (optional): voice typing.</li>
 <li>Internet: model downloads, and reaching your own computer on your home Wi-Fi.</li>
 </ul>

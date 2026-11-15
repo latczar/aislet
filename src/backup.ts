@@ -17,8 +17,10 @@ const CONFIG_KEY = 'backup-config';
 const ITERATIONS = 200_000;
 const KEEP = 7;                          // newest backups kept in the folder
 const EVERY = 20 * 60 * 60 * 1000;       // about once a day (a little under, so a morning habit keeps it daily)
-const NAME = /^untethered-backup-\d{4}-\d{2}-\d{2}-\d{4}( \(\d+\))?\.json$/;
-const FORMAT = 'untethered-backup';
+const NAME = /^(aislet|untethered)-backup-\d{4}-\d{2}-\d{2}-\d{4}( \(\d+\))?\.json$/; // untethered: before the rename
+/** "2026-11-16-0930…" from a backup's file name, old name or new. */
+const dated = (name: string) => name.replace(/^(aislet|untethered)-backup-/, '');
+const FORMAT = 'untethered-backup'; // the file format's id, unchanged by the rename so old backups still open
 // Opens the folder picker in Documents, a sensible home for backups.
 const DOCUMENTS = 'content://com.android.externalstorage.documents/document/primary%3ADocuments';
 
@@ -34,7 +36,7 @@ interface Config {
 
 export interface BackupStatus {
   on: boolean;
-  folder?: string;   // a readable name, e.g. "Documents/Untethered"
+  folder?: string;   // a readable name, e.g. "Documents/Aislet"
   last?: number;
   problem?: string;
 }
@@ -59,7 +61,7 @@ async function loadConfig(): Promise<Config | null> {
 
 const saveConfig = (c: Config) => AsyncStorage.setItem(CONFIG_KEY, JSON.stringify(c));
 
-/** "Documents/Untethered" from a picked folder's URI. */
+/** "Documents/Aislet" from a picked folder's URI. */
 export function folderLabel(uri: string): string {
   // The folder's id is the part after /tree/, still encoded (its own slashes are %2F): "primary%3ADocuments%2FBackups".
   const raw = uri.replace(/\/+$/, '');
@@ -116,11 +118,11 @@ async function writeBackup(config: Config, data: Backup): Promise<void> {
   };
   try {
     const folder = new Directory(config.folder);
-    const out = folder.createFile(`untethered-backup-${stamp()}.json`, 'application/json');
+    const out = folder.createFile(`aislet-backup-${stamp()}.json`, 'application/json');
     await out.write(JSON.stringify(file));
     // Keep the newest few. Only this app's backup files are ever deleted.
     const ours = folder.list().filter((f): f is File => f instanceof File && NAME.test(fileName(f.uri)))
-      .sort((a, b) => fileName(b.uri).localeCompare(fileName(a.uri)));
+      .sort((a, b) => dated(fileName(b.uri)).localeCompare(dated(fileName(a.uri)))); // newest first, whatever the name
     for (const old of ours.slice(KEEP)) old.delete();
   } catch {
     throw new Error("Couldn't save to the backup folder. It may have been moved or deleted; turn backups off and on again to choose it.");
@@ -158,10 +160,10 @@ export async function openBackup(text: string, passphrase: string): Promise<Back
   try {
     file = JSON.parse(text);
   } catch {
-    throw new Error("That file isn't an Untethered backup.");
+    throw new Error("That file isn't an Aislet backup.");
   }
   if (file?.app !== FORMAT || file.cipher !== 'AES-256-GCM' || file.kdf?.name !== 'PBKDF2-SHA256' || typeof file.data !== 'string') {
-    throw new Error("That file isn't an Untethered backup.");
+    throw new Error("That file isn't an Aislet backup.");
   }
   const key = await AESEncryptionKey.import(pbkdf2Sha256(utf8(passphrase), fromHex(file.kdf.salt), file.kdf.iterations));
   let plain: Uint8Array;

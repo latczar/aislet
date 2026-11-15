@@ -1,4 +1,4 @@
-// Phone: text, photos and files shared into Untethered from other apps through Android's share sheet.
+// Phone: text, photos and files shared into Aislet from other apps through Android's share sheet.
 // The share filters are set in app.json (the expo-sharing plugin).
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as Sharing from 'expo-sharing';
@@ -34,7 +34,7 @@ async function readShare(raw: Sharing.SharePayload[]): Promise<Incoming> {
   if (raw.every(isText)) return out;
 
   // Only files are resolved (copied into the cache). Resolving shared text would open any web link in it,
-  // and nothing in Untethered goes online by itself.
+  // and nothing in Aislet goes online by itself.
   const problems: string[] = [];
   let extraPhotos = 0;
   for (const f of await Sharing.getResolvedSharedPayloadsAsync()) {
@@ -53,7 +53,7 @@ async function readShare(raw: Sharing.SharePayload[]): Promise<Incoming> {
       } else if (mime.startsWith('text/') || mime === 'application/json') {
         out.files.push({ name, text: (await readText(uri)).slice(0, MAX_TEXT_CHARS) });
       } else {
-        problems.push(`Untethered can't read ${name}. Share a photo, a PDF or text instead.`);
+        problems.push(`Aislet can't read ${name}. Share a photo, a PDF or text instead.`);
       }
     } catch {
       problems.push(`Couldn't open ${name}. Try sharing it again.`);

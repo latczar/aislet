@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""End-to-end checks for the Untethered phone app, run on a real Android phone over adb.
+"""End-to-end checks for the Aislet phone app, run on a real Android phone over adb.
 
 Drives the installed app with adb taps and typing, reads the screen with uiautomator, and prints one
 PASS or FAIL line per check. Exits non-zero if any check fails. Python standard library only.
@@ -8,7 +8,7 @@ PASS or FAIL line per check. Exits non-zero if any check fails. Python standard 
     python e2e/phone/run.py --list           # list the checks
     python e2e/phone/run.py chat_typing memory
 
-Before running: unlock the phone and leave it on its home screen or in Untethered. The runner refuses to
+Before running: unlock the phone and leave it on its home screen or in Aislet. The runner refuses to
 start while another app is in front, and checks again before every tap, key, swipe and launch, so it never
 types into something else. If another app comes to the front during a run, the current check stops.
 
@@ -56,7 +56,7 @@ def adb(*args: str, timeout: float = 30, check: bool = True) -> str:
 
 
 def shell(command: str, timeout: float = 30) -> str:
-    # Every tap, key, swipe and launch first checks that Untethered or the home screen is in front, so nothing
+    # Every tap, key, swipe and launch first checks that Aislet or the home screen is in front, so nothing
     # lands in another app if someone picks up the phone during a run.
     if command.startswith(('input ', 'am start')):
         front = foreground()
@@ -587,10 +587,10 @@ PAIR_CODE = 'E2ETESTS'
 
 
 def open_link(url: str) -> None:
-    """Open a link in Untethered, as the camera app does after scanning a QR code."""
+    """Open a link in Aislet, as the camera app does after scanning a QR code."""
     out = shell(f"am start -W -a android.intent.action.VIEW -d '{url}' -p {PKG}")
     if 'Error' in out:
-        raise CheckFailed(f'Android did not open the link in Untethered: {out.strip()}')
+        raise CheckFailed(f'Android did not open the link in Aislet: {out.strip()}')
 
 
 def home_pairing() -> str:
@@ -610,7 +610,7 @@ def check_pair_link() -> str:
     before = home_pairing()
     connected = before == 'paired' and bool(find(screen(), contains='Connected to'))
     # A link to an address outside the home network is turned away without asking.
-    open_link(f'untethered://pair?u=203.0.113.9&c={PAIR_CODE}')
+    open_link(f'aislet://pair?u=203.0.113.9&c={PAIR_CODE}')
     wait_for('the "not on a home network" message', timeout=10, contains="isn't on a home network")
     if find(screen(), contains='Pair with the laptop at'):
         raise CheckFailed('asked to pair with an address outside the home network')
@@ -619,7 +619,7 @@ def check_pair_link() -> str:
     key(3)
     time.sleep(1)
     shell(f'am force-stop {PKG}')
-    open_link(f'untethered://pair?u={PAIR_ADDRESS}&c={PAIR_CODE}')
+    open_link(f'aislet://pair?u={PAIR_ADDRESS}&c={PAIR_CODE}')
     title = f'Pair with the laptop at {PAIR_ADDRESS}?'
     card = wait_for('the pairing card', timeout=20, text=title)
     nodes = screen()
@@ -632,7 +632,7 @@ def check_pair_link() -> str:
     tap(cancel[0])
     wait_gone('the pairing card', timeout=5, text=title)
     # Back also cancels, and stays in the app.
-    open_link(f'untethered://pair?u={PAIR_ADDRESS}&c={PAIR_CODE}')
+    open_link(f'aislet://pair?u={PAIR_ADDRESS}&c={PAIR_CODE}')
     wait_for('the pairing card again', timeout=10, text=title)
     key(4)
     wait_gone('the pairing card after Back', timeout=5, text=title)
@@ -1033,17 +1033,17 @@ SHARED_TEXT = 'E2E shared text check 42'
 
 
 def safe_front(doing: str) -> None:
-    """Stop unless Untethered or the home screen is in front, so nothing lands in another app."""
+    """Stop unless Aislet or the home screen is in front, so nothing lands in another app."""
     front = foreground()
     if front != PKG and not any(l in front for l in LAUNCHERS):
         raise CheckFailed(f'stopped before {doing}: another app is in front ({front})')
 
 
 def share_to_app(mime: str, extras: str) -> None:
-    """Send an Android share (ACTION_SEND) the way the share sheet does, limited to Untethered."""
+    """Send an Android share (ACTION_SEND) the way the share sheet does, limited to Aislet."""
     out = shell(f'am start -W -a android.intent.action.SEND -t {mime} {extras} -p {PKG}')
     if 'Error' in out:
-        raise CheckFailed(f'Android does not offer Untethered for {mime}: {out.strip()}')
+        raise CheckFailed(f'Android does not offer Aislet for {mime}: {out.strip()}')
 
 
 def test_png(w: int = 360, h: int = 240) -> bytes:
@@ -1109,7 +1109,7 @@ def check_share() -> str:
         share_to_app('text/plain', f"--es android.intent.extra.TEXT '{SHARED_TEXT}'")
         box = wait_message_text(SHARED_TEXT)
         if foreground() != PKG:
-            raise CheckFailed('Untethered is not in front after sharing text')
+            raise CheckFailed('Aislet is not in front after sharing text')
         if not find(screen(), text='New chat'):
             raise CheckFailed('sharing text did not open a new chat')
         if any(n.text == SHARED_TEXT and not n.cls.endswith('EditText') for n in screen()):
@@ -1130,7 +1130,7 @@ def check_share() -> str:
         share_to_app('image/png', f'--eu android.intent.extra.STREAM {uri}')
         remove = wait_for('the shared photo in the message box', timeout=40, desc='Remove photo')
         if foreground() != PKG:
-            raise CheckFailed('Untethered is not in front after sharing a photo')
+            raise CheckFailed('Aislet is not in front after sharing a photo')
         if len(find(screen(), desc='Remove photo')) != 1:
             raise CheckFailed('expected exactly one shared photo')
         tap(remove)
@@ -1210,8 +1210,8 @@ def check_library() -> str:
         adb('shell', f'rm -rf {LIBRARY_DIR}', check=False)
 
 
-# The backup check drives Android's own folder and file picker, which Untethered opens. Only while it does
-# may taps go to the picker as well as to Untethered.
+# The backup check drives Android's own folder and file picker, which Aislet opens. Only while it does
+# may taps go to the picker as well as to Aislet.
 PICKER = 'documentsui'
 picker_open = False
 BACKUP_DIR = '/sdcard/Documents/E2E-untethered-backups'
@@ -1306,7 +1306,7 @@ def check_backup() -> str:
         picker_open = False
         turned_on = True
         wait_for('backups on, saving to the test folder', timeout=60, contains='Daily to Documents/E2E-untethered-backups')
-        files = [f for f in shell(f'ls {BACKUP_DIR}').split() if f.startswith('untethered-backup-')]
+        files = [f for f in shell(f'ls {BACKUP_DIR}').split() if f.startswith('aislet-backup-')]
         if len(files) != 1:
             raise CheckFailed(f'expected one backup file, found {files}')
         content = shell(f"cat '{BACKUP_DIR}/{files[0]}'")
@@ -1327,10 +1327,10 @@ def check_backup() -> str:
                 raise CheckFailed('the file picker did not open')
             time.sleep(0.5)
         picker_open = True
-        picker_tap('untethered-backup-*')
+        picker_tap('aislet-backup-*')
         picker_open = False
         time.sleep(2)  # the form opens under the Restore row, which may be low on the screen
-        scroll_to('the restore passphrase box', timeout_swipes=4, contains='Enter the passphrase for untethered-backup-')
+        scroll_to('the restore passphrase box', timeout_swipes=4, contains='Enter the passphrase for aislet-backup-')
         type_into('Passphrase', 'wrong passphrase 1')
         hide_keyboard()
         tap(wait_for('the Restore button', text='Restore'))
@@ -1462,7 +1462,7 @@ def main() -> int:
         sys.exit(f"Unknown check(s): {', '.join(unknown)}. Use --list.")
     preflight(args.force)
     version = re.search(r'versionName=(\S+)', shell(f'dumpsys package {PKG}'))
-    print(f"Untethered {version.group(1) if version else '?'} on {shell('getprop ro.product.model').strip()}")
+    print(f"Aislet {version.group(1) if version else '?'} on {shell('getprop ro.product.model').strip()}")
 
     names = args.checks or list(CHECKS)
     if 'launch' not in names:

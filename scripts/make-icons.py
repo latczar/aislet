@@ -1,4 +1,4 @@
-"""Draw Untethered's logo and write every icon file in assets/.
+"""Draw Aislet's logo and write every icon file in assets/.
 
 The mark is a ring with a break at the top right and a small dot that has come free of it: a loop
 that isn't tied down. White on near-black. Run from the project folder:  python scripts/make-icons.py

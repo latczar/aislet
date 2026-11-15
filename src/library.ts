@@ -35,8 +35,10 @@ export interface LibraryHit {
   match?: number; // share of the question's words in the passage
 }
 
-/** Where Untethered keeps libraries, under the phone's shared storage. */
-export const LIBRARY_FOLDER = 'Untethered/Libraries';
+/** Where Aislet keeps libraries, under the phone's shared storage. */
+export const LIBRARY_FOLDER = 'Aislet/Libraries';
+/** Where it kept them when it was called Untethered. Libraries there are still used, where they are. */
+export const OLD_LIBRARY_FOLDER = 'Untethered/Libraries';
 /** Kiwix's own folder: Android deletes it when Kiwix is uninstalled, so libraries are moved out of it. */
 export const KIWIX_FOLDER = 'Android/media/org.kiwix.kiwixmobile';
 /** Other places .zim files often end up. */

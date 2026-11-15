@@ -1,4 +1,4 @@
-// Phone: Kiwix libraries read by the native module in modules/untethered-library (Kiwix's libkiwix).
+// Phone: Kiwix libraries read by the native module in modules/untethered-library (its name is from before the rename) (Kiwix's libkiwix).
 // It's missing from builds made before libraries existed, so everything checks for null.
 import { requireOptionalNativeModule } from 'expo';
 import type { LibraryBook, LibraryPage, LibraryTitle } from './library';

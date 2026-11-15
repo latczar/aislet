@@ -12,8 +12,9 @@ Who may do what:
   crosses the network and a captured request can't be replayed.
 - Anyone else on the network can only ask "is a hub here?".
 
-Data lives in hub.json in the usual folder for app data: %LOCALAPPDATA%\\Untethered on Windows,
-~/.local/share/Untethered on Linux ($XDG_DATA_HOME if set) and ~/Library/Application Support/Untethered on a Mac.
+Data lives in hub.json in the usual folder for app data: %LOCALAPPDATA%\\Aislet on Windows,
+~/.local/share/Aislet on Linux ($XDG_DATA_HOME if set) and ~/Library/Application Support/Aislet on a Mac.
+Data from the folders of the app's earlier names (Untethered, and on Windows Unplugged and Assistant) is moved over.
 Errors go to hub.log next to it.
 Run:  pythonw pc/hub.py      (python3 on Linux and Mac; it starts at login once install_shortcuts.py has run)
 """
@@ -48,16 +49,16 @@ WINDOWS, MAC = os.name == "nt", sys.platform == "darwin"
 def data_dir() -> Path:
     """The usual place for an app's own data on this system."""
     if WINDOWS:
-        return Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "Untethered"
+        return Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "Aislet"
     if MAC:
-        return Path.home() / "Library" / "Application Support" / "Untethered"
+        return Path.home() / "Library" / "Application Support" / "Aislet"
     xdg = os.environ.get("XDG_DATA_HOME", "")
-    return (Path(xdg) if os.path.isabs(xdg) else Path.home() / ".local" / "share") / "Untethered"
+    return (Path(xdg) if os.path.isabs(xdg) else Path.home() / ".local" / "share") / "Aislet"
 
 
 DATA_DIR = data_dir()
-# Earlier names (Windows only); data is moved over on first run.
-OLD_DATA_DIRS = [DATA_DIR.parent / "Unplugged", DATA_DIR.parent / "Assistant"] if WINDOWS else []
+# Earlier names, newest first; data is moved over on first run.
+OLD_DATA_DIRS = [DATA_DIR.parent / name for name in (["Untethered", "Unplugged", "Assistant"] if WINDOWS else ["Untethered"])]
 STORE = DATA_DIR / "hub.json"
 LOG = DATA_DIR / "hub.log"
 OLLAMA = ("127.0.0.1", 11434)
@@ -234,7 +235,7 @@ def ollama_running(timeout: float = 2) -> bool:
 
 def ollama_command() -> list[str] | None:
     """Ollama's server on its own, with no window. (The Ollama app opens its chat window when started,
-    which would pop up over Untethered; it still works normally if opened later.)"""
+    which would pop up over Aislet; it still works normally if opened later.)"""
     exe = str(OLLAMA_EXE) if OLLAMA_EXE.is_file() else shutil.which("ollama")
     return [exe, "serve"] if exe else None
 
@@ -338,7 +339,7 @@ class Server(ThreadingHTTPServer):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "UntetheredHub/1"
+    server_version = "AisletHub/1"
     timeout = 120  # seconds a quiet connection may stay open
 
     def log_message(self, *args):
@@ -465,7 +466,8 @@ class Handler(BaseHTTPRequestHandler):
         ok = ollama_running()
         starting = not ok and role is not None and start_ollama()  # only paired devices can start it
         # Unpaired devices only learn that a hub is here, not the computer's name.
-        self.send_json({"app": "untethered", "name": socket.gethostname() if role else "", "paired": role is not None,
+        self.send_json({"app": "untethered",  # the id from before the rename: phones of every version look for it
+                        "name": socket.gethostname() if role else "", "paired": role is not None,
                         "ollama": ok, "starting": starting})
 
     def proxy(self, method: str, path: str, body: bytes | None) -> None:

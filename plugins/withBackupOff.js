@@ -1,5 +1,5 @@
 // Kiwix's reader (org.kiwix:libkiwix) declares android:allowBackup="true" in its own manifest.
-// Untethered keeps backup off (chats and memory stay on the phone), so the app's manifest tells
+// Aislet keeps backup off (chats and memory stay on the phone), so the app's manifest tells
 // Android's manifest merger to keep the app's value instead of failing the build.
 const { withAndroidManifest } = require('expo/config-plugins');
 

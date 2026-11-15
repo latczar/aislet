@@ -22,7 +22,7 @@ export interface SyncData {
 export const HUB_PORT = 8766;
 
 /** The PC window's key no longer matches the hub (for example, the hub's data was reset). Reopening fetches the new one. */
-export const STALE_PC_KEY = 'This window needs reconnecting to the hub. Close it and open Untethered from the Start menu.';
+export const STALE_PC_KEY = 'This window needs reconnecting to the hub. Close it and open Aislet from the Start menu.';
 
 /** Headers that let the hub know who's asking. */
 export function hubHeaders(t: Pick<HubTarget, 'key' | 'kind'>, method: string, path: string, body: string): Record<string, string> {

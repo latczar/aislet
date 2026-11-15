@@ -13,7 +13,7 @@ function homeNetworkAddress(ip: string): boolean {
   return a === 10 || a === 192 && b === 168 || a === 172 && b >= 16 && b <= 31;
 }
 
-/** Whether an Untethered hub answers at this address. Gives up after TIMEOUT_MS. */
+/** Whether an Aislet hub answers at this address. Gives up after TIMEOUT_MS. */
 async function isHub(address: string, cancelled: AbortSignal): Promise<boolean> {
   const controller = new AbortController();
   const stop = () => controller.abort();
@@ -26,7 +26,7 @@ async function isHub(address: string, cancelled: AbortSignal): Promise<boolean> 
     try {
       const res = await fetch(`http://${address}:${HUB_PORT}/api/hub`, { signal: controller.signal });
       if (!res.ok) return false;
-      return ((await res.json()) as { app?: string })?.app === 'untethered';
+      return ((await res.json()) as { app?: string })?.app === 'untethered'; // the hub's id from before the rename, kept so every version finds every other
     } catch {
       return false;
     }

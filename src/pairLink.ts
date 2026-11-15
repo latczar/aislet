@@ -1,10 +1,10 @@
-// Pairing by QR code. The laptop (Settings → Home) shows a QR code of untethered://pair?u=<address>&c=<code>.
-// The phone's own camera opens it in Untethered, which asks before pairing: any app or website can open a link
+// Pairing by QR code. The laptop (Settings → Home) shows a QR code of aislet://pair?u=<address>&c=<code>.
+// The phone's own camera opens it in Aislet, which asks before pairing: any app or website can open a link
 // like this, so the address is always shown and nothing connects until the user says yes.
 import { APP_NAME } from './config';
 import { HUB_PORT } from './hub';
 
-export const PAIR_SCHEME = 'untethered';
+export const PAIR_SCHEME = 'aislet';
 const CODE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$/; // the alphabet hub.py's new_code() uses
 
 export type PairLink = { address: string; code: string } | { problem: string };
@@ -40,7 +40,7 @@ export function makePairLink(hubUrl: string, code: string): string {
 
 /** Read a pairing link. Null when the link isn't one; a problem when it is but can't be used. */
 export function parsePairLink(url: string): PairLink | null {
-  const m = url.match(/^untethered:\/\/pair\/?(?:\?(.*))?$/i);
+  const m = url.match(/^aislet:\/\/pair\/?(?:\?(.*))?$/i);
   if (!m) return null;
   const query = (m[1] ?? '').split('#')[0];
   const address = param(query, 'u');

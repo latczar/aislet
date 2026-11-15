@@ -11,7 +11,7 @@ import { createOllamaEngine } from './engine/ollama';
 import type { Engine, EngineStatus } from './engine/types';
 import { type HubInfo, type HubTarget, STALE_PC_KEY, hubHeaders, hubPing, hubSync, localHub } from './hub';
 import {
-  KIWIX_FOLDER, LIBRARY_FOLDER, type LibraryBook, type LibraryHit, OTHER_FOLDERS, libraryCandidates, overviewTitles, searchQuery,
+  KIWIX_FOLDER, LIBRARY_FOLDER, OLD_LIBRARY_FOLDER, type LibraryBook, type LibraryHit, OTHER_FOLDERS, libraryCandidates, overviewTitles, searchQuery,
   titleQueries,
 } from './library';
 import { nativeLibrary } from './libraryNative';
@@ -49,9 +49,9 @@ export interface HubState {
 export interface LibraryState {
   supported: boolean;
   access: boolean;                            // phone: "All files access" is on
-  books: LibraryBook[];                       // in Untethered's own folder
+  books: LibraryBook[];                       // in Aislet's own folder (or the one from before the rename)
   elsewhere: LibraryBook[];                   // .zim files in Kiwix's folder, Download or Documents
-  folder: string;                             // where Untethered keeps them
+  folder: string;                             // where Aislet keeps them
 }
 
 interface Store {
@@ -92,7 +92,7 @@ interface Store {
   libraries: LibraryState;
   refreshLibraries(): Promise<void>;
   allowLibraries(): Promise<void>;          // opens Android's "All files access" page
-  moveLibraries(): Promise<string>;         // moves .zim files found elsewhere into Untethered; returns a summary
+  moveLibraries(): Promise<string>;         // moves .zim files found elsewhere into Aislet; returns a summary
   removeLibrary(path: string): Promise<void>;
   snapshot(): Backup;                    // memory, notes, name and instructions, for a backup
   restore(backup: Backup): Promise<string>; // adds anything new from a backup; returns a summary
@@ -345,14 +345,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!nativeLibrary) return;
     const root = nativeLibrary.storage();
     const folder = `${root}/${LIBRARY_FOLDER}`;
+    const oldFolder = `${root}/${OLD_LIBRARY_FOLDER}`;
     const access = nativeLibrary.hasAccess();
     // The app's own folder needs no permission (the phone tests put a made-up library there).
-    const own = await nativeLibrary.find([folder, nativeLibrary.appFolder()].filter(Boolean)).catch(() => []);
+    const own = await nativeLibrary.find([folder, oldFolder, nativeLibrary.appFolder()].filter(Boolean)).catch(() => []);
     const books = (await Promise.all(own.map((f) => nativeLibrary!.info(f.path).catch(() => null))))
       .filter((b): b is LibraryBook => !!b)
       .sort((a, b) => a.title.localeCompare(b.title));
     const found = access ? await nativeLibrary.find([KIWIX_FOLDER, ...OTHER_FOLDERS].map((d) => `${root}/${d}`)).catch(() => []) : [];
-    const elsewhere = (await Promise.all(found.filter((f) => !f.path.startsWith(`${folder}/`)).map((f) => nativeLibrary!.info(f.path).catch(() => null))))
+    const elsewhere = (await Promise.all(found.filter((f) => !f.path.startsWith(`${folder}/`) && !f.path.startsWith(`${oldFolder}/`)).map((f) => nativeLibrary!.info(f.path).catch(() => null))))
       .filter((b): b is LibraryBook => !!b);
     setLibraries({ supported: true, access, books, elsewhere, folder });
   }, []);
@@ -376,7 +377,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
     await refreshLibraries();
     if (problems.length) throw new Error(`Moved ${moved} of ${elsewhere.length}. ${problems[0]}`);
-    return `Moved ${moved} ${moved === 1 ? 'library' : 'libraries'} into Untethered.`;
+    return `Moved ${moved} ${moved === 1 ? 'library' : 'libraries'} into Aislet.`;
   }, [refreshLibraries]);
 
   const removeLibrary = useCallback(async (path: string) => {

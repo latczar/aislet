@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-time set-up inside WSL (Ubuntu): Java 17, Node and the Android SDK for building the phone app.
-# Run from Windows:  wsl -d Ubuntu-24.04 -u root -- bash /mnt/c/path/to/untethered/scripts/wsl-android-setup.sh
+# Run from Windows:  wsl -d Ubuntu-24.04 -u root -- bash /mnt/c/path/to/aislet/scripts/wsl-android-setup.sh
 # The Android build runs in Linux because Windows Smart App Control blocks some unsigned build tools.
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive

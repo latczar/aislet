@@ -38,7 +38,7 @@ export function Shell() {
   const keyboard = useKeyboardInset();
   const wide = width >= 900;
 
-  // "Share to Untethered" from another app opens a new chat with it in the message box. A reply that's
+  // "Share to Aislet" from another app opens a new chat with it in the message box. A reply that's
   // still being written is stopped first, since a new chat can't start until it ends.
   useIncomingShare((s) => {
     if (busy) stop();

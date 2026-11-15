@@ -151,7 +151,7 @@ function Libraries({ onToast }: { onToast: (message: string) => void }) {
         <>
           <Divider />
           <Row
-            title={fromKiwix ? `Move ${elsewhere.length === 1 ? 'a library' : `${elsewhere.length} libraries`} from Kiwix` : `Move ${elsewhere.length === 1 ? 'a library' : `${elsewhere.length} libraries`} into Untethered`}
+            title={fromKiwix ? `Move ${elsewhere.length === 1 ? 'a library' : `${elsewhere.length} libraries`} from Kiwix` : `Move ${elsewhere.length === 1 ? 'a library' : `${elsewhere.length} libraries`} into Aislet`}
             description={`${names}. They're moved, not copied, so no extra space is used.`}
             left={(p) => <List.Icon {...p} icon="folder-move-outline" />}
             right={(p) => (
@@ -696,7 +696,7 @@ function Privacy() {
         description="The security model, and the tests that attack the laptop hub"
         left={(l) => <List.Icon {...l} icon="check-decagram-outline" />}
         right={(r) => <List.Icon {...r} icon="open-in-new" />}
-        onPress={() => Linking.openURL('https://github.com/latczar/untethered/blob/main/docs/DEVELOPMENT.md#security-model')}
+        onPress={() => Linking.openURL('https://github.com/latczar/aislet/blob/main/docs/DEVELOPMENT.md#security-model')}
       />
     </>
   );
@@ -988,7 +988,7 @@ export function SettingsView() {
           <Text
             variant="bodySmall"
             style={{ color: theme.colors.tertiary }}
-            onPress={() => Linking.openURL('https://github.com/latczar/untethered/blob/main/THIRD_PARTY_LICENSES.md')}
+            onPress={() => Linking.openURL('https://github.com/latczar/aislet/blob/main/THIRD_PARTY_LICENSES.md')}
           >
             Open-source licences
           </Text>

@@ -1,5 +1,7 @@
 # Developer notes
 
+Aislet was called Untethered until 1.0.7. Some internal names keep the old one, so existing installs, backups and pairings keep working: the Android app ID `app.untethered.assistant`, the native module `modules/untethered-library`, the backup format id `untethered-backup`, the hub's discovery id (`"app": "untethered"`) and the `UNTETHERED_*` build and test settings. The laptop hub moves its data from the `Untethered` folder, and the installers remove the old shortcuts.
+
 TypeScript · React Native (Expo) · React Native Paper · Ollama on the computer (Windows, Linux, Mac) · llama.cpp (llama.rn) on Android · a small Python hub.
 
 ## Layout
@@ -8,12 +10,12 @@ TypeScript · React Native (Expo) · React Native Paper · Ollama on the compute
 - `src/store.tsx`: app state, learning and sync.
 - `src/brain.ts`: prompts, memory and notes search.
 - `src/ui`: the screens.
-- `src/backup.ts`: automatic encrypted backups on the phone (Settings → Your data). Each day, when memory, notes, name or instructions have changed, it saves `untethered-backup-YYYY-MM-DD-HHMM.json` to a folder the user picks with Android's folder picker. The app keeps access to that folder. It keeps the newest 7 and only ever deletes its own backup files. Restoring merges like Import: anything new is added and nothing is overwritten. The PC has no automatic backups (`backup.web.ts`), because the hub's data file already holds a copy.
-- `src/ui/share.ts`: "Share to Untethered" on Android. The share filters are the `expo-sharing` plugin's options in `app.json`: single text, images and PDFs, or several images. A share opens a new chat with the text, photos (as JPEGs, at most 3) or files in the message box, ready to send. Shared PDFs are read by the laptop, as when attached. Only shared files are resolved: resolving shared text would make `expo-sharing` open any web link in it, and nothing in Untethered goes online by itself.
+- `src/backup.ts`: automatic encrypted backups on the phone (Settings → Your data). Each day, when memory, notes, name or instructions have changed, it saves `aislet-backup-YYYY-MM-DD-HHMM.json` (`untethered-backup-…` before the rename; both are kept, pruned and restored) to a folder the user picks with Android's folder picker. The app keeps access to that folder. It keeps the newest 7 and only ever deletes its own backup files. Restoring merges like Import: anything new is added and nothing is overwritten. The PC has no automatic backups (`backup.web.ts`), because the hub's data file already holds a copy.
+- `src/ui/share.ts`: "Share to Aislet" on Android. The share filters are the `expo-sharing` plugin's options in `app.json`: single text, images and PDFs, or several images. A share opens a new chat with the text, photos (as JPEGs, at most 3) or files in the message box, ready to send. Shared PDFs are read by the laptop, as when attached. Only shared files are resolved: resolving shared text would make `expo-sharing` open any web link in it, and nothing in Aislet goes online by itself.
 - `src/ui/voice.ts`: talking instead of typing, with Android's on-device speech recognition only. Settings → Voice picks the language from the phone's installed offline packs (`offlineLanguages`). Empty ("Same as the phone") means the phone's own language (`deviceLanguage` in `src/ui/languages.ts`): its pack if installed, else an installed pack of the same language, else Android is asked for the pack. `speak()` in `src/ui/actions.ts` reads answers aloud in the same language (the browser's language on the PC), using only voices that run on the device: Chrome's online voices on the PC and Android's "-network" voices are skipped.
-- `src/library.ts` and `modules/untethered-library`: offline libraries. The native module wraps Kiwix's reader (`org.kiwix:libkiwix`, GPL-3.0) to search Kiwix `.zim` files on the phone. For each question the app looks for overview articles by title, runs Kiwix's full-text search, picks the best passages (by meaning when an embedding model is available, otherwise by shared words) and puts up to three in the prompt. Libraries live in `Untethered/Libraries` on the phone. Reading them, and moving Kiwix's own files out of `Android/media/org.kiwix.kiwixmobile` (which Android deletes with Kiwix), needs "All files access". The app's own folder `Android/data/app.untethered.assistant/files/libraries` works without it. The PC has no libraries yet: Smart App Control blocks the unsigned libzim DLL, so `pip install libzim` can't load on Windows.
-- `pc/hub.py`: the laptop hub. It serves the PC app on :8766 and handles sync, Ollama passthrough and PDF text. It runs on Windows, Linux and Mac (Python 3.10+, standard library, plus pypdf for PDFs). Its data folder is `%LOCALAPPDATA%\Untethered` on Windows, `~/.local/share/Untethered` on Linux (`$XDG_DATA_HOME` if set) and `~/Library/Application Support/Untethered` on a Mac. `pc/launch.py` opens the app in its own window, and `pc/install_shortcuts.py` adds it to the Start menu (Windows), the app menu with an autostart entry (Linux), or `~/Applications` with a LaunchAgent (Mac).
-- `src/pairLink.ts` and `src/ui/PairPrompt.tsx`: pairing by QR code. The computer's Settings → Home shows a QR code of `untethered://pair?u=<address>&c=<code>` (`src/ui/PairQr.tsx`, drawn with `toqr`). The phone's camera opens the link in the app, which asks first (see the security model).
+- `src/library.ts` and `modules/untethered-library`: offline libraries. The native module wraps Kiwix's reader (`org.kiwix:libkiwix`, GPL-3.0) to search Kiwix `.zim` files on the phone. For each question the app looks for overview articles by title, runs Kiwix's full-text search, picks the best passages (by meaning when an embedding model is available, otherwise by shared words) and puts up to three in the prompt. Libraries live in `Aislet/Libraries` on the phone (`Untethered/Libraries`, from before the rename, is still read where it is). Reading them, and moving Kiwix's own files out of `Android/media/org.kiwix.kiwixmobile` (which Android deletes with Kiwix), needs "All files access". The app's own folder `Android/data/app.untethered.assistant/files/libraries` works without it. The PC has no libraries yet: Smart App Control blocks the unsigned libzim DLL, so `pip install libzim` can't load on Windows.
+- `pc/hub.py`: the laptop hub. It serves the PC app on :8766 and handles sync, Ollama passthrough and PDF text. It runs on Windows, Linux and Mac (Python 3.10+, standard library, plus pypdf for PDFs). Its data folder is `%LOCALAPPDATA%\Aislet` on Windows, `~/.local/share/Aislet` on Linux (`$XDG_DATA_HOME` if set) and `~/Library/Application Support/Aislet` on a Mac. On first run it copies `hub.json` from the folder of an earlier name (`Untethered`, then `Unplugged` and `Assistant`). `pc/launch.py` opens the app in its own window, and `pc/install_shortcuts.py` adds it to the Start menu (Windows), the app menu with an autostart entry (Linux), or `~/Applications` with a LaunchAgent (Mac).
+- `src/pairLink.ts` and `src/ui/PairPrompt.tsx`: pairing by QR code. The computer's Settings → Home shows a QR code of `aislet://pair?u=<address>&c=<code>` (`src/ui/PairQr.tsx`, drawn with `toqr`). The phone's camera opens the link in the app, which asks first (see the security model).
 - `install/install.ps1`: the Windows installer. `install/install.sh`: the Linux and Mac installer. It puts the app, and its own Python environment for pypdf, in the data folder. Linux is tested in WSL (Ubuntu 24.04); the Mac path is untested. `scripts/package.ps1` makes the release files.
 
 ## Security model
@@ -21,7 +23,7 @@ TypeScript · React Native (Expo) · React Native Paper · Ollama on the compute
 - The PC app proves itself to the hub with a secret token. `launch.py` passes it after `#`, so it never crosses the network.
 - The phone signs every request with HMAC-SHA256 keyed by the pairing code (`src/crypto.ts`). Each signature covers the time, a nonce, the method, the path and a hash of the body. The code itself never crosses the network, and replays are refused.
 - The hub only serves files that exist in `dist/`, checks the Host and Origin headers, and limits body size and connections. It pauses a device for 10 minutes after 10 wrong attempts.
-- **Pairing links:** any app or website can open an `untethered://pair` link, so the phone never pairs from one by itself. It only accepts home-network addresses (10.x, 172.16–31.x, 192.168.x) and codes in the hub's alphabet. It always shows the address, and pairs only after the user taps Pair and the hub accepts the code. The QR code holds the same code that's shown beside it, so it gives away nothing the screen didn't already show.
+- **Pairing links:** any app or website can open an `aislet://pair` link, so the phone never pairs from one by itself. It only accepts home-network addresses (10.x, 172.16–31.x, 192.168.x) and codes in the hub's alphabet. It always shows the address, and pairs only after the user taps Pair and the hub accepts the code. The QR code holds the same code that's shown beside it, so it gives away nothing the screen didn't already show.
 - **What goes online:** only downloads (AI models from Hugging Face on the phone; the app and Ollama's models on the computer). Settings → Privacy (`PRIVACY` in `src/ui/SettingsView.tsx`) and the README's "How private is it?" say so. Keep both true: update them whenever something new uses the network. Voice input is on-device only (`requiresOnDeviceRecognition`), and the PC has none, because browser speech recognition goes online.
 - On Android, plain HTTP is allowed so the phone can reach the hub on the home network. Android's own cloud backup is off.
 - **Encrypted backups:** the format is JSON. A plain header holds the app, the date and the key settings. The data is encrypted with AES-256-GCM (`expo-crypto`), using a key made from the passphrase with PBKDF2-HMAC-SHA256 (200,000 iterations, a random 16-byte salt; `pbkdf2Sha256` in `src/crypto.ts`, checked against Node's crypto). The passphrase is never stored. The key made from it is kept in the app's own storage, beside the memory it protects, so the daily backup runs without asking. A wrong passphrase fails the GCM check and is reported as such.
@@ -50,7 +52,7 @@ TypeScript · React Native (Expo) · React Native Paper · Ollama on the compute
 - **Install on a phone with adb:**
 
   ```bash
-  adb install --user 0 -r release/Untethered.apk
+  adb install --user 0 -r release/Aislet.apk
   ```
 
   Use `--user 0` on phones with a second profile, such as Samsung Dual Apps or Secure Folder. Without it the app installs into every profile and shows two icons.
@@ -60,7 +62,7 @@ TypeScript · React Native (Expo) · React Native Paper · Ollama on the compute
   pwsh scripts/package.ps1
   ```
 
-  This makes `release/untethered-pc.zip` (with a `.sha256`) and `release/Untethered.apk`.
+  This makes `release/aislet-pc.zip` (with a `.sha256`) and `release/Aislet.apk`. For 1.0.7 only, it also makes `untethered-pc.zip`, the same zip under the old name, for installers saved before the rename; upload it to the release too.
 - **Logo and icons:**
 
   ```bash
@@ -128,7 +130,7 @@ python e2e/phone/run.py
 The checks use made-up text starting "E2E" and clean up after themselves:
 
 - The test chat is deleted.
-- The backup test uses `Documents/E2E-untethered-backups`. It turns backups off again, forgets its fact and deletes the folder. It taps in Android's folder and file picker only while Untethered has that picker open.
+- The backup test uses `Documents/E2E-untethered-backups`. It turns backups off again, forgets its fact and deletes the folder. It taps in Android's folder and file picker only while Aislet has that picker open.
 - Shared text, photos and PDFs are removed from the message box unsent. The made-up picture and PDF are pushed to the app's own folder (`Android/data/app.untethered.assistant/files/e2e`), never the gallery, and deleted afterwards.
 - Test facts are forgotten.
 - Notes are never saved.
