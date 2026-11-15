@@ -8,6 +8,7 @@ TypeScript · React Native (Expo) · React Native Paper · Ollama on Windows · 
 - `src/store.tsx`: app state, learning and sync.
 - `src/brain.ts`: prompts, memory and notes search.
 - `src/ui`: the screens.
+- `src/backup.ts`: automatic encrypted backups on the phone (Settings → Your data). Each day, when memory, notes, name or instructions have changed, it saves `untethered-backup-YYYY-MM-DD-HHMM.json` to a folder the user picks with Android's folder picker. The app keeps access to that folder. It keeps the newest 7 and only ever deletes its own backup files. Restoring merges like Import: anything new is added and nothing is overwritten. The PC has no automatic backups (`backup.web.ts`), because the hub's data file already holds a copy.
 - `src/ui/share.ts`: "Share to Untethered" on Android. The share filters are the `expo-sharing` plugin's options in `app.json`: single text, images and PDFs, or several images. A share opens a new chat with the text, photos (as JPEGs, at most 3) or files in the message box, ready to send. Shared PDFs are read by the laptop, as when attached. Only shared files are resolved: resolving shared text would make `expo-sharing` open any web link in it, and nothing in Untethered goes online by itself.
 - `pc/hub.py`: the laptop hub. It serves the PC app on :8766 and handles sync, Ollama passthrough and PDF text.
 - `install/install.ps1`: the Windows installer. `scripts/package.ps1` makes the release files.
@@ -17,7 +18,8 @@ TypeScript · React Native (Expo) · React Native Paper · Ollama on Windows · 
 - The PC app proves itself to the hub with a secret token. `launch.py` passes it after `#`, so it never crosses the network.
 - The phone signs every request with HMAC-SHA256 keyed by the pairing code (`src/crypto.ts`). Each signature covers the time, a nonce, the method, the path and a hash of the body. The code itself never crosses the network, and replays are refused.
 - The hub only serves files that exist in `dist/`, checks the Host and Origin headers, and limits body size and connections. It pauses a device for 10 minutes after 10 wrong attempts.
-- On Android, plain HTTP is allowed so the phone can reach the hub on the home network. Backup is off.
+- On Android, plain HTTP is allowed so the phone can reach the hub on the home network. Android's own cloud backup is off.
+- **Encrypted backups:** the format is JSON. A plain header holds the app, the date and the key settings. The data is encrypted with AES-256-GCM (`expo-crypto`), using a key made from the passphrase with PBKDF2-HMAC-SHA256 (200,000 iterations, a random 16-byte salt; `pbkdf2Sha256` in `src/crypto.ts`, checked against Node's crypto). The passphrase is never stored. The key made from it is kept in the app's own storage, beside the memory it protects, so the daily backup runs without asking. A wrong passphrase fails the GCM check and is reported as such.
 
 ## Build
 
@@ -110,11 +112,13 @@ python e2e/phone/run.py
 | `memory` | Two facts are added, "Tidy up" runs, and the facts are forgotten again. Suggestions are applied only when memory held nothing else; otherwise they're cancelled. |
 | `performance` | Cool, Max and Balanced each switch over and show their description, then the original mode is put back. |
 | `haptics` | The "Vibrate on taps" switch in Settings turns off and on, then is put back as it was. |
+| `backup` | Backups turn on with a passphrase and a folder chosen in Android's picker. The file is in the backup format and doesn't contain the test fact in plain text. A wrong passphrase is refused, and the right one restores a fact forgotten after the backup. If backups were already on, it only checks "Back up now" and leaves them as they were. |
 | `layout` | List rows on Memory and Settings line up. Titles start at one left edge and buttons end at one right edge, the same on every card. No button is stretched or off-centre on its row. |
 
 The checks use made-up text starting "E2E" and clean up after themselves:
 
 - The test chat is deleted.
+- The backup test uses `Documents/E2E-untethered-backups`. It turns backups off again, forgets its fact and deletes the folder. It taps in Android's folder and file picker only while Untethered has that picker open.
 - Shared text, photos and PDFs are removed from the message box unsent. The made-up picture and PDF are pushed to the app's own folder (`Android/data/app.untethered.assistant/files/e2e`), never the gallery, and deleted afterwards.
 - Test facts are forgotten.
 - Notes are never saved.

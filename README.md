@@ -20,6 +20,7 @@ To link them, open Settings → Home on the phone, tap **Find my laptop** (or ty
 - **Learns about you** as you talk, and you can see and edit what it knows.
 - **Reads your notes, photos and PDFs.** On Android, share text, a screenshot or a PDF from any app to Untethered to ask about it.
 - **Syncs your phone and computer** over home Wi-Fi, and at home the phone uses the computer's bigger AI.
+- **Backs up automatically** on Android: an encrypted copy of your memory and notes each day, in a folder you choose. Restore it with your passphrase.
 
 Everything stays on your devices. Nothing is collected.
 
