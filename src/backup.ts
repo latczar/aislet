@@ -61,8 +61,10 @@ const saveConfig = (c: Config) => AsyncStorage.setItem(CONFIG_KEY, JSON.stringif
 
 /** "Documents/Untethered" from a picked folder's URI. */
 export function folderLabel(uri: string): string {
-  const path = decodeURIComponent(uri).replace(/\/+$/, '').split('/').pop() ?? '';
-  const inside = path.includes(':') ? path.slice(path.indexOf(':') + 1) : path;
+  // The folder's id is the part after /tree/, still encoded (its own slashes are %2F): "primary%3ADocuments%2FBackups".
+  const raw = uri.replace(/\/+$/, '');
+  const id = decodeURIComponent(raw.match(/\/tree\/([^/]+)/)?.[1] ?? raw.split('/').pop() ?? '');
+  const inside = id.includes(':') ? id.slice(id.indexOf(':') + 1) : id;
   return inside || 'phone storage';
 }
 
