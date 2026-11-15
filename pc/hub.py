@@ -12,8 +12,10 @@ Who may do what:
   crosses the network and a captured request can't be replayed.
 - Anyone else on the network can only ask "is a hub here?".
 
-Data lives in %LOCALAPPDATA%\\Untethered\\hub.json. Errors go to hub.log next to it.
-Run:  pythonw pc/hub.py      (it also starts at login once install_shortcuts.py has run)
+Data lives in hub.json in the usual folder for app data: %LOCALAPPDATA%\\Untethered on Windows,
+~/.local/share/Untethered on Linux ($XDG_DATA_HOME if set) and ~/Library/Application Support/Untethered on a Mac.
+Errors go to hub.log next to it.
+Run:  pythonw pc/hub.py      (python3 on Linux and Mac; it starts at login once install_shortcuts.py has run)
 """
 from __future__ import annotations
 
@@ -40,13 +42,28 @@ from urllib.parse import unquote, urlsplit
 APP = Path(__file__).resolve().parent.parent
 DIST = APP / "dist"
 PORT = int(os.environ.get("UNTETHERED_PORT", "8766"))
-LOCAL = Path(os.environ.get("LOCALAPPDATA", str(Path.home())))
-DATA_DIR = LOCAL / "Untethered"
-OLD_DATA_DIRS = [LOCAL / "Unplugged", LOCAL / "Assistant"]  # earlier names; data is moved over on first run
+WINDOWS, MAC = os.name == "nt", sys.platform == "darwin"
+
+
+def data_dir() -> Path:
+    """The usual place for an app's own data on this system."""
+    if WINDOWS:
+        return Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "Untethered"
+    if MAC:
+        return Path.home() / "Library" / "Application Support" / "Untethered"
+    xdg = os.environ.get("XDG_DATA_HOME", "")
+    return (Path(xdg) if os.path.isabs(xdg) else Path.home() / ".local" / "share") / "Untethered"
+
+
+DATA_DIR = data_dir()
+# Earlier names (Windows only); data is moved over on first run.
+OLD_DATA_DIRS = [DATA_DIR.parent / "Unplugged", DATA_DIR.parent / "Assistant"] if WINDOWS else []
 STORE = DATA_DIR / "hub.json"
 LOG = DATA_DIR / "hub.log"
 OLLAMA = ("127.0.0.1", 11434)
-OLLAMA_EXE = LOCAL / "Programs" / "Ollama" / "ollama.exe"
+# Where Ollama's installer puts it when it isn't on the PATH.
+OLLAMA_EXE = (Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "Programs" / "Ollama" / "ollama.exe" if WINDOWS
+              else Path("/Applications/Ollama.app/Contents/Resources/ollama"))
 OLLAMA_GRACE = 90  # seconds Ollama gets to start before the hub tries again
 TOMBSTONE_DAYS = 90
 SIGNATURE_WINDOW_MS = 5 * 60_000      # a signed request must be this fresh
@@ -237,6 +254,7 @@ def start_ollama() -> bool:
                 command, cwd=str(Path(command[0]).parent), close_fds=True,
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+                start_new_session=not WINDOWS,  # keeps running if the hub stops
             )
         except OSError as e:
             log(f"Couldn't start Ollama: {e}")
@@ -260,8 +278,17 @@ def lan_addresses() -> list[str]:
             found.add(info[4][0])
     except OSError:
         pass
+    # Linux often names only 127.0.1.1 for the computer's own name, so also ask which address it would use on
+    # the network. Connecting a UDP socket sends nothing.
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("10.254.254.254", 9))
+            found.add(s.getsockname()[0])
+    except OSError:
+        pass
     ips = [ipaddress.ip_address(a) for a in found]
-    home = [ip for ip in ips if ip.is_private and not ip.is_loopback and ip not in ipaddress.ip_network("100.64.0.0/10")
+    home = [ip for ip in ips if ip.is_private and not ip.is_loopback and not ip.is_unspecified and not ip.is_link_local
+            and ip not in ipaddress.ip_network("100.64.0.0/10")
             and not str(ip).startswith("172.")]  # skip Tailscale and WSL/Docker
     home.sort(key=lambda ip: (not str(ip).startswith("192.168."), str(ip)))
     return [str(ip) for ip in home]

@@ -1,6 +1,6 @@
 # Developer notes
 
-TypeScript · React Native (Expo) · React Native Paper · Ollama on Windows · llama.cpp (llama.rn) on Android · a small Python hub.
+TypeScript · React Native (Expo) · React Native Paper · Ollama on the computer (Windows, Linux, Mac) · llama.cpp (llama.rn) on Android · a small Python hub.
 
 ## Layout
 
@@ -11,9 +11,9 @@ TypeScript · React Native (Expo) · React Native Paper · Ollama on Windows · 
 - `src/backup.ts`: automatic encrypted backups on the phone (Settings → Your data). Each day, when memory, notes, name or instructions have changed, it saves `untethered-backup-YYYY-MM-DD-HHMM.json` to a folder the user picks with Android's folder picker. The app keeps access to that folder. It keeps the newest 7 and only ever deletes its own backup files. Restoring merges like Import: anything new is added and nothing is overwritten. The PC has no automatic backups (`backup.web.ts`), because the hub's data file already holds a copy.
 - `src/ui/share.ts`: "Share to Untethered" on Android. The share filters are the `expo-sharing` plugin's options in `app.json`: single text, images and PDFs, or several images. A share opens a new chat with the text, photos (as JPEGs, at most 3) or files in the message box, ready to send. Shared PDFs are read by the laptop, as when attached. Only shared files are resolved: resolving shared text would make `expo-sharing` open any web link in it, and nothing in Untethered goes online by itself.
 - `src/library.ts` and `modules/untethered-library`: offline libraries. The native module wraps Kiwix's reader (`org.kiwix:libkiwix`, GPL-3.0) to search Kiwix `.zim` files on the phone. For each question the app looks for overview articles by title, runs Kiwix's full-text search, picks the best passages (by meaning when an embedding model is available, otherwise by shared words) and puts up to three in the prompt. Libraries live in `Untethered/Libraries` on the phone. Reading them, and moving Kiwix's own files out of `Android/media/org.kiwix.kiwixmobile` (which Android deletes with Kiwix), needs "All files access". The app's own folder `Android/data/app.untethered.assistant/files/libraries` works without it. The PC has no libraries yet: Smart App Control blocks the unsigned libzim DLL, so `pip install libzim` can't load on Windows.
-- `pc/hub.py`: the laptop hub. It serves the PC app on :8766 and handles sync, Ollama passthrough and PDF text.
+- `pc/hub.py`: the laptop hub. It serves the PC app on :8766 and handles sync, Ollama passthrough and PDF text. It runs on Windows, Linux and Mac (Python 3.10+, standard library, plus pypdf for PDFs). Its data folder is `%LOCALAPPDATA%\Untethered` on Windows, `~/.local/share/Untethered` on Linux (`$XDG_DATA_HOME` if set) and `~/Library/Application Support/Untethered` on a Mac. `pc/launch.py` opens the app in its own window, and `pc/install_shortcuts.py` adds it to the Start menu (Windows), the app menu with an autostart entry (Linux), or `~/Applications` with a LaunchAgent (Mac).
 - `src/pairLink.ts` and `src/ui/PairPrompt.tsx`: pairing by QR code. The computer's Settings → Home shows a QR code of `untethered://pair?u=<address>&c=<code>` (`src/ui/PairQr.tsx`, drawn with `toqr`). The phone's camera opens the link in the app, which asks first (see the security model).
-- `install/install.ps1`: the Windows installer. `scripts/package.ps1` makes the release files.
+- `install/install.ps1`: the Windows installer. `install/install.sh`: the Linux and Mac installer. It puts the app, and its own Python environment for pypdf, in the data folder. Linux is tested in WSL (Ubuntu 24.04); the Mac path is untested. `scripts/package.ps1` makes the release files.
 
 ## Security model
 
@@ -78,7 +78,7 @@ TypeScript · React Native (Expo) · React Native Paper · Ollama on Windows · 
   ```bash
   npm run typecheck
   ```
-- **Hub security tests:** after any change to `pc/hub.py`, run `pc/tests/hub_attack_test.py` against a test hub. Its first lines say how. All checks must pass.
+- **Hub security tests:** after any change to `pc/hub.py`, run `pc/tests/hub_attack_test.py` against a test hub. Its first lines say how, on Windows and on Linux. Where Ollama isn't installed (for example WSL), `pc/tests/fake_ollama.py` stands in for it. All checks must pass.
 
 ## List rows
 

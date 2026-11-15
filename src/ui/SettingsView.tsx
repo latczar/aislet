@@ -241,7 +241,9 @@ function PairPhone() {
         </View>
       </View>
       <Text variant="bodySmall" style={muted}>
-        The first time, Windows may ask whether Python can use the network: choose Allow.
+        {/Windows/.test(navigator.userAgent)
+          ? 'The first time, Windows may ask whether Python can use the network: choose Allow.'
+          : "If the phone can't find this computer, allow port 8766 through its firewall on your home network."}
         {hub.lastSync ? ` Last synced ${formatWhen(hub.lastSync)}.` : ''}
       </Text>
       <Button
@@ -416,7 +418,7 @@ function ConnectLaptop() {
       setSearch((s) => (s ? { ...s, done: true } : s));
       if (!found.length) {
         setProblem(`No laptop found. Check it's on and ${APP_NAME} is running there, then try again. `
-          + "If it still isn't found, Windows Firewall may be blocking Python: allow it on private networks, or type the address.");
+          + "If it still isn't found, the laptop's firewall may be blocking Python (on Windows, allow it on private networks), or type the address.");
       }
     } catch (e) {
       setSearch(null);

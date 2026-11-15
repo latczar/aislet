@@ -8,6 +8,12 @@ computer out of that hub for 10 minutes. In PowerShell, from the project folder:
     python pc/tests/hub_attack_test.py "$env:TEMP\\untethered-test\\Untethered\\hub.json" pc/tests/good.pdf
 
 Needs Ollama running with qwen3.5:9b, and pypdf. The data it sends is made up and is cleaned up afterwards.
+
+On Linux (or WSL), the data folder follows XDG_DATA_HOME instead. Without Ollama, run the stand-in first:
+
+    python3 pc/tests/fake_ollama.py &
+    XDG_DATA_HOME=/tmp/untethered-test UNTETHERED_PORT=8768 python3 pc/hub.py &
+    UNTETHERED_PORT=8768 python3 pc/tests/hub_attack_test.py /tmp/untethered-test/Untethered/hub.json pc/tests/good.pdf
 """
 import base64, hashlib, hmac, http.client, json, os, secrets, sys, time
 

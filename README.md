@@ -14,6 +14,14 @@
 irm https://raw.githubusercontent.com/latczar/untethered/main/install/install.ps1 | iex
 ```
 
+**Linux and Mac:** install [Ollama](https://ollama.com/download) first, then open a terminal and run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/latczar/untethered/main/install/install.sh | sh
+```
+
+Linux is tested on Ubuntu 24.04. The Mac version hasn't been tested yet; if you try it, please say how it went in an issue.
+
 **Android:** download `Untethered.apk` from the [latest release](https://github.com/latczar/untethered/releases/latest), install it and follow the set-up.
 
 To link them, open Settings → Home on the computer and scan the QR code with the phone's camera. Untethered opens and asks before it pairs. (Or, on the phone, open Settings → Home, tap **Find my laptop** and enter the code shown on the computer.) Both need to be on the same Wi-Fi.
