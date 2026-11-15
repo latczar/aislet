@@ -241,6 +241,7 @@ def px_per_dp() -> float:
 
 
 def scroll_to(what: str, timeout_swipes: int = 10, up: bool = False, **match) -> Node:
+    hide_keyboard()  # a swipe that starts on the keyboard types instead of scrolling
     h = screen_height()
     for _ in range(timeout_swipes):
         hits = [n for n in find(screen(), **match) if 150 < n.cy < h - 300]
@@ -255,6 +256,7 @@ def scroll_to(what: str, timeout_swipes: int = 10, up: bool = False, **match) ->
 
 
 def scroll_to_top() -> None:
+    hide_keyboard()
     h = screen_height()
     for _ in range(4):
         shell(f'input swipe 540 {int(h * 0.3)} 540 {int(h * 0.8)} 200')
