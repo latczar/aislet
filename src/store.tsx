@@ -18,12 +18,13 @@ import { nativeLibrary } from './libraryNative';
 import { KEYS, load, newId, remove, save, today } from './storage';
 import { exportFile, pickFile } from './transfer';
 import { setHaptics } from './ui/actions';
+import { setVoiceLanguage } from './ui/voice';
 import type { Backup, Chat, ChatSummary, Memory, MemoryCategory, Message, Note, NoteHit, Settings } from './types';
 
 const DEFAULT_SETTINGS: Settings = {
   name: '', learn: true, modelId: 'qwen3.5-4b', instructions: '', length: 'balanced', appearance: 'light',
   hubUrl: '', hubKey: '', useLaptop: true, accel: 'cpu', performance: 'balanced', haptics: true, onboarded: false,
-  useLibraries: true,
+  useLibraries: true, voiceLang: '',
 };
 const HISTORY = 20; // messages of the current chat the model sees
 const DELETED_KEY = 'deleted';
@@ -321,6 +322,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       const s = { ...DEFAULT_SETTINGS, ...(await load<Partial<Settings>>(KEYS.settings, {})) };
       setHaptics(s.haptics);
+      setVoiceLanguage(s.voiceLang);
       setSettings(s);
       settingsRef.current = s;
       setMemories(await load<Memory[]>(KEYS.memories, []));
@@ -431,6 +433,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     settingsRef.current = next;
     setSettings(next);
     setHaptics(next.haptics);
+    setVoiceLanguage(next.voiceLang);
     await save(KEYS.settings, next);
     if ('modelId' in patch || 'hubUrl' in patch || 'hubKey' in patch || 'useLaptop' in patch) setTimeout(() => refreshStatus(), 0);
   }, [refreshStatus]);

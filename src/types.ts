@@ -55,6 +55,7 @@ export interface Settings {
   haptics: boolean;    // phone: a light buzz on taps
   onboarded: boolean;  // finished the first-run set-up
   useLibraries: boolean; // search offline libraries (Kiwix .zim files) when answering
+  voiceLang: string;   // phone: speech language for talking and reading aloud ('' = English)
 }
 
 /** Everything that moves between devices with Export / Import. */

@@ -3,6 +3,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
 import { Platform } from 'react-native';
+import { speechLanguage } from './voice';
 
 let hapticsOn = true;
 
@@ -66,7 +67,7 @@ async function offlineVoice(language: string): Promise<string | undefined | null
 
 export function speak(text: string, onDone: () => void) {
   Speech.stop();
-  const language = 'en-GB';
+  const language = speechLanguage();
   offlineVoice(language).then((voice) => {
     if (voice === null) return onDone();
     Speech.speak(speakable(text), { language, voice, onDone, onStopped: onDone, onError: onDone });

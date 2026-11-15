@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Linking, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import {
-  Avatar, Button, Chip, Divider, IconButton, List, ProgressBar, RadioButton, SegmentedButtons, Snackbar, Surface, Switch, Text, useTheme,
+  Avatar, Button, Chip, Divider, IconButton, List, Menu, ProgressBar, RadioButton, SegmentedButtons, Snackbar, Surface, Switch, Text, useTheme,
 } from 'react-native-paper';
 import { type BackupStatus, backUp, backupStatus, backupSupported, openBackup, pickBackupFile, setUpBackups, turnOffBackups } from '../backup';
 import { APP_NAME } from '../config';
@@ -13,7 +13,9 @@ import { KIWIX_FOLDER, LIBRARY_FOLDER, describeBook } from '../library';
 import { makePairLink } from '../pairLink';
 import { useStore } from '../store';
 import type { Accel, AnswerLength, Appearance, Performance } from '../types';
+import { useBackCloses } from './back';
 import { Field } from './Field';
+import { languageName } from './languages';
 import { formatWhen } from './confirm';
 import { confirm, formatSize } from './confirm';
 import { cancelDownload, startDownload, useDownload } from './downloads';
@@ -21,6 +23,7 @@ import { PairQr } from './PairQr';
 import { Lead, Row } from './rows';
 import { SHORTCUTS } from './shortcuts';
 import { FONT, STATUS_COLOURS } from './theme';
+import { offlineLanguages, voiceSupported } from './voice';
 
 function Section({ title, children, footer }: { title: string; children: React.ReactNode; footer?: string }) {
   const theme = useTheme();
@@ -621,6 +624,47 @@ function Backups({ onToast }: { onToast: (message: string) => void }) {
   );
 }
 
+/** Phone: the language for talking and reading aloud, from the phone's installed offline speech packs. */
+function VoiceLanguage() {
+  const { settings, updateSettings } = useStore();
+  const [languages, setLanguages] = useState<string[] | null>(null);
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  useBackCloses(open, close);
+  useEffect(() => {
+    offlineLanguages().then(setLanguages);
+  }, []);
+  const choose = (language: string) => {
+    setOpen(false);
+    updateSettings({ voiceLang: language });
+  };
+  const current = settings.voiceLang ? languageName(settings.voiceLang) : 'Automatic (English)';
+  return (
+    <Row
+      title="Voice language"
+      description={languages && !languages.length
+        ? "This phone has no offline speech packs yet. Add one in its voice input settings."
+        : `${current}. Used when you talk and when answers are read aloud.`}
+      left={(p) => <List.Icon {...p} icon="translate" />}
+      right={(p) => (
+        <View style={p.style}>
+          <Menu
+            visible={open}
+            onDismiss={close}
+            anchorPosition="bottom"
+            anchor={<Button mode="contained-tonal" compact disabled={!languages?.length} onPress={() => setOpen(true)}>Change</Button>}
+          >
+            <Menu.Item title="Automatic (English)" trailingIcon={settings.voiceLang ? undefined : 'check'} onPress={() => choose('')} />
+            {(languages ?? []).map((l) => (
+              <Menu.Item key={l} title={languageName(l)} trailingIcon={settings.voiceLang === l ? 'check' : undefined} onPress={() => choose(l)} />
+            ))}
+          </Menu>
+        </View>
+      )}
+    />
+  );
+}
+
 /** Exactly what goes online, and what never does. Keep this true: check it whenever something new uses the network. */
 const PRIVACY = Platform.OS === 'web'
   ? [
@@ -716,6 +760,15 @@ export function SettingsView() {
             />
           </View>
         </Section>
+
+        {voiceSupported && (
+          <Section
+            title="Voice"
+            footer="Talking uses your phone's offline speech recognition, so it works without the internet. To add a language, download its offline pack in the phone's voice input settings."
+          >
+            <VoiceLanguage />
+          </Section>
+        )}
 
         <Section
           title="Home"

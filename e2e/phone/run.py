@@ -860,6 +860,77 @@ def check_privacy() -> str:
     return f'{len(PRIVACY_ROWS)} rows, downloads named as the only use of the internet'
 
 
+def voice_row() -> tuple[Node, str]:
+    """The Voice language row's Change button, and the language it shows."""
+    scroll_to('the Voice language row', timeout_swipes=8, text='Voice language')
+    nodes = screen()
+    shown = [n for n in find(nodes, contains='Used when you talk') if n.text]
+    if not shown:
+        raise CheckFailed('the Voice language row shows no language')
+    title = find(nodes, text='Voice language')[0]
+    change = min(find(nodes, text='Change'), key=lambda n: abs(n.cy - title.cy), default=None)
+    if not change or abs(change.cy - title.cy) > 150:
+        raise CheckFailed('no Change button on the Voice language row')
+    return change, shown[0].text.split('. Used')[0]
+
+
+def menu_items(first: Node) -> list[Node]:
+    """The language menu's items: the labels lined up under its first item, one after another with no gap
+    (so the tab labels further down, or other text that happens to line up, aren't counted)."""
+    lined_up = sorted((n for n in find(screen()) if n.text and abs(n.x1 - first.x1) < 12 and n.y1 >= first.y1),
+                      key=lambda n: n.y1)
+    items = [first]
+    for n in lined_up:
+        if n.y1 <= items[-1].y1:
+            continue
+        if n.y1 - items[-1].y2 > first.height * 2:
+            break
+        items.append(n)
+    return items
+
+
+def check_voice_language() -> str:
+    """Settings → Voice lists the phone's offline speech packs; Back closes the menu; choosing one shows it, then it's put back."""
+    go_tab('Settings')
+    scroll_to_top()
+    if find(screen(), contains='no offline speech packs'):
+        return 'this phone has no offline speech packs, so there is nothing to choose'
+    change, before = voice_row()
+    tap(change)
+    auto = wait_for('the language menu', timeout=5, text='Automatic (English)')
+    languages = [n for n in menu_items(auto) if n.text != 'Automatic (English)']
+    if not languages:
+        raise CheckFailed('the menu lists no installed languages')
+    names = [n.text for n in languages]
+    # Back closes the menu and stays in the app.
+    key(4)
+    time.sleep(1)
+    if foreground() != PKG:
+        raise CheckFailed('Back with the language menu open left the app')
+    if find(screen(), text='Automatic (English)'):
+        raise CheckFailed('Back did not close the language menu')
+    tap(voice_row()[0])
+    auto = wait_for('the language menu again', timeout=5, text='Automatic (English)')
+    languages = [n for n in menu_items(auto) if n.text != 'Automatic (English)']
+    pick = next((n for n in languages if n.text != before), languages[0])
+    tap(pick)
+    time.sleep(1)
+    try:
+        change, now = voice_row()
+        if now != pick.text:
+            raise CheckFailed(f'chose {pick.text}, but the row shows {now}')
+    finally:
+        change, now = voice_row()
+        if now != before:  # put it back
+            tap(change)
+            auto = wait_for('the language menu', timeout=5, text='Automatic (English)')
+            tap(next(n for n in menu_items(auto) if n.text == before))
+            time.sleep(1)
+    if voice_row()[1] != before:
+        raise CheckFailed(f'could not put the voice language back to {before}')
+    return f"offline packs: {', '.join(names)}; chose {pick.text}, then put back {before}"
+
+
 def check_layout() -> str:
     """List rows line up: one left edge for titles, one right edge for buttons, none stretched or out of place."""
     dp = px_per_dp()
@@ -1327,6 +1398,7 @@ CHECKS = {
     'performance': check_performance,
     'haptics': check_haptics,
     'backup': check_backup,
+    'voice_language': check_voice_language,
     'privacy': check_privacy,
     'layout': check_layout,
     'library': check_library,
