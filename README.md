@@ -4,7 +4,7 @@
 
 | Drafts replies | Summarises PDFs you share | Runs on your own devices |
 | :---: | :---: | :---: |
-| <img src="docs/images/demo.gif" width="250" alt="Typing a message from a landlord about a boiler engineer visit, and Untethered drafting a polite reply"> | <img src="docs/images/summarise-pdf.png" width="250" alt="A council letter about bin collection changes shared as a PDF, and Untethered summarising it"> | <img src="docs/images/settings-ai.png" width="250" alt="The AI settings: the laptop's model, the phone's own Qwen3.5 model, and speed and heat options"> |
+| <img src="docs/images/demo.gif" width="250" alt="Typing a message from a landlord about a plumber's visit, and Untethered drafting a polite reply"> | <img src="docs/images/summarise-pdf.png" width="250" alt="A building notice about a water shut-off shared as a PDF, and Untethered summarising it"> | <img src="docs/images/settings-ai.png" width="250" alt="The AI settings: the laptop's model, the phone's own Qwen3.5 model, and speed and heat options"> |
 
 ## Install
 
