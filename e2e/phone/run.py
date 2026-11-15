@@ -1098,6 +1098,7 @@ def check_backup() -> str:
             raise CheckFailed('the backup file holds the fact in plain text; it should be encrypted')
 
         # Forget the fact, then restore it from the file.
+        go_tab('Memory')
         if not forget('E2E backup fact'):
             raise CheckFailed('could not forget the test fact before restoring')
         go_tab('Settings')
@@ -1128,6 +1129,7 @@ def check_backup() -> str:
         if foreground() not in (PKG,) and PICKER in foreground():
             key(4)  # leave the picker if a step failed inside it
             time.sleep(1)
+        go_tab('Memory')
         forget('E2E backup fact')
         if turned_on:
             go_tab('Settings')
