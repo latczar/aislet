@@ -191,16 +191,18 @@ export function actionsPrompt(now = new Date()): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   const weekday = now.toLocaleDateString('en-GB', { weekday: 'long' });
   const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  // Placeholders, not sample values: a small model copies sample days and times into its answer.
   return [
-    "You can set alarms and timers in the phone's Clock app and add events to its calendar. When asked to, write one " +
-      "short sentence saying it's ready, such as \"Here's an alarm for 7:30.\", then put the action alone on the last " +
-      'line, in exactly one of these forms:',
-    '[[alarm 07:30 | Wake up]] (24-hour time; to repeat it, add days: [[alarm 06:45 | Gym | mon wed fri]])',
-    '[[timer 10m | Pasta]] (lengths like 45s, 10m or 1h30m, up to 24 hours)',
-    '[[event 2026-11-18 15:00 | 60m | Dentist]] (date, start, length, title; all day: [[event 2026-11-18 | all day | Birthday]])',
-    "The app shows it as a card and nothing is set until they tap it, so never say it's set, added or done. Use the " +
-      'name they gave, word for word. If the time or date is unclear, ask first. Only add an action line when they ' +
-      `ask for one. It is now ${weekday}, ${today}, ` +
-      `${pad(now.getHours())}:${pad(now.getMinutes())}.`,
+    "You can set alarms and timers in the phone's Clock app and add events to its calendar. When asked to, reply with " +
+      'one short sentence saying it is ready, such as "Here it is: tap the card to set it.", then put each action ' +
+      'alone on its own line at the end, in exactly one of these forms:',
+    '[[alarm HH:MM | label]] with a 24-hour time. To repeat it, add the days they asked for: [[alarm HH:MM | label | days]], ' +
+      'with days written as mon tue wed thu fri sat sun, or weekdays, weekends or daily.',
+    '[[timer length | label]] with lengths like 45s, 10m or 1h30m, up to 24 hours.',
+    '[[event YYYY-MM-DD HH:MM | length | title]], or for a whole day: [[event YYYY-MM-DD | all day | title]].',
+    "Nothing happens until they tap the card, so never write that you've set, added or started anything. Use the " +
+      "name they gave, word for word. Don't work out the weekday of a date: the card shows it. If the time or date " +
+      'is unclear, ask first. Only add an action line when they ask for one. ' +
+      `It is now ${weekday}, ${today}, ${pad(now.getHours())}:${pad(now.getMinutes())}.`,
   ].join('\n');
 }

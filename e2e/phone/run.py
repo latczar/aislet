@@ -1676,6 +1676,13 @@ def resumed_activity() -> str:
     return m.group(1) if m else ''
 
 
+def test_events() -> int:
+    """How many calendar events have the test name (read-only), to prove none was saved."""
+    out = adb('shell', f"content query --uri content://com.android.calendar/events --projection title "
+                       f"--where \"title LIKE '%{ACTIONS_EVENT}%'\"", check=False)
+    return out.count('Row:')
+
+
 def back_to_aislet() -> None:
     """Bring Aislet back to the front without touching the app in front (no taps or keys go to it). Aislet's
     screen is "single task", so this also closes anything it opened on top of itself, unsaved."""
@@ -1717,6 +1724,7 @@ def check_actions() -> str:
         # Add to calendar: the calendar opens with the event filled in. Nothing is tapped there.
         button = wait_for('the Add to calendar button', timeout=5, text='Add to calendar')
         calendar_screens = open_activities(calendar)
+        saved_before = test_events()
         tap(button)
         # The calendar opens, or, with more than one calendar app and none chosen as the default, Android asks which.
         end = time.time() + 10
@@ -1743,8 +1751,10 @@ def check_actions() -> str:
         time.sleep(1)
         if open_activities(calendar) > calendar_screens or CHOOSER in adb('shell', 'dumpsys activity activities', timeout=40, check=False).split('Hist', 1)[-1]:
             raise CheckFailed('the calendar or the app picker is still open behind Aislet')
+        if test_events() > saved_before:
+            raise CheckFailed('a test event was saved in the calendar')
         wait_for('the card showing it was opened', timeout=5, text='Opened')
-        return f'event and alarm cards shown; {how}'
+        return f'event and alarm cards shown; {how}; no test event saved'
     finally:
         if opened and foreground() == opened:
             back_to_aislet()
