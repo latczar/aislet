@@ -39,7 +39,8 @@ export function systemPrompt(
       "extracts appear below, as do passages from their offline libraries: their own PDFs, ebooks and documents, and " +
       "any Kiwix .zim files, in the library folder (Settings → Libraries). The app saves memories by itself. " +
       (actions ? 'Apart from the alarms, timers and calendar events described below, you ' : 'You ') +
-      "can't open other apps, download anything or reach files that weren't attached or put in the library folder. If they " +
+      "can't open other apps, download anything or reach files that weren't attached or put in the library folder. You " +
+      "can't see alarms, timers or reminders, so never say one is set or running. If they " +
       'want you to know something for good, suggest a note on the Notes tab, or for documents or a whole reference ' +
       'library, putting the files in the library folder. Then answer as much as you can now.',
     'Always try to help. Answer every reasonable question directly from what you know, including health, money, ' +
@@ -118,7 +119,8 @@ export function learnMessages(name: string, memories: Memory[], message: string)
         'Save things that will still be true and useful in future chats: who they are, their work, goals, routines,',
         'interests, the people and projects they mention, and how they like answers. Feedback counts too:',
         '"shorter please" means they prefer short answers; "call me Lat" means they want to be called Lat.',
-        'Do not save questions, one-off requests, small talk, guesses, anything already known,',
+        'Do not save questions, one-off requests (setting an alarm, timer, reminder or event is one), small talk, guesses,',
+        'anything already known,',
         'or secrets (passwords, card numbers, codes, health or money details they did not ask you to keep).',
         `Write each fact as one short sentence starting "${who}", with a category: ${CATEGORY_IDS}.`,
         'Reply only with JSON: {"facts": [{"fact": "...", "category": "..."}]}. Reply {"facts": []} when there is nothing worth saving.',
