@@ -5,3 +5,5 @@
 • A home-screen widget: ask, or start talking, in one tap.
 • Libraries can answer from your own files, not just Kiwix.
 • Your phone and computer now talk over a private, encrypted link.
+• Search the web, if you switch it on: only your search words go to DuckDuckGo, and answers list their sources.
+• Drafts of messages and emails get their own Copy button.

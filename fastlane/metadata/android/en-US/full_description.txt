@@ -15,12 +15,12 @@ Aislet (say "eye-let") is a private AI assistant that runs on your own devices. 
 </ul>
 
 <b>Privacy</b>
-The internet is only used to download AI models. Chats, memory, notes, photos and voice stay on your devices. No analytics, no ads, no trackers.
+The internet is only used to download AI models, and for web search if you switch it on (only the search words go to DuckDuckGo). Chats, memory, notes, photos and voice stay on your devices. No analytics, no ads, no trackers.
 
 <b>Permissions</b>
 <ul>
 <li>All files access (optional): reads your own files and Kiwix libraries in Aislet/Libraries, and moves Kiwix libraries out of Kiwix's folder without copying them. You switch it on yourself in Settings.</li>
 <li>Microphone (optional): voice typing and hands-free.</li>
 <li>Set alarms (granted at install, reads nothing): hands alarms and timers you confirm to your Clock app.</li>
-<li>Internet: model downloads, and reaching your own computer on your home Wi-Fi.</li>
+<li>Internet: model downloads, web search if you switch it on, and reaching your own computer on your home Wi-Fi.</li>
 </ul>
