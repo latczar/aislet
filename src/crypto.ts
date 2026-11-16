@@ -1,5 +1,5 @@
-// SHA-256 and HMAC-SHA256 in plain TypeScript (React Native has no built-in crypto).
-// Used to sign requests to the laptop hub so the pairing code never crosses the network.
+// SHA-256, HMAC-SHA256 and PBKDF2 in plain TypeScript (React Native has no built-in crypto).
+// Used for the private link to the laptop hub (src/link.ts) and for backup passphrases.
 
 const K = new Uint32Array([
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01,
@@ -123,10 +123,129 @@ export const utf8 = (text: string) => new TextEncoder().encode(text);
 export const fromHex = (text: string) => new Uint8Array((text.match(/../g) ?? []).map((b) => parseInt(b, 16)));
 export const hex = (bytes: Uint8Array) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 
-/** Headers that prove we know the pairing code without sending it: HMAC over time, nonce, method, path and body. */
-export function signRequest(code: string, method: string, path: string, body: string): Record<string, string> {
-  const time = String(Date.now());
-  const nonce = hex(Uint8Array.from({ length: 12 }, () => Math.floor(Math.random() * 256)));
-  const message = `${time}\n${nonce}\n${method}\n${path}\n${hex(sha256(utf8(body)))}`;
-  return { 'X-Time': time, 'X-Nonce': nonce, 'X-Sig': hex(hmacSha256(utf8(code.toUpperCase()), utf8(message))) };
+/** SHA-256 fed in pieces, so a big message is never copied into one buffer. */
+export class Sha256 {
+  private h = new Uint32Array(IV);
+  private w = new Uint32Array(64);
+  private block = new Uint8Array(64);
+  private used = 0;
+  private length = 0;
+
+  /** Optionally carry on from a saved state after `length` bytes (an HMAC pad). */
+  constructor(state?: Uint32Array, length = 0) {
+    if (state) {
+      this.h.set(state);
+      this.length = length;
+    }
+  }
+
+  private process(bytes: Uint8Array, off: number): void {
+    const w = this.w;
+    for (let i = 0; i < 16; i++) {
+      const j = off + i * 4;
+      w[i] = ((bytes[j] << 24) | (bytes[j + 1] << 16) | (bytes[j + 2] << 8) | bytes[j + 3]) >>> 0;
+    }
+    compress(this.h, w);
+  }
+
+  update(data: Uint8Array): this {
+    let i = 0;
+    this.length += data.length;
+    if (this.used) {
+      const take = Math.min(64 - this.used, data.length);
+      this.block.set(data.subarray(0, take), this.used);
+      this.used += take;
+      i = take;
+      if (this.used < 64) return this;
+      this.process(this.block, 0);
+      this.used = 0;
+    }
+    for (; i + 64 <= data.length; i += 64) this.process(data, i);
+    if (i < data.length) {
+      this.block.set(data.subarray(i));
+      this.used = data.length - i;
+    }
+    return this;
+  }
+
+  digest(): Uint8Array {
+    const bits = this.length * 8;
+    const tail = new Uint8Array(((this.used + 9 + 63) >> 6) << 6);
+    tail.set(this.block.subarray(0, this.used));
+    tail[this.used] = 0x80;
+    const view = new DataView(tail.buffer);
+    view.setUint32(tail.length - 8, Math.floor(bits / 0x100000000));
+    view.setUint32(tail.length - 4, bits >>> 0);
+    for (let off = 0; off < tail.length; off += 64) this.process(tail, off);
+    const out = new Uint8Array(32);
+    const outView = new DataView(out.buffer);
+    this.h.forEach((v, i) => outView.setUint32(i * 4, v));
+    return out;
+  }
+}
+
+/** An HMAC-SHA256 key with its pads hashed once, for many messages. */
+export class HmacKey {
+  private inner: Uint32Array;
+  private outer: Uint32Array;
+  private w = new Uint32Array(64);
+  private st = new Uint32Array(8);
+
+  constructor(key: Uint8Array) {
+    const block = new Uint8Array(64);
+    block.set(key.length > 64 ? sha256(key) : key);
+    const pad = (x: number) => {
+      const st = new Uint32Array(IV);
+      for (let i = 0; i < 16; i++) {
+        this.w[i] = (((block[i * 4] ^ x) << 24) | ((block[i * 4 + 1] ^ x) << 16) | ((block[i * 4 + 2] ^ x) << 8) | (block[i * 4 + 3] ^ x)) >>> 0;
+      }
+      compress(st, this.w);
+      return st;
+    };
+    this.inner = pad(0x36);
+    this.outer = pad(0x5c);
+  }
+
+  /** HMAC of the parts joined together. */
+  mac(...parts: Uint8Array[]): Uint8Array {
+    const inner = new Sha256(this.inner, 64);
+    for (const part of parts) inner.update(part);
+    return new Sha256(this.outer, 64).update(inner.digest()).digest();
+  }
+
+  /**
+   * XOR data with the keystream HMAC(key, iv || 0), HMAC(key, iv || 1), …, where iv is 16 bytes and the
+   * counter 4 bytes, big-endian. Each 32 bytes cost two SHA-256 blocks, as the message fits in one.
+   */
+  xorStream(iv: Uint8Array, data: Uint8Array): Uint8Array {
+    const out = new Uint8Array(data.length);
+    const w = this.w;
+    const st = this.st;
+    const ivWords = [0, 1, 2, 3].map((i) => ((iv[i * 4] << 24) | (iv[i * 4 + 1] << 16) | (iv[i * 4 + 2] << 8) | iv[i * 4 + 3]) >>> 0);
+    for (let pos = 0, counter = 0; pos < data.length; pos += 32, counter++) {
+      st.set(this.inner);
+      w[0] = ivWords[0]; w[1] = ivWords[1]; w[2] = ivWords[2]; w[3] = ivWords[3]; w[4] = counter >>> 0;
+      w[5] = 0x80000000;
+      for (let i = 6; i < 15; i++) w[i] = 0;
+      w[15] = (64 + 20) * 8;
+      compress(st, w);
+      for (let i = 0; i < 8; i++) w[i] = st[i];
+      w[8] = 0x80000000;
+      for (let i = 9; i < 15; i++) w[i] = 0;
+      w[15] = (64 + 32) * 8;
+      st.set(this.outer);
+      compress(st, w);
+      const end = Math.min(32, data.length - pos);
+      for (let i = 0; i < end; i++) out[pos + i] = data[pos + i] ^ ((st[i >> 2] >>> (24 - (i & 3) * 8)) & 0xff);
+    }
+    return out;
+  }
+}
+
+/** Compare two byte strings in time that doesn't depend on where they differ. */
+export function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
 }

@@ -1,10 +1,10 @@
 """Open the app on this computer in its own window, starting the hub first if it isn't running.
 
-The app is opened with the hub's secret PC token in the address (after #, so it is never sent
-over the network); the app keeps it and uses it to talk to the hub.
+The app is opened with a one-time launch code in the address (after #, so it is never sent over the
+network). The window trades it with the hub for the hub's secret token, so the token itself never appears in
+a command line, where other users of the computer could see it; a used or expired code is worthless.
 On Windows the Start menu and desktop shortcuts run this with pythonw, so no console appears.
 """
-import json
 import os
 import shutil
 import socket
@@ -14,7 +14,7 @@ import time
 import webbrowser
 from pathlib import Path
 
-from hub import MAC, PORT, STORE, WINDOWS  # the hub's own settings, so both always agree
+from hub import MAC, PORT, WINDOWS, new_launch_code  # the hub's own settings, so both always agree
 
 APP = Path(__file__).resolve().parent.parent
 if WINDOWS:
@@ -53,14 +53,10 @@ def start_hub() -> None:
 
 
 def app_url() -> str:
-    token = ""
-    for _ in range(20):  # the hub writes its token when it starts
-        try:
-            token = json.loads(STORE.read_text(encoding="utf-8")).get("local_token", "")
-            break
-        except (OSError, ValueError):
-            time.sleep(0.25)
-    return f"http://localhost:{PORT}/#t={token}" if token else f"http://localhost:{PORT}/"
+    try:
+        return f"http://localhost:{PORT}/#l={new_launch_code()}"
+    except OSError:
+        return f"http://localhost:{PORT}/"
 
 
 def main() -> None:

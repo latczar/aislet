@@ -8,8 +8,9 @@ import { APP_NAME } from '../config';
 import { findLaptops } from '../discover';
 import { engine } from '../engine';
 import type { ModelInfo } from '../engine/types';
-import { STALE_PC_KEY, hubNewCode, hubPairing, hubPing, normaliseAddress } from '../hub';
+import { STALE_PC_KEY, UNREACHABLE, hubNewCode, hubPairing, hubPing, isLinkKey, normaliseAddress, pairWith } from '../hub';
 import { KIWIX_FOLDER, LIBRARY_FOLDER, type LibraryBook, describeBook } from '../library';
+import { cleanCode, isPairingCode } from '../link';
 import { makePairLink } from '../pairLink';
 import { useStore } from '../store';
 import type { Accel, AnswerLength, Appearance, Performance } from '../types';
@@ -20,6 +21,7 @@ import { formatWhen } from './confirm';
 import { confirm, formatSize } from './confirm';
 import { cancelDownload, startDownload, useDownload } from './downloads';
 import { PairQr } from './PairQr';
+import { ScanPair } from './ScanPair';
 import { Lead, Row } from './rows';
 import { SHORTCUTS } from './shortcuts';
 import { FONT, STATUS_COLOURS } from './theme';
@@ -285,7 +287,7 @@ function Libraries({ onToast }: { onToast: (message: string) => void }) {
 function PairPhone() {
   const theme = useTheme();
   const { hub } = useStore();
-  const [info, setInfo] = useState<{ code: string; urls: string[] } | null>(null);
+  const [info, setInfo] = useState<{ code: string; salt: string; urls: string[] } | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   useEffect(() => {
     hubPairing().then(setInfo).catch((e) => setProblem((e as Error).message));
@@ -298,11 +300,11 @@ function PairPhone() {
     <View style={styles.pad}>
       {address ? (
         <View style={styles.pairTop}>
-          <PairQr link={makePairLink(address, info.code)} />
+          <PairQr link={makePairLink(address, info.code, info.salt)} />
           <View style={styles.pairText}>
-            <Text variant="titleMedium" style={{ fontFamily: FONT.semibold }}>Scan with your phone</Text>
+            <Text variant="titleMedium" style={{ fontFamily: FONT.semibold }}>Scan with {APP_NAME} on your phone</Text>
             <Text variant="bodyMedium" style={muted}>
-              Point your phone's camera at the code and open the link it shows. {APP_NAME} asks before it pairs.
+              On the phone, open {APP_NAME} → Settings → Home, tap Scan the laptop's code and point it at this one.
             </Text>
             <Text variant="bodySmall" style={muted}>
               Install {APP_NAME} on the phone first. Both need to be on the same Wi-Fi.
@@ -323,7 +325,9 @@ function PairPhone() {
         </View>
         <View style={styles.pairRow}>
           <Text variant="labelLarge" style={[styles.pairLabel, muted]}>Code</Text>
-          <Text variant="titleLarge" selectable style={[styles.mono, { color: theme.colors.primary, letterSpacing: 3 }]}>{info.code}</Text>
+          <Text variant="titleLarge" selectable style={[styles.mono, { color: theme.colors.primary, letterSpacing: 3 }]}>
+            {info.code.length === 10 ? `${info.code.slice(0, 5)} ${info.code.slice(5)}` : info.code}
+          </Text>
         </View>
       </View>
       <Text variant="bodySmall" style={muted}>
@@ -364,16 +368,20 @@ function LaptopAddress() {
     const controller = new AbortController();
     cancel.current = controller;
     setProgress(0);
-    const result = { match: '' };
+    const result = { match: '', key: '' };
     const checks: Promise<void>[] = [];
+    const key = settings.hubKey;
     try {
       await findLaptops(
         (a) => {
-          // Keep the same code: only the laptop that accepts it is ours.
-          checks.push(hubPing({ base: normaliseAddress(a), key: settings.hubKey, kind: 'phone' })
-            .then((info) => {
-              if (info.paired && !result.match) {
+          // Only a laptop that proves it knows this phone's key is ours (or, for a phone paired before the
+          // private link, accepts its code).
+          const base = normaliseAddress(a);
+          checks.push((isLinkKey(key) ? hubPing({ base, key, kind: 'phone' }).then(() => key) : pairWith(base, key).then((r) => r.key))
+            .then((proven) => {
+              if (!result.match) {
                 result.match = a;
+                result.key = proven;
                 controller.abort(); // found it: stop looking
               }
             })
@@ -392,7 +400,12 @@ function LaptopAddress() {
     }
     setProgress(null);
     if (result.match) {
-      await updateSettings({ hubUrl: normaliseAddress(result.match) });
+      const was = settings.hubUrl.replace(/^https?:\/\//, '').replace(/:8766$/, '');
+      if (normaliseAddress(result.match) !== settings.hubUrl
+        && !(await confirm(`Use the laptop at ${result.match}?`, `Your laptop answered there with this phone's key. It was at ${was}.`, 'Use it'))) {
+        return;
+      }
+      await updateSettings({ hubUrl: normaliseAddress(result.match), hubKey: result.key });
       setNote(`Found it at ${result.match}`);
       refreshStatus();
     } else if (!controller.signal.aborted) {
@@ -474,13 +487,12 @@ function ConnectLaptop() {
     setProblem(null);
     setBusy(true);
     const base = normaliseAddress(address);
-    const key = code.trim().toUpperCase();
     try {
-      const info = await hubPing({ base, key, kind: 'phone' });
-      if (!info.paired) throw new Error("That code didn't match. Check the code on the laptop.");
+      const { key } = await pairWith(base, code); // the code itself never crosses the network
       await updateSettings({ hubUrl: base, hubKey: key });
     } catch (e) {
-      setProblem((e as Error).message);
+      const message = (e as Error).message;
+      setProblem(message === UNREACHABLE ? `${message} Check the address, and that the phone and laptop are on the same Wi-Fi.` : message);
     } finally {
       setBusy(false);
     }
@@ -517,8 +529,10 @@ function ConnectLaptop() {
   return (
     <View style={styles.pad}>
       <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
-        On the laptop, open {APP_NAME} → Settings → Home to see the code. Both need to be on the same Wi-Fi.
+        On the laptop, open {APP_NAME} → Settings → Home to see its code. Both need to be on the same Wi-Fi.
       </Text>
+      <ScanPair />
+      <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>Or type its address and code:</Text>
       {searching ? (
         <View style={styles.finding}>
           <View style={styles.rowBetween}>
@@ -541,9 +555,11 @@ function ConnectLaptop() {
         </View>
       )}
       <Field mode="outlined" dense label="Laptop address" placeholder="e.g. 192.168.1.20" value={address} onChangeText={setAddress} keyboardType="numbers-and-punctuation" autoCapitalize="none" />
-      <Field mode="outlined" dense label="Code" value={code} onChangeText={setCode} autoCapitalize="characters" maxLength={8} />
+      <Field mode="outlined" dense label="Code" value={code} onChangeText={setCode} autoCapitalize="characters" maxLength={12} />
       {problem && <Text variant="bodySmall" style={{ color: theme.colors.error }}>{problem}</Text>}
-      <Button mode="contained" onPress={connect} loading={busy} disabled={busy || !address.trim() || code.trim().length < 8}>Connect</Button>
+      <Button mode="contained-tonal" onPress={connect} loading={busy} disabled={busy || !address.trim() || !isPairingCode(cleanCode(code))}>
+        {busy ? 'Pairing…' : 'Connect'}
+      </Button>
     </View>
   );
 }

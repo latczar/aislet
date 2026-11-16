@@ -72,6 +72,13 @@
         }
       ],
       [
+        "expo-camera",
+        {
+          "cameraPermission": "Aislet uses the camera when you take a photo to ask about, or scan your laptop's pairing code.",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
         "expo-speech-recognition",
         {
           "microphonePermission": "Aislet listens when you tap the microphone to talk.",
@@ -79,7 +86,8 @@
         }
       ],
       "./plugins/withReleaseSigning",
-      "./plugins/withBackupOff"
+      "./plugins/withBackupOff",
+      "./plugins/withScannerOffline"
     ]
   }
 }

@@ -7,10 +7,12 @@
 - Starts Ollama if it isn't running (for example, just after the computer starts).
 
 Who may do what:
-- The PC app proves itself with a secret token that launch.py passes to it (it never leaves this computer).
-- A paired phone signs every request with the pairing code (HMAC-SHA256), so the code itself never
-  crosses the network and a captured request can't be replayed.
-- Anyone else on the network can only ask "is a hub here?".
+- The PC app is served only to this computer (127.0.0.1). It proves itself with a secret token, which it gets
+  by trading a one-time launch code from launch.py, so the token is never in a command line or address.
+- A paired phone talks over a private link (pc/link.py): every request and reply is encrypted and
+  authenticated with a key made from the pairing code, and a request can't be replayed.
+- Anyone else on the network can only ask "is a hub here?". Strangers are refused before their request
+  body is read, each address gets a few connections at most, and this computer is always let in.
 
 Data lives in hub.json in the usual folder for app data: %LOCALAPPDATA%\\Aislet on Windows,
 ~/.local/share/Aislet on Linux ($XDG_DATA_HOME if set) and ~/Library/Application Support/Aislet on a Mac.
@@ -42,11 +44,14 @@ from urllib.parse import unquote, urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import library  # noqa: E402 (pc/library.py, next to this file)
+import link  # noqa: E402 (pc/link.py: the phone's private link)
 
 APP = Path(__file__).resolve().parent.parent
 DIST = APP / "dist"
 PORT = int(os.environ.get("UNTETHERED_PORT", "8766"))
 WINDOWS, MAC = os.name == "nt", sys.platform == "darwin"
+if not WINDOWS:
+    os.umask(0o077)  # the hub's files are for this user only (Windows keeps %LOCALAPPDATA% private already)
 
 
 def data_dir() -> Path:
@@ -78,6 +83,7 @@ DATA_DIR = data_dir()
 OLD_DATA_DIRS = [DATA_DIR.parent / name for name in (["Untethered", "Unplugged", "Assistant"] if WINDOWS else ["Untethered"])]
 STORE = DATA_DIR / "hub.json"
 LOG = DATA_DIR / "hub.log"
+LAUNCH = DATA_DIR / "launch.json"  # one-time codes launch.py gives the PC window, stored hashed
 # Your own files for answers (PDFs, ebooks, text, web pages): read, never changed. Tests use their own folder.
 LIBRARY_DIR = (Path(os.environ["UNTETHERED_LIBRARY"]) if os.environ.get("UNTETHERED_LIBRARY")
                else documents_dir() / "Aislet" / "Libraries")
@@ -89,8 +95,15 @@ OLLAMA_GRACE = 90  # seconds Ollama gets to start before the hub tries again
 TOMBSTONE_DAYS = 90
 SIGNATURE_WINDOW_MS = 5 * 60_000      # a signed request must be this fresh
 MAX_FAILURES, FAILURE_WINDOW = 10, 600  # wrong attempts per device before a 10-minute pause
-MAX_CONNECTIONS = 48
-MAX_BODY = 60_000_000
+MAX_CONNECTIONS = 48       # at once from the network, of which
+PER_ADDRESS = 8            # from any one device
+LOCAL_CONNECTIONS = 32     # this computer's own, counted apart so the network can never use them up
+HEADER_SECONDS = 15        # a device on the network must send its request's headers within this
+BODY_SECONDS = 300         # and its body (up to MAX_BODY) within this
+MAX_BODY = 80_000_000      # a sealed body is base64, a third bigger than what it holds
+SMALL_BODY = 65_536        # a refused request's body is read and dropped only up to this
+LAUNCH_SECONDS = 120       # a launch code must be used within this
+OLD_PHONE = "Update Aislet on this phone to keep using it with your laptop."
 DAY_MS = 86_400_000
 TYPES = {
     ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -101,8 +114,9 @@ TYPES = {
 lock = threading.Lock()
 ollama_lock = threading.Lock()
 ollama_launched = 0.0  # when the hub last started Ollama
-failures: dict[str, list[float]] = {}  # device address -> times of wrong attempts
-seen_signatures: dict[str, float] = {}  # signature -> when it can be forgotten
+failures: dict[str, list[float]] = {}  # device address -> times of wrong attempts (never this computer's own)
+seen_nonces: dict[str, float] = {}  # a phone request's nonce -> when it can be forgotten
+_link_keys: dict[tuple[str, str], link.Keys] = {}  # (code, salt) -> keys, so PBKDF2 runs once per code
 
 
 def log(message: str) -> None:
@@ -131,7 +145,8 @@ def dump_json(data) -> str:
 # ---- Stored data -------------------------------------------------------------------------
 
 def new_code() -> str:
-    return "".join(secrets.choice("ABCDEFGHJKMNPQRSTUVWXYZ23456789") for _ in range(8))
+    """Ten characters: with PBKDF2, guessing one from a recorded request would take a GPU centuries."""
+    return "".join(secrets.choice(link.CODE_LETTERS) for _ in range(10))
 
 
 def load_store() -> dict:
@@ -144,6 +159,7 @@ def load_store() -> dict:
         STORE.replace(STORE.with_suffix(f".broken-{int(time.time())}.json"))
         data = {}
     data.setdefault("code", new_code())
+    data.setdefault("salt", secrets.token_hex(16))  # public: phones fetch it to turn the code into the link key
     data.setdefault("local_token", secrets.token_urlsafe(32))
     for key in ("memories", "notes", "chats"):
         data.setdefault(key, [])
@@ -156,6 +172,71 @@ def save_store(data: dict) -> None:
     tmp = STORE.with_suffix(".tmp")
     tmp.write_text(dump_json(data), encoding="utf-8")
     tmp.replace(STORE)
+
+
+def link_keys(store: dict) -> link.Keys:
+    """The phone link's keys for the current code. Call with the lock held."""
+    ident = (store["code"], store["salt"])
+    if ident not in _link_keys:
+        _link_keys.clear()
+        _link_keys[ident] = link.Keys(link.link_key(store["code"], bytes.fromhex(store["salt"])))
+    return _link_keys[ident]
+
+
+def is_loopback(address: str) -> bool:
+    try:
+        return ipaddress.ip_address(address).is_loopback
+    except ValueError:
+        return False
+
+
+def _launch_codes() -> dict[str, float]:
+    try:
+        codes = json.loads(LAUNCH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(codes, dict):
+        return {}
+    now = time.time()
+    return {k: v for k, v in codes.items() if isinstance(k, str) and isinstance(v, (int, float)) and v > now}
+
+
+def _save_launch_codes(codes: dict[str, float]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = LAUNCH.with_suffix(f".{secrets.token_hex(4)}.tmp")
+    tmp.write_text(json.dumps(codes), encoding="utf-8")
+    tmp.replace(LAUNCH)
+
+
+def new_launch_code() -> str:
+    """For launch.py (run by this user only): a code the PC window trades once for the hub's token."""
+    code = secrets.token_urlsafe(24)
+    codes = _launch_codes()
+    codes[hashlib.sha256(code.encode()).hexdigest()] = time.time() + LAUNCH_SECONDS
+    _save_launch_codes(codes)
+    return code
+
+
+def use_launch_code(code: str) -> bool:
+    with lock:
+        codes = _launch_codes()
+        found = codes.pop(hashlib.sha256(code.encode()).hexdigest(), None) is not None
+        if found:
+            _save_launch_codes(codes)
+    return found
+
+
+def make_private() -> None:
+    """Linux and Mac: hub data only for this user, including files made by earlier versions."""
+    if WINDOWS:
+        return
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        DATA_DIR.chmod(0o700)
+        for p in DATA_DIR.iterdir():
+            p.chmod(0o700 if p.is_dir() else 0o600)
+    except OSError as e:
+        log(f"Couldn't make the data folder private: {e}")
 
 
 def _items(value) -> list[dict]:
@@ -384,12 +465,41 @@ def app_file(path: str) -> Path | None:
 
 # ---- Web server ----------------------------------------------------------------------------
 
+class Refused(Exception):
+    """A request turned away before its body is read. The reply is plain: there's no key to seal it with."""
+
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
+
+
 class Server(ThreadingHTTPServer):
+    """Limits connections per device, always lets this computer in, and closes connections from the network
+    that are too slow to send their request (so a few devices can't hold every connection open)."""
     daemon_threads = True
-    slots = threading.BoundedSemaphore(MAX_CONNECTIONS)
+
+    def __init__(self, *args, **kwargs):
+        self.counts_lock = threading.Lock()
+        self.per_address: dict[str, int] = {}
+        self.network = self.local = 0
+        self.deadlines: dict[socket.socket, float] = {}
+        self.deadlines_lock = threading.Lock()
+        super().__init__(*args, **kwargs)
+        threading.Thread(target=self.close_late, daemon=True).start()
 
     def process_request(self, request, client_address):
-        if not self.slots.acquire(blocking=False):  # too many connections at once: drop this one
+        address = client_address[0]
+        local = is_loopback(address)
+        with self.counts_lock:
+            full = (self.local >= LOCAL_CONNECTIONS if local
+                    else self.network >= MAX_CONNECTIONS or self.per_address.get(address, 0) >= PER_ADDRESS)
+            if not full:
+                if local:
+                    self.local += 1
+                else:
+                    self.network += 1
+                    self.per_address[address] = self.per_address.get(address, 0) + 1
+        if full:  # too many at once: drop this one
             self.shutdown_request(request)
             return
         super().process_request(request, client_address)
@@ -398,15 +508,60 @@ class Server(ThreadingHTTPServer):
         try:
             super().process_request_thread(request, client_address)
         finally:
-            self.slots.release()
+            address = client_address[0]
+            with self.counts_lock:
+                if is_loopback(address):
+                    self.local -= 1
+                else:
+                    self.network -= 1
+                    left = self.per_address.get(address, 1) - 1
+                    if left > 0:
+                        self.per_address[address] = left
+                    else:
+                        self.per_address.pop(address, None)
+
+    def watch(self, conn: socket.socket, seconds: float) -> None:
+        with self.deadlines_lock:
+            self.deadlines[conn] = time.time() + seconds
+
+    def unwatch(self, conn: socket.socket) -> None:
+        with self.deadlines_lock:
+            self.deadlines.pop(conn, None)
+
+    def close_late(self) -> None:
+        while True:
+            time.sleep(1)
+            now = time.time()
+            with self.deadlines_lock:
+                late = [c for c, t in self.deadlines.items() if t < now]
+                for c in late:
+                    del self.deadlines[c]
+            for c in late:
+                try:
+                    c.shutdown(socket.SHUT_RDWR)  # the handler's read ends, and its thread finishes
+                except OSError:
+                    pass
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "AisletHub/1"
+    server_version = "AisletHub/2"
     timeout = 120  # seconds a quiet connection may stay open
 
     def log_message(self, *args):
         pass
+
+    def setup(self):
+        super().setup()
+        self.local = is_loopback(self.client_address[0])
+        self.link: tuple[link.Keys, str] | None = None  # a phone's request: its keys and signature
+        if not self.local:
+            self.server.watch(self.connection, HEADER_SECONDS)
+
+    def finish(self):
+        try:
+            super().finish()
+        finally:
+            self.server.unwatch(self.connection)
 
     def host_allowed(self) -> bool:
         """Block web pages that try to reach the hub through a fake domain name (DNS rebinding)."""
@@ -419,54 +574,90 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             return False
 
-    def who(self, body: bytes) -> str | None:
-        """'pc', 'phone', or None. Counts a failure only when credentials were actually presented."""
-        token, sig, stamp = self.headers.get("X-Key", ""), self.headers.get("X-Sig", ""), self.headers.get("X-Time", "")
-        nonce = self.headers.get("X-Nonce", "")
-        if not (token or sig):
-            return None
-        address, now = self.client_address[0], time.time()
-        with lock:
-            recent = [t for t in failures.get(address, []) if now - t < FAILURE_WINDOW]
-            failures[address] = recent
-            if len(recent) >= MAX_FAILURES:
-                raise PermissionError("Too many wrong attempts from this device. Wait 10 minutes, then try again.")
-            store = load_store()
-            role = None
-            if token and secrets.compare_digest(token, store["local_token"]):
-                role = "pc"
-            elif sig and stamp.isdigit() and 8 <= len(nonce) <= 64 and abs(now * 1000 - int(stamp)) <= SIGNATURE_WINDOW_MS:
-                message = f"{stamp}\n{nonce}\n{self.command}\n{self.path}\n{hashlib.sha256(body).hexdigest()}".encode()
-                expected = hmac.new(store["code"].encode(), message, hashlib.sha256).hexdigest()
-                for s, expiry in list(seen_signatures.items()):
-                    if expiry < now:
-                        del seen_signatures[s]
-                if secrets.compare_digest(sig, expected) and sig not in seen_signatures:
-                    seen_signatures[sig] = now + SIGNATURE_WINDOW_MS / 1000 * 2  # can't be replayed
-                    role = "phone"
-            if role is None:
-                failures[address].append(now)
-        if role is None:
-            time.sleep(1)  # slows down guessing
-        return role
-
-    def send_json(self, data, status: int = 200) -> None:
-        body = dump_json(data).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
-
-    def read_body(self) -> bytes:
+    def content_length(self) -> int:
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             raise ValueError("Bad request.") from None
         if length < 0 or length > MAX_BODY:
             raise ValueError("That's too big to send.")
-        return self.rfile.read(length) if length else b""
+        return length
+
+    def authenticate(self) -> str | None:
+        """'pc', 'phone', or None when no credentials were sent. Reads only the headers, never the body.
+        Raises Refused for wrong, stale, replayed or old-style credentials."""
+        h = self.headers
+        token, sig = h.get("X-Key", ""), h.get("X-Aislet-Sig", "")
+        if h.get("X-Sig") and not sig:
+            raise Refused(426, OLD_PHONE)  # signed the old way (before the private link)
+        if not (token or sig):
+            return None
+        if token and not self.local:
+            raise Refused(403, "Only available on the laptop.")
+        address, now = self.client_address[0], time.time()
+        role = None
+        with lock:
+            if not self.local:
+                recent = [t for t in failures.get(address, []) if now - t < FAILURE_WINDOW]
+                failures[address] = recent
+                if len(recent) >= MAX_FAILURES:
+                    raise Refused(429, "Too many wrong attempts from this device. Wait 10 minutes, then try again.")
+            store = load_store()
+            if token:
+                role = "pc" if secrets.compare_digest(token, store["local_token"]) else None
+            else:
+                stamp, nonce = h.get("X-Aislet-Time", ""), h.get("X-Aislet-Nonce", "")
+                length = self.content_length()
+                fresh = stamp.isdigit() and len(stamp) <= 16 and abs(now * 1000 - int(stamp)) <= SIGNATURE_WINDOW_MS
+                if fresh and link.NONCE.fullmatch(nonce) and link.SIG.fullmatch(sig) and nonce not in seen_nonces:
+                    keys = link_keys(store)
+                    expected = link.request_signature(keys, stamp, nonce, self.command, self.path, length)
+                    if hmac.compare_digest(sig, expected):
+                        for n, expiry in list(seen_nonces.items()):
+                            if expiry < now:
+                                del seen_nonces[n]
+                        seen_nonces[nonce] = now + SIGNATURE_WINDOW_MS / 1000 * 2  # can't be replayed
+                        role, self.link = "phone", (keys, sig)
+            if role is None and not self.local:
+                failures[address].append(now)
+        if role is None:
+            if not self.local:
+                time.sleep(1)  # slows down guessing
+            raise Refused(401, "This device isn't paired. Pair it again in Settings → Home.")
+        return role
+
+    def send_json(self, data, status: int = 200) -> None:
+        body = dump_json(data).encode("utf-8")
+        kind = "application/json; charset=utf-8"
+        if self.link:  # a phone's request: seal the reply to it
+            keys, sig = self.link
+            body, kind = link.reply_frame(keys, sig, status, 0, True, body, secrets.token_bytes(link.IV_BYTES)), "text/plain"
+        self.send_response(status)
+        self.send_header("Content-Type", kind)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def read_body(self) -> bytes:
+        length = self.content_length()
+        if not self.local:
+            self.server.watch(self.connection, BODY_SECONDS)
+        body = self.rfile.read(length) if length else b""
+        if len(body) < length:
+            raise ConnectionAbortedError
+        self.server.unwatch(self.connection)
+        return body
+
+    def drop_body(self) -> None:
+        """Before refusing a request: read a small body so the reply isn't lost; never a big one."""
+        self.close_connection = True
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            if 0 < length <= SMALL_BODY:
+                self.rfile.read(length)
+        except (ValueError, OSError):
+            pass
 
     def do_GET(self):
         self.route("GET")
@@ -477,28 +668,43 @@ class Handler(BaseHTTPRequestHandler):
     def route(self, method: str) -> None:
         try:
             if not self.host_allowed():
+                self.drop_body()
                 return self.send_json({"error": "Unknown host."}, 403)
             path = unquote(urlsplit(self.path).path)
             if not path.startswith("/api/"):
+                if not self.local:  # the PC app is only for this computer's own window
+                    return self.send_json({"error": "Open Aislet on the laptop itself."}, 404)
                 return self.static(path) if method == "GET" else self.send_json({"error": "Not found."}, 404)
             origin = self.headers.get("Origin")
             if method == "POST" and origin and urlsplit(origin).netloc != self.headers.get("Host"):
+                self.drop_body()
                 return self.send_json({"error": "Blocked: request came from another site."}, 403)
-            body = self.read_body() if method == "POST" else b""
-            role = self.who(body)
-            if path == "/api/hub":
+            role = self.authenticate()
+            if role:
+                self.server.unwatch(self.connection)  # a paired device's request may take a while (read_body sets its own limit)
+            if path == "/api/hub" and method == "GET":
                 return self.hub_info(role)
+            if path == "/api/launch" and method == "POST" and role is None and self.local:
+                return self.launch()
             if role is None:
-                return self.send_json({"error": "This device isn't paired. Check the code in the laptop app's Settings."}, 401)
+                self.drop_body()
+                return self.send_json({"error": "This device isn't paired. Pair it in Settings → Home."}, 401)
+            body = self.read_body() if method == "POST" else b""
+            if role == "phone" and body:
+                body = link.open_request_body(*self.link, body)
+                if body is None:
+                    raise ValueError("The request was damaged on the way. Try again.")
             if path in ("/api/pairing", "/api/pairing/new"):
                 if role != "pc":
                     return self.send_json({"error": "Only available on the laptop."}, 403)
                 with lock:
                     store = load_store()
                     if path.endswith("/new") and method == "POST":
-                        store["code"] = new_code()  # paired phones must enter the new code
+                        store["code"] = new_code()  # paired phones must pair again
+                        store["salt"] = secrets.token_hex(16)
                         save_store(store)
-                return self.send_json({"code": store["code"], "urls": [f"http://{ip}:{PORT}" for ip in lan_addresses()]})
+                return self.send_json({"code": store["code"], "salt": store["salt"],
+                                       "urls": [f"http://{ip}:{PORT}" for ip in lan_addresses()]})
             if path == "/api/sync" and method == "POST":
                 incoming = parse_json(body)
                 with lock:
@@ -516,6 +722,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"error": "Not found."}, 404)
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, socket.timeout):
             pass
+        except Refused as e:
+            self.link = None
+            self.drop_body()
+            self.send_json({"error": str(e)}, e.status)
         except PermissionError as e:
             self.send_json({"error": str(e)}, 429)
         except ValueError as e:
@@ -526,6 +736,19 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": "Something went wrong on the laptop. Details are in hub.log."}, 500)
             except OSError:
                 pass
+
+    def launch(self) -> None:
+        """The PC window trades launch.py's one-time code for the hub's token. A wrong code changes nothing."""
+        length = self.content_length()
+        if length > 1000:
+            raise ValueError("Bad request.")
+        data = parse_json(self.rfile.read(length) if length else b"")
+        code = data.get("code") if isinstance(data, dict) else None
+        if not isinstance(code, str) or not use_launch_code(code):
+            return self.send_json({"error": "This window's link has expired. Close it and open Aislet again."}, 403)
+        with lock:
+            token = load_store()["local_token"]
+        return self.send_json({"token": token})
 
     def library(self, role: str, path: str, method: str, body: bytes) -> None:
         """The laptop's own library folder. Only the laptop's window may use it: phones search their own."""
@@ -550,15 +773,19 @@ class Handler(BaseHTTPRequestHandler):
         return self.send_json({"error": "Not found."}, 404)
 
     def hub_info(self, role: str | None):
+        if role is None:  # anyone may ask whether a hub is here; they learn nothing else
+            with lock:
+                salt = load_store()["salt"]
+            return self.send_json({"app": "untethered",  # the id from before the rename: phones of every version look for it
+                                   "v": link.VERSION, "salt": salt, "paired": False})
         ok = ollama_running()
-        starting = not ok and role is not None and start_ollama()  # only paired devices can start it
-        # Unpaired devices only learn that a hub is here, not the computer's name.
-        self.send_json({"app": "untethered",  # the id from before the rename: phones of every version look for it
-                        "name": socket.gethostname() if role else "", "paired": role is not None,
+        starting = not ok and start_ollama()  # only paired devices can start it
+        # Sealed to a phone's request, this also proves the hub knows the phone's key.
+        self.send_json({"app": "untethered", "v": link.VERSION, "name": socket.gethostname(), "paired": True,
                         "ollama": ok, "starting": starting})
 
     def proxy(self, method: str, path: str, body: bytes | None) -> None:
-        """Pass a request to Ollama and stream its reply straight back."""
+        """Pass a request to Ollama and stream its reply back: to a phone, one sealed frame per line."""
         try:
             conn = http.client.HTTPConnection(*OLLAMA, timeout=900)
             conn.request(method, path, body=body, headers={"Content-Type": "application/json"})
@@ -570,16 +797,24 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"error": "The laptop's AI is starting. Try again in a few seconds."}, 503)
             return self.send_json({"error": "Ollama isn't installed on the laptop. Get it from ollama.com."}, 502)
         self.send_response(resp.status)
-        self.send_header("Content-Type", resp.getheader("Content-Type", "application/json"))
+        self.send_header("Content-Type", "text/plain" if self.link else resp.getheader("Content-Type", "application/json"))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.close_connection = True
+        index = 0
         while True:
             line = resp.readline()
+            if self.link:
+                keys, sig = self.link
+                # The last frame is empty and marked last: a reply cut short can't pass for a whole one.
+                self.wfile.write(link.reply_frame(keys, sig, resp.status, index, not line, line,
+                                                  secrets.token_bytes(link.IV_BYTES)))
+                index += 1
+            elif line:
+                self.wfile.write(line)
+            self.wfile.flush()
             if not line:
                 break
-            self.wfile.write(line)
-            self.wfile.flush()
 
     def static(self, path: str) -> None:
         file = app_file(path)
@@ -618,6 +853,7 @@ def migrate_old_data() -> None:
 
 def main() -> int:
     migrate_old_data()
+    make_private()
     with lock:
         save_store(load_store())  # creates the pairing code and the PC app's token on first run
     try:
