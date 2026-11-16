@@ -6,6 +6,7 @@ Aislet (say "eye-let") is a private AI assistant that runs on your own devices. 
 <li>Reads photos, PDFs and text files, and takes shares from any app.</li>
 <li>Answers from your own PDFs, ebooks and documents, and from offline Kiwix libraries such as Wikipedia, and names the file or article it used. It only reads your files, never changes them.</li>
 <li>Learns lasting facts about you, which you can see, edit or forget.</li>
+<li>Saves any answer to your notes with one tap.</li>
 <li>Pairs with your computer by QR code. At home the phone uses the computer's bigger AI (through Ollama), and memory and notes stay in sync.</li>
 <li>Talk instead of typing, or go hands-free: speak, hear the answer and keep talking, all with the phone's offline speech.</li>
 <li>Saves an encrypted backup of your memory and notes each day, to a folder you choose.</li>

@@ -48,7 +48,7 @@ To link them, open Settings → Home on the computer and scan the QR code with t
 **Knows you, and you stay in charge**
 - Learns lasting facts about you as you talk. See them, edit them or forget them in Memory.
 - "Get to know me" asks a few questions so it starts off knowing you, and "Tidy up" finds duplicate or out-of-date facts for you to approve.
-- Searches your notes when it answers, and follows your own instructions and preferred answer length.
+- Searches your notes when it answers, and follows your own instructions and preferred answer length. Save any answer to Notes with one tap.
 
 **Answers from offline libraries**
 - Put your own PDFs, ebooks (EPUB), text, Markdown or saved web pages in the library folder: `Aislet/Libraries` on your phone, or `Documents/Aislet/Libraries` on your computer. Aislet searches them for each question, gives the best passages to the AI, and names the file and page or chapter it used.

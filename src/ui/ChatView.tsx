@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated, AppState, Image, Keyboard, Platform, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, TextInput,
   type TextInputInstance, View, useWindowDimensions,
 } from 'react-native';
 import { ActivityIndicator, Button, Icon, IconButton, Menu, ProgressBar, Snackbar, Surface, Text, useTheme } from 'react-native-paper';
+import { titleFrom } from '../brain';
 import { engine } from '../engine';
 import { hubExtract, localHub } from '../hub';
 import { useStore } from '../store';
@@ -151,10 +152,13 @@ function Welcome({ onOpenSettings }: { onOpenSettings: () => void }) {
   );
 }
 
-type AssistantProps = { text: string; last: boolean; streaming: boolean; busy: boolean; noted?: string[]; onRetry: () => void };
+type AssistantProps = {
+  index: number; text: string; last: boolean; streaming: boolean; busy: boolean; noted?: string[]; saved: boolean;
+  onRetry: () => void; onSave: (index: number) => void;
+};
 
 // Memoised, like UserMessage: while a reply streams, only the message that's changing redraws.
-const AssistantMessage = React.memo(function AssistantMessage({ text, last, streaming, busy, noted, onRetry }: AssistantProps) {
+const AssistantMessage = React.memo(function AssistantMessage({ index, text, last, streaming, busy, noted, saved, onRetry, onSave }: AssistantProps) {
   const theme = useTheme();
   const [speaking, setSpeaking] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -178,6 +182,10 @@ const AssistantMessage = React.memo(function AssistantMessage({ text, last, stre
                 setSpeaking(true);
                 speak(text, () => setSpeaking(false));
               }}
+            />
+            <IconButton
+              icon={saved ? 'note-check-outline' : 'note-plus-outline'} size={17} iconColor={theme.colors.onSurfaceVariant} style={styles.action}
+              disabled={saved} accessibilityLabel={saved ? 'Saved to Notes' : 'Save to Notes'} onPress={() => { tap(); onSave(index); }}
             />
             {last && (
               <IconButton
@@ -575,13 +583,29 @@ type ChatViewProps = { onOpenSettings: () => void; incoming?: Incoming | null; o
 
 export function ChatView({ onOpenSettings, incoming, onIncomingTaken }: ChatViewProps) {
   const theme = useTheme();
-  const { chat, busy, error, clearError, status, refreshStatus, noted, regenerate } = useStore();
+  const { chat, busy, error, clearError, status, refreshStatus, noted, regenerate, notes, saveNote } = useStore();
   const scroll = useRef<ScrollViewInstance>(null);
-  const [copiedNote, setCopiedNote] = useState(false);
-  const showCopied = useCallback(() => setCopiedNote(true), []);
+  const [toast, setToast] = useState<string | null>(null);
+  const showCopied = useCallback(() => setToast('Copied'), []);
   const messages = chat?.messages ?? [];
   const ready = !!status?.ready;
   const lastAi = messages.map((m) => m.role).lastIndexOf('assistant');
+  // An answer already in Notes (word for word) shows as saved, so it isn't saved twice.
+  const noteTexts = useMemo(() => new Set(notes.map((n) => n.text)), [notes]);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const saveToNotes = useCallback(async (i: number) => {
+    const answer = messagesRef.current[i];
+    if (answer?.role !== 'assistant' || !answer.content.trim()) return;
+    const question = messagesRef.current[i - 1];
+    const asked = question?.role === 'user' ? (question.display ?? question.content).trim() : '';
+    try {
+      await saveNote({ title: titleFrom(asked || answer.content), text: answer.content });
+      setToast('Saved to Notes');
+    } catch {
+      setToast("Couldn't save the note. Try again.");
+    }
+  }, [saveNote]);
 
   useEffect(() => {
     scroll.current?.scrollToEnd({ animated: false });
@@ -604,8 +628,8 @@ export function ChatView({ onOpenSettings, incoming, onIncomingTaken }: ChatView
               <UserMessage key={i} message={m} onCopied={showCopied} />
             ) : (
               <AssistantMessage
-                key={i} text={m.content} last={i === lastAi} streaming={busy && i === messages.length - 1}
-                busy={busy} noted={noted[i]} onRetry={regenerate}
+                key={i} index={i} text={m.content} last={i === lastAi} streaming={busy && i === messages.length - 1}
+                busy={busy} noted={noted[i]} saved={noteTexts.has(m.content.trim())} onRetry={regenerate} onSave={saveToNotes}
               />
             ),
           )
@@ -638,7 +662,7 @@ export function ChatView({ onOpenSettings, incoming, onIncomingTaken }: ChatView
         )}
         <Composer ready={ready} incoming={incoming} onIncomingTaken={onIncomingTaken} />
       </View>
-      <Snackbar visible={copiedNote} onDismiss={() => setCopiedNote(false)} duration={1500}>Copied</Snackbar>
+      <Snackbar visible={!!toast} onDismiss={() => setToast(null)} duration={1500}>{toast ?? ''}</Snackbar>
     </View>
   );
 }

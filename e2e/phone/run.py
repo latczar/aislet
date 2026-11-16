@@ -13,7 +13,7 @@ start while another app is in front, and checks again before every tap, key, swi
 types into something else. If another app comes to the front during a run, the current check stops.
 
 Test data is made up ("E2E ..." text) and removed afterwards: the test chat is deleted, test facts are
-forgotten, notes are never saved, and changed fields and settings are put back as they were. On a failure
+forgotten, a saved test note is deleted, and changed fields and settings are put back as they were. On a failure
 a screenshot and screen dump go to e2e/phone/out/.
 """
 from __future__ import annotations
@@ -1506,6 +1506,78 @@ def check_resume() -> str:
             print('  note: could not find the resume test chat to delete', file=sys.stderr)
 
 
+NOTE_PROMPT = 'E2E check: save note, reply with one word, ok'
+
+
+def ask_and_wait(prompt: str, timeout: float = 180) -> None:
+    """Send a message in a new chat and wait until the reply has finished."""
+    tap(open_new_chat())
+    wait_keyboard(True)
+    type_text(prompt)
+    time.sleep(0.5)
+    tap(wait_for('the Send button', desc='Send'))
+    wait_for('the sent message', timeout=10, text=prompt)
+    hide_keyboard()
+    end = time.time() + timeout
+    while True:
+        nodes = screen()
+        if find(nodes, desc='Copy') and not find(nodes, desc='Stop'):
+            return
+        if find(nodes, text='Dismiss'):
+            raise CheckFailed('the reply failed with an error card')
+        if time.time() > end:
+            raise CheckFailed(f'no reply within {timeout:.0f} s')
+        time.sleep(1.5)
+
+
+def delete_note(title: str) -> bool:
+    """Delete the note with this title from the Notes screen. False when there isn't one."""
+    go_tab('Notes')
+    scroll_to_top()
+    rows = find(screen(), text=title)
+    if not rows:
+        return False
+    tap(rows[0])
+    tap(wait_for('the note Delete button', text='Delete'))
+    confirm_alert('Delete')
+    wait_for('the Notes list after deleting', timeout=5, text='New note')
+    return True
+
+
+def check_save_note() -> str:
+    """Save to Notes on an answer adds it as a note titled with the question, once; deleting the note frees the button again."""
+    try:
+        ask_and_wait(NOTE_PROMPT)
+        if find(screen(), desc='Saved to Notes'):
+            raise CheckFailed('the answer shows as saved before Save to Notes was tapped')
+        tap(wait_for('the Save to Notes button', desc='Save to Notes'))
+        saved = wait_for('the saved state on the answer', timeout=5, desc='Saved to Notes')
+        if saved.enabled:
+            raise CheckFailed('Save to Notes can be tapped again after saving, which would save a copy')
+        go_tab('Notes')
+        scroll_to_top()
+        row = wait_for('the saved note in Notes', timeout=5, text=NOTE_PROMPT)
+        tap(row)
+        boxes = editable(screen())
+        if len(boxes) < 2 or not boxes[1].text.strip():
+            raise CheckFailed("the saved note doesn't hold the answer")
+        answer = boxes[1].text.strip()
+        tap(wait_for('the note Cancel button', text='Cancel'))
+        wait_for('the Notes list', timeout=5, text='New note')
+        if not delete_note(NOTE_PROMPT):
+            raise CheckFailed('could not find the test note to delete')
+        go_tab('Chat')
+        wait_for('Save to Notes free again after deleting the note', timeout=5, desc='Save to Notes')
+        return f'saved once as "{NOTE_PROMPT}" ({len(answer)} characters); deleting the note freed the button'
+    finally:
+        hide_keyboard()
+        while delete_note(NOTE_PROMPT):
+            pass
+        go_tab('Chat')
+        if not delete_test_chat():
+            print('  note: could not find the save-note test chat to delete', file=sys.stderr)
+
+
 def mic_allowed() -> bool:
     return 'android.permission.RECORD_AUDIO: granted=true' in shell(f'dumpsys package {PKG}')
 
@@ -1606,6 +1678,7 @@ CHECKS = {
     'launch': check_launch,
     'chat_typing': check_chat_typing,
     'chat_send': check_chat_send,
+    'save_note': check_save_note,
     'share': check_share,
     'resume': check_resume,
     'text_fields': check_text_fields,
