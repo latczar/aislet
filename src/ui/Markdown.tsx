@@ -3,7 +3,7 @@ import React, { useMemo, useState } from 'react';
 import { Linking, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { IconButton, Text, useTheme } from 'react-native-paper';
 import { copy } from './actions';
-import { confirm } from './confirm';
+import { confirm, notice } from './confirm';
 import { FONT } from './theme';
 
 const LIST = /^(\s*)([-*•+]|\d+[.)])\s+/;
@@ -97,10 +97,24 @@ function parse(src: string): Block[] {
 
 const SAFE_LINK = /^(https?:\/\/|mailto:)/i;
 
+/** The site a web address goes to, or null when a user name hides it (https://google.com@other.example). */
+export function linkSite(url: string): string | null {
+  const m = url.match(/^https?:\/\/([^/?#\\]*)/i);
+  if (!m || !m[1] || m[1].includes('@')) return null;
+  return m[1].replace(/:\d*$/, '').toLowerCase();
+}
+
 async function openLink(url: string) {
   if (!SAFE_LINK.test(url)) return;
+  const mail = /^mailto:/i.test(url);
+  const site = mail ? '' : linkSite(url);
+  if (site === null) {
+    notice("This link wasn't opened", "Its address hides the real site behind a user name, which is a common trick. If you trust the site, type its address in your browser.");
+    return;
+  }
   const shown = url.length > 120 ? `${url.slice(0, 117)}…` : url;
-  if (await confirm('Open this link?', `It opens in your browser.\n\n${shown}`, 'Open')) {
+  const where = mail ? `It opens your email app.\n\n${shown}` : `Site: ${site}\n\nIt opens in your browser:\n${shown}`;
+  if (await confirm('Open this link?', where, 'Open')) {
     Linking.openURL(url).catch(() => undefined);
   }
 }
