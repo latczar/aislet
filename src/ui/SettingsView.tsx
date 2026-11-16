@@ -771,14 +771,14 @@ const PRIVACY = Platform.OS === 'web'
   ? [
     { icon: 'shield-lock-outline', title: 'What you say stays here', text: 'Chats, memory, notes and files stay on this computer and your paired phone. The AI runs on this computer.' },
     { icon: 'download-outline', title: 'Online only for downloads', text: "The installer downloads the app, and Ollama downloads the AI models. The app itself doesn't use the internet." },
-    { icon: 'lan', title: 'Your phone talks to it directly', text: 'Over your home Wi-Fi, never through the internet. Every request is signed with your pairing code.' },
+    { icon: 'lan', title: 'Your phone talks to it directly', text: 'Over your home Wi-Fi, never through the internet, and encrypted with a key made from your pairing code.' },
     { icon: 'account-off-outline', title: 'No account, no tracking', text: 'No sign-in, no analytics and no ads.' },
   ]
   : [
     { icon: 'shield-lock-outline', title: 'What you say stays on your devices', text: 'Chats, memory, notes, photos and voice are handled on this phone, or on your laptop over your own Wi-Fi.' },
     { icon: 'download-outline', title: 'Online only for downloads', text: 'AI models download from Hugging Face when you tap Download or Get. Libraries are files you add yourself.' },
-    { icon: 'lan', title: 'Your laptop, directly', text: 'Phone and laptop talk over your home Wi-Fi, never through the internet. Every request is signed with your pairing code.' },
-    { icon: 'account-off-outline', title: 'No account, no tracking', text: "No sign-in, no analytics, no ads. Android's cloud backup is off; backups go only to the folder you choose." },
+    { icon: 'lan', title: 'Your laptop, directly', text: 'Phone and laptop talk over your home Wi-Fi, never through the internet, encrypted with a key made from your pairing code.' },
+    { icon: 'account-off-outline', title: 'No account, no tracking', text: "No sign-in, no analytics, no ads. Android's cloud backup and phone-to-phone copying are off; backups go only to the folder you choose." },
   ];
 
 function Privacy() {
