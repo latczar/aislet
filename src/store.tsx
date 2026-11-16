@@ -56,6 +56,7 @@ export interface LibraryState {
   skipped: number;                            // your own files left out because there were too many
   reading: boolean;                           // your own files are being read
   problem?: string;                           // your own files couldn't be read at all, and why
+  lostAccess: boolean;                        // phone: libraries were readable before, but "All files access" is now off
 }
 
 interface Store {
@@ -148,7 +149,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   settingsRef.current = settings;
   const notesRef = useRef(notes);
   const [libraries, setLibraries] = useState<LibraryState>({
-    supported: !!fileLibrary, access: !nativeLibrary, books: [], elsewhere: [], folder: '', skipped: 0, reading: false,
+    supported: !!fileLibrary, access: !nativeLibrary, books: [], elsewhere: [], folder: '', skipped: 0, reading: false, lostAccess: false,
   });
   const readingFiles = useRef(false);
   const librariesRef = useRef(libraries);
@@ -383,8 +384,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const access = nativeLibrary ? nativeLibrary.hasAccess() : true;
     if (nativeLibrary && access) nativeLibrary.makeFolder(`${nativeLibrary.storage()}/${LIBRARY_FOLDER}`); // so people can find it
     const kiwix = await kiwixBooks();
+    // Android can switch "All files access" off (people have found it off after an update). Libraries then
+    // just stop being searched, so remember that they worked here and say so if they no longer can.
+    const seen = await load<boolean>(KEYS.librariesSeen, false);
+    const lostAccess = !access && seen;
     const show = (list: FileList | null, reading: boolean, problem?: string) => setLibraries({
-      supported: true, access, elsewhere: kiwix.elsewhere, reading, problem,
+      supported: true, access, elsewhere: kiwix.elsewhere, reading, problem, lostAccess,
       books: [...kiwix.books, ...(list?.books ?? [])].sort((a, b) => a.title.localeCompare(b.title)),
       folder: list?.folder ?? '', skipped: list?.skipped ?? 0,
     });
@@ -394,6 +399,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {
       return show(null, false, (e as Error).message);
     }
+    if (access && !seen && list.books.length + kiwix.books.length > 0) save(KEYS.librariesSeen, true).catch(() => undefined);
     // New or changed files are read in the background, one pass at a time; the list shows them meanwhile.
     const toRead = settingsRef.current.useLibraries && list.books.some((b) => b.pending);
     if (!toRead || readingFiles.current) return show(list, readingFiles.current);

@@ -125,8 +125,10 @@ function Libraries({ onToast }: { onToast: (message: string) => void }) {
     rows.push(
       <Row
         key="allow"
-        title="Allow access to libraries"
-        description={'Answer from your own PDFs, ebooks and documents, and from Kiwix libraries such as Wikipedia. Needs "All files access".'}
+        title={libraries.lostAccess ? 'Allow access again' : 'Allow access to libraries'}
+        description={libraries.lostAccess
+          ? '"All files access" has been switched off, so your libraries aren\'t being searched. Allow it again to use them.'
+          : 'Answer from your own PDFs, ebooks and documents, and from Kiwix libraries such as Wikipedia. Needs "All files access".'}
         left={(p) => <List.Icon {...p} icon="folder-key-outline" />}
         right={(p) => <Button mode="contained-tonal" compact style={p.style} onPress={() => allowLibraries().catch((e) => onToast((e as Error).message))}>Allow</Button>}
       />,
