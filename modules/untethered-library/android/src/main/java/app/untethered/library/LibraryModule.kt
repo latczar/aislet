@@ -58,6 +58,18 @@ class LibraryModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("UntetheredLibrary")
 
+    // The private link to the laptop hub (LinkCrypto): kept here, in the app's one native module, and run off the
+    // JavaScript thread so a big sync or PDF doesn't freeze the app.
+    AsyncFunction("linkKey") Coroutine { code: String, salt: String ->
+      withContext(Dispatchers.Default) { LinkCrypto.key(code, salt) }
+    }
+    AsyncFunction("linkSeal") Coroutine { enc: String, mac: String, context: String, iv: String, plain: String ->
+      withContext(Dispatchers.Default) { LinkCrypto.seal(enc, mac, context, iv, plain) }
+    }
+    AsyncFunction("linkOpen") Coroutine { enc: String, mac: String, context: String, sealed: String ->
+      withContext(Dispatchers.Default) { LinkCrypto.open(enc, mac, context, sealed) }
+    }
+
     /** The phone's shared storage, e.g. /storage/emulated/0. */
     Function("storage") { Environment.getExternalStorageDirectory().absolutePath }
 

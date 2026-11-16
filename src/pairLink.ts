@@ -1,13 +1,14 @@
-// Pairing by QR code. The laptop (Settings → Home) shows a QR code of aislet://pair?u=<address>&c=<code>.
-// The phone's own camera opens it in Aislet, which asks before pairing: any app or website can open a link
-// like this, so the address is always shown and nothing connects until the user says yes.
+// Pairing by QR code. The laptop (Settings → Home) shows a QR code of aislet://pair?u=<address>&c=<code>&s=<salt>,
+// and the phone scans it inside Aislet (ui/ScanPair.tsx). Only that scanner pairs: any app or website can open an
+// aislet:// link, and one that did could choose both the address and the code, so a link that opens the app only
+// says where to scan (ui/PairPrompt.tsx).
 import { APP_NAME } from './config';
 import { HUB_PORT } from './hub';
+import { cleanCode, isPairingCode, isSalt } from './link';
 
 export const PAIR_SCHEME = 'aislet';
-const CODE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$/; // the alphabet hub.py's new_code() uses
 
-export type PairLink = { address: string; code: string } | { problem: string };
+export type PairLink = { address: string; code: string; salt?: string } | { problem: string };
 
 /** A laptop on the home network: 10.x, 172.16–31.x or 192.168.x, as the hub itself offers. */
 export function isHomeAddress(host: string): boolean {
@@ -32,28 +33,29 @@ function param(query: string, name: string): string {
   return '';
 }
 
-/** The link the laptop's QR code holds. The port is left out when it's the usual one. */
-export function makePairLink(hubUrl: string, code: string): string {
+/** The link the laptop's QR code holds. The port is left out when it's the usual one. The salt isn't secret. */
+export function makePairLink(hubUrl: string, code: string, salt: string): string {
   const address = hubUrl.replace(/^https?:\/\//, '').replace(new RegExp(`:${HUB_PORT}$`), '');
-  return `${PAIR_SCHEME}://pair?u=${encodeURIComponent(address)}&c=${encodeURIComponent(code)}`;
+  return `${PAIR_SCHEME}://pair?u=${encodeURIComponent(address)}&c=${encodeURIComponent(code)}&s=${salt}`;
 }
 
 /** Read a pairing link. Null when the link isn't one; a problem when it is but can't be used. */
 export function parsePairLink(url: string): PairLink | null {
-  const m = url.match(/^aislet:\/\/pair\/?(?:\?(.*))?$/i);
+  const m = url.trim().match(/^aislet:\/\/pair\/?(?:\?(.*))?$/i);
   if (!m) return null;
   const query = (m[1] ?? '').split('#')[0];
   const address = param(query, 'u');
-  const code = param(query, 'c').toUpperCase();
+  const code = cleanCode(param(query, 'c'));
+  const salt = param(query, 's').toLowerCase();
   const [host, port, extra] = address.split(':');
   if (!host || extra !== undefined || (port !== undefined && !/^\d{1,5}$/.test(port)) || Number(port) > 65535) {
-    return { problem: "That pairing link doesn't have a laptop address in it. Scan the code on the laptop again." };
+    return { problem: "That code doesn't have a laptop address in it. Scan the code on the laptop again." };
   }
   if (!isHomeAddress(host)) {
-    return { problem: `That pairing link points to ${address}, which isn't on a home network, so ${APP_NAME} ignored it.` };
+    return { problem: `That code points to ${address}, which isn't on a home network, so ${APP_NAME} ignored it.` };
   }
-  if (!CODE.test(code)) {
-    return { problem: "That pairing link's code isn't right. Scan the code on the laptop again." };
+  if (!isPairingCode(code) || (salt && !isSalt(salt))) {
+    return { problem: "That code isn't right. Scan the code on the laptop again." };
   }
-  return { address, code };
+  return { address, code, ...(salt ? { salt } : {}) };
 }

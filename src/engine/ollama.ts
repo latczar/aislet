@@ -1,6 +1,7 @@
 // Ollama engine: the bigger model on the laptop. The PC talks to Ollama directly; the phone
 // reaches the same model through the laptop hub, which passes requests on.
 import { normalise } from '../brain';
+import { HubError, type HubReply, readLines } from '../hub';
 import { fetch as netFetch } from '../net';
 import type { Message, Performance } from '../types';
 import type { Engine } from './types';
@@ -16,10 +17,19 @@ export function pickModel(names: string[]): string | null {
 }
 const EMBED_MODEL = 'nomic-embed-text';
 
+/** Send a request to Ollama: straight to it on the laptop, or through the laptop hub's private link on the phone. */
+export type OllamaSend = (method: 'GET' | 'POST', path: string, body: string | undefined, signal?: AbortSignal) => Promise<HubReply>;
+
+/** Ollama on this computer, asked directly. */
+function direct(base: string): OllamaSend {
+  return async (method, path, body, signal) => {
+    const res = (await netFetch(base + path, { method, headers: { 'Content-Type': 'application/json' }, body, signal })) as unknown as Response;
+    return { ok: res.ok, status: res.status, text: () => res.text(), lines: (onLine) => readLines(res, onLine) };
+  };
+}
+
 interface Options {
-  base: string;
-  /** Extra headers for each request, e.g. a signature for the laptop hub. */
-  sign?: (method: string, path: string, body: string) => Record<string, string>;
+  send: OllamaSend;
   where: 'laptop' | 'phone';
   label: string; // e.g. "This laptop's AI" or "Your laptop's AI"
 }
@@ -37,21 +47,15 @@ function toOllama(messages: Message[]) {
 // How long the laptop keeps the model loaded after a reply: longer means instant replies, shorter frees the GPU.
 const KEEP_ALIVE: Record<Performance, string> = { cool: '1m', balanced: '5m', max: '30m' };
 
-export function createOllamaEngine({ base, sign = () => ({}), where, label }: Options): Engine {
+export function createOllamaEngine({ send, where, label }: Options): Engine {
   let controller: AbortController | null = null;
   let keepAlive = KEEP_ALIVE.balanced;
   let model = CHAT_MODEL;
 
-  async function post(path: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<Response> {
-    let res: Response;
+  async function post(path: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<HubReply> {
+    let res: HubReply;
     try {
-      const text = JSON.stringify(body);
-      res = (await netFetch(base + path, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...sign('POST', path, text) },
-        body: text,
-        signal,
-      })) as unknown as Response;
+      res = await send('POST', path, JSON.stringify(body), signal);
     } catch (e) {
       if ((e as Error).name === 'AbortError') throw e;
       throw new Error(where === 'laptop'
@@ -59,7 +63,8 @@ export function createOllamaEngine({ base, sign = () => ({}), where, label }: Op
         : "Can't reach your laptop. Check it's on and on the same Wi-Fi.");
     }
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
+      // From the phone, a reply that isn't really from the laptop throws here, with our own message.
+      const data = await res.text().then(JSON.parse).catch((e) => (e instanceof HubError ? { error: e.message } : {}));
       const msg: string = data.error || `The model returned an error (${res.status}).`;
       throw new Error(msg.includes('not found') ? `${msg}. Fix: run "ollama pull ${body.model}" on the laptop.` : msg);
     }
@@ -71,20 +76,21 @@ export function createOllamaEngine({ base, sign = () => ({}), where, label }: Op
 
     async status() {
       try {
-        const res = (await netFetch(`${base}/api/tags`, { headers: sign('GET', '/api/tags', '') })) as unknown as Response;
-        if (res.status === 401) return { ready: false, label: 'Laptop', problem: 'The laptop needs pairing again. Check the code in Settings.' };
+        const res = await send('GET', '/api/tags', undefined);
+        const data = await res.text().then(JSON.parse).catch((e) => (e instanceof HubError ? { refused: e.message } : {}));
+        if (data.refused) return { ready: false, label: 'Laptop', problem: data.refused };
         if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
           return { ready: false, label: 'Laptop', problem: data.error || `The laptop replied with an error (${res.status}).`, starting: res.status === 503 };
         }
-        const names: string[] = ((await res.json()).models ?? []).map((m: { name: string }) => m.name);
+        const names: string[] = (data.models ?? []).map((m: { name: string }) => m.name);
         const best = pickModel(names);
         if (!best) {
           return { ready: false, label: 'No model', problem: `No AI model is installed in Ollama yet. Run "ollama pull ${CHAT_MODEL}".` };
         }
         model = best;
         return { ready: true, label, model };
-      } catch {
+      } catch (e) {
+        if (e instanceof HubError) return { ready: false, label: 'Laptop', problem: e.message }; // the phone couldn't reach the laptop
         return { ready: false, label: 'Ollama', problem: "Ollama isn't running. Start the Ollama app on the laptop." };
       }
     },
@@ -105,29 +111,17 @@ export function createOllamaEngine({ base, sign = () => ({}), where, label }: Op
         },
         controller.signal,
       );
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
       let full = '';
       try {
-        for (;;) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          let nl: number;
-          while ((nl = buffer.indexOf('\n')) >= 0) {
-            const line = buffer.slice(0, nl).trim();
-            buffer = buffer.slice(nl + 1);
-            if (!line) continue;
-            const part = JSON.parse(line);
-            if (part.error) throw new Error(part.error);
-            const text: string = part.message?.content ?? '';
-            if (text) {
-              full += text;
-              onToken(text);
-            }
+        await res.lines((line) => {
+          const part = JSON.parse(line);
+          if (part.error) throw new Error(part.error);
+          const text: string = part.message?.content ?? '';
+          if (text) {
+            full += text;
+            onToken(text);
           }
-        }
+        });
       } catch (e) {
         if ((e as Error).name !== 'AbortError') throw e; // stopped by the user: keep what we have
       }
@@ -139,13 +133,13 @@ export function createOllamaEngine({ base, sign = () => ({}), where, label }: Op
         model, messages: toOllama(messages), stream: false, think: false, format: 'json', keep_alive: keepAlive,
         options: { num_ctx: maxTokens > 256 ? 8192 : 4096, temperature: 0, num_predict: maxTokens },
       });
-      return (await res.json()).message?.content ?? '';
+      return JSON.parse(await res.text()).message?.content ?? '';
     },
 
     async embed(texts, kind) {
       try {
         const res = await post('/api/embed', { model: EMBED_MODEL, input: texts.map((t) => `search_${kind}: ${t}`), keep_alive: keepAlive });
-        return ((await res.json()).embeddings as number[][]).map(normalise);
+        return (JSON.parse(await res.text()).embeddings as number[][]).map(normalise);
       } catch {
         return null; // notes search falls back to matching words
       }
@@ -157,4 +151,4 @@ export function createOllamaEngine({ base, sign = () => ({}), where, label }: Op
   };
 }
 
-export const ollamaEngine = createOllamaEngine({ base: 'http://localhost:11434', where: 'laptop', label: "This laptop's AI" });
+export const ollamaEngine = createOllamaEngine({ send: direct('http://localhost:11434'), where: 'laptop', label: "This laptop's AI" });

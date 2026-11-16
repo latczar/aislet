@@ -28,7 +28,7 @@ Linux is tested on Ubuntu 24.04. The Mac version hasn't been tested yet; if you 
 
 To check you have the genuine app: the package is `app.untethered.assistant`, and the SHA-256 of its signing certificate is `25:C6:D2:76:14:C5:E6:1B:20:58:6B:A2:62:64:E9:A8:8F:B0:49:95:20:17:AD:98:C2:14:4B:F6:90:1C:1E:9A`.
 
-To link them, open Settings → Home on the computer and scan the QR code with the phone's camera. Aislet opens and asks before it pairs. (Or, on the phone, open Settings → Home, tap **Find my laptop** and enter the code shown on the computer.) Both need to be on the same Wi-Fi.
+To link them, open Settings → Home on both, tap **Scan the laptop's code** on the phone and point it at the QR code on the computer. (Or tap **Find my laptop** and type the code shown on the computer.) Both need to be on the same Wi-Fi.
 
 ## Why Aislet
 
@@ -58,7 +58,7 @@ To link them, open Settings → Home on the computer and scan the QR code with t
 - On Android, it also searches Kiwix libraries (.zim files) such as Wikipedia, and moves the ones you already have in Kiwix into Aislet, without copying them.
 
 **Phone and computer together**
-- Pair them in a minute: scan the QR code on the computer with the phone's camera.
+- Pair them in a minute: scan the QR code on the computer from inside Aislet on the phone.
 - At home, the phone uses the computer's bigger AI, and your memory and notes stay in sync.
 - Choose Cool, Balanced or Max on the phone to trade speed against heat.
 
@@ -72,8 +72,8 @@ To link them, open Settings → Home on the computer and scan the QR code with t
 - **What goes online:** downloads, and nothing else. The phone downloads AI models from Hugging Face when you tap Download. The computer's installer downloads the app, and Ollama downloads its models. Libraries are files you add yourself.
 - **What never does:** your chats, memory, notes, photos, PDFs, library files and voice. They're handled on your phone, or on your computer over your own Wi-Fi. There's no account, no analytics and no ads, and Android's cloud backup is off.
 - **Voice:** the phone only uses its offline speech recognition. Phones without it don't get voice typing, rather than sending audio online, and the computer has no voice input for the same reason.
-- **Phone to computer:** they talk directly on your home network. Every request is signed with your pairing code, which itself never crosses the network, and replayed or tampered requests are refused. A pairing QR code only works after you confirm it on the phone.
-- **Check it yourself:** the [security model](docs/DEVELOPMENT.md#security-model) explains each protection, and the [hub's attack tests](pc/tests/hub_attack_test.py) try path tricks, forged, stale and replayed requests, cross-site requests and guessing the code. Or switch off Wi-Fi and mobile data: everything except downloads still works.
+- **Phone to computer:** they talk directly on your home network, over a private link. Everything between them is encrypted with a key made from your pairing code, which itself never crosses the network. The phone only accepts replies that prove they came from your computer, so nothing else on the Wi-Fi can read your data, pretend to be your computer or change what it says, and replayed or tampered messages are refused. Pairing only happens when you scan the code from inside Aislet.
+- **Check it yourself:** the [security model](docs/DEVELOPMENT.md#security-model) explains each protection, and the [hub's attack tests](pc/tests/hub_attack_test.py) try path tricks, forged, stale and replayed requests and replies, reading data on the wire, flooding the computer with connections, cross-site requests and guessing the code. Or switch off Wi-Fi and mobile data: everything except downloads still works.
 
 ---
 

@@ -10,6 +10,7 @@ import { Field } from './Field';
 import { formatSize } from './confirm';
 import { cancelDownload, startDownload, useDownload } from './downloads';
 import { useKeyboardInset } from './keyboard';
+import { ScanPair } from './ScanPair';
 import { FONT, STATUS_COLOURS } from './theme';
 
 function Step({ n, of }: { n: number; of: number }) {
@@ -93,10 +94,13 @@ function GetModel({ onDone }: { onDone: () => void }) {
             </Text>
           </View>
         ) : (
-          <Text variant="bodyMedium" style={muted}>
-            With {APP_NAME} on your laptop, open Settings → Home there and scan the code with this phone's camera. At home,
-            the phone then uses the laptop's bigger AI and syncs with it.
-          </Text>
+          <>
+            <Text variant="bodyMedium" style={muted}>
+              With {APP_NAME} on your laptop, open Settings → Home there and scan its code. At home, the phone then uses
+              the laptop's bigger AI and syncs with it.
+            </Text>
+            {Platform.OS !== 'web' && <ScanPair mode="contained-tonal" />}
+          </>
         )}
       </Surface>
       <Button mode="contained" onPress={onDone} contentStyle={styles.big} disabled={dl.progress !== null && !ready}>

@@ -165,7 +165,12 @@ export async function openBackup(text: string, passphrase: string): Promise<Back
   if (file?.app !== FORMAT || file.cipher !== 'AES-256-GCM' || file.kdf?.name !== 'PBKDF2-SHA256' || typeof file.data !== 'string') {
     throw new Error("That file isn't an Aislet backup.");
   }
-  const key = await AESEncryptionKey.import(pbkdf2Sha256(utf8(passphrase), fromHex(file.kdf.salt), file.kdf.iterations));
+  // Only settings Aislet makes: a made-up file could ask for billions of rounds and freeze the app.
+  const { iterations, salt } = file.kdf;
+  if (!Number.isInteger(iterations) || iterations < 100_000 || iterations > 2_000_000 || typeof salt !== 'string' || !/^[0-9a-f]{32}$/i.test(salt)) {
+    throw new Error("That file isn't an Aislet backup.");
+  }
+  const key = await AESEncryptionKey.import(pbkdf2Sha256(utf8(passphrase), fromHex(salt.toLowerCase()), iterations));
   let plain: Uint8Array;
   try {
     plain = (await aesDecryptAsync(AESSealedData.fromCombined(file.data), key, { output: 'bytes' })) as Uint8Array;

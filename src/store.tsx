@@ -10,7 +10,7 @@ import { actionsSupported, mayWantAction } from './deviceActions';
 import { engine as localEngine } from './engine';
 import { createOllamaEngine } from './engine/ollama';
 import type { Engine, EngineStatus } from './engine/types';
-import { type HubInfo, type HubTarget, STALE_PC_KEY, hubHeaders, hubPing, hubSync, localHub } from './hub';
+import { type HubInfo, type HubTarget, STALE_PC_KEY, hubPing, hubRequest, hubSync, isLinkKey, localHub, pairWith } from './hub';
 import {
   type FileList, KIWIX_FOLDER, LIBRARY_FOLDER, OLD_LIBRARY_FOLDER, type LibraryBook, type LibraryHit, type LibraryPage, OTHER_FOLDERS,
   libraryCandidates, overviewTitles, searchQuery, titleQueries,
@@ -169,10 +169,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   // ---- Which engine answers ----
   const remote = useMemo(
-    () => (Platform.OS !== 'web' && settings.hubUrl && settings.hubKey
+    () => (Platform.OS !== 'web' && settings.hubUrl && isLinkKey(settings.hubKey)
       ? createOllamaEngine({
-        base: settings.hubUrl,
-        sign: (method, path, body) => hubHeaders({ key: settings.hubKey, kind: 'phone' }, method, path, body),
+        send: (method, path, body, signal) => hubRequest({ base: settings.hubUrl, key: settings.hubKey, kind: 'phone' }, method, path, body, signal),
         where: 'phone',
         label: "Your laptop's AI",
       })
@@ -191,7 +190,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const local = localHub();
     if (local) return local;
     const s = settingsRef.current;
-    return s.hubUrl && s.hubKey ? { base: s.hubUrl, key: s.hubKey, kind: 'phone' } : null;
+    return s.hubUrl && isLinkKey(s.hubKey) ? { base: s.hubUrl, key: s.hubKey, kind: 'phone' } : null;
   }, []);
 
   useEffect(() => {
@@ -301,6 +300,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!auto) recheck.current.tries = 0;
     let connected = false;
     let info: HubInfo | null = null;
+    const paired = settingsRef.current;
+    if (Platform.OS !== 'web' && paired.hubUrl && paired.hubKey && !isLinkKey(paired.hubKey)) {
+      // Paired before the private link: turn the kept code into the link key once, when the laptop accepts it.
+      try {
+        const { key } = await pairWith(paired.hubUrl, paired.hubKey);
+        const next = { ...settingsRef.current, hubKey: key };
+        settingsRef.current = next;
+        setSettings(next);
+        await save(KEYS.settings, next);
+        setTimeout(() => { checkRef.current(false); }, 0); // again, with the laptop's AI
+        return;
+      } catch (e) {
+        setHub((h) => ({ ...h, connected: false, problem: (e as Error).message }));
+      }
+    }
     const target = hubTarget();
     if (target) {
       try {

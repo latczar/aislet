@@ -585,6 +585,7 @@ def check_find_laptop() -> str:
 
 
 # Made up: no laptop answers at this address, and the code is never a real one (it only uses the hub's letters).
+# Links never pair now, so nothing is ever sent to it.
 PAIR_ADDRESS = '192.168.255.254'
 PAIR_CODE = 'E2ETESTS'
 
@@ -609,44 +610,36 @@ def home_pairing() -> str:
 
 
 def check_pair_link() -> str:
-    """A pairing link (the laptop's QR code) shows the address and asks first; Cancel changes nothing."""
+    """A pairing link never pairs (any app or website can open one): it only says to scan inside the app."""
     before = home_pairing()
     connected = before == 'paired' and bool(find(screen(), contains='Connected to'))
-    # A link to an address outside the home network is turned away without asking.
-    open_link(f'aislet://pair?u=203.0.113.9&c={PAIR_CODE}')
-    wait_for('the "not on a home network" message', timeout=10, contains="isn't on a home network")
-    if find(screen(), contains='Pair with the laptop at'):
-        raise CheckFailed('asked to pair with an address outside the home network')
-    # From cold, as when the camera app opens the link: the app starts and asks.
+    hint = "tap Scan the laptop's code"
+    # From cold, as when the phone's camera app opens the link: the app starts and points to its own scanner.
     safe_front('closing the app')
     key(3)
     time.sleep(1)
     shell(f'am force-stop {PKG}')
     open_link(f'aislet://pair?u={PAIR_ADDRESS}&c={PAIR_CODE}')
-    title = f'Pair with the laptop at {PAIR_ADDRESS}?'
-    card = wait_for('the pairing card', timeout=20, text=title)
-    nodes = screen()
-    pair = [n for n in find(nodes, text='Pair') if n.cy > card.cy]
-    cancel = [n for n in find(nodes, text='Cancel') if n.cy > card.cy]
-    if not pair or not cancel:
-        raise CheckFailed('the pairing card has no Pair and Cancel buttons')
-    if not find(nodes, contains='Only pair if'):
-        raise CheckFailed('the pairing card does not warn to pair only with your own laptop')
-    tap(cancel[0])
-    wait_gone('the pairing card', timeout=5, text=title)
-    # Back also cancels, and stays in the app.
-    open_link(f'aislet://pair?u={PAIR_ADDRESS}&c={PAIR_CODE}')
-    wait_for('the pairing card again', timeout=10, text=title)
-    key(4)
-    wait_gone('the pairing card after Back', timeout=5, text=title)
+    wait_for('the "scan inside the app" hint', timeout=20, contains=hint)
+    if find(screen(), contains='Pair with the laptop at'):
+        raise CheckFailed('a link offered to pair')
+    # While running, too, and for an address outside the home network.
+    for url in (f'aislet://pair?u={PAIR_ADDRESS}&c={PAIR_CODE}', f'aislet://pair?u=203.0.113.9&c={PAIR_CODE}'):
+        wait_gone('the hint', timeout=12, contains=hint)
+        open_link(url)
+        wait_for('the hint again', timeout=10, contains=hint)
+        if find(screen(), contains='Pair with the laptop at'):
+            raise CheckFailed(f'a link offered to pair: {url}')
     if foreground() != PKG:
-        raise CheckFailed('Back on the pairing card left the app')
+        raise CheckFailed('the link left the app')
     after = home_pairing()
     if after != before:
-        raise CheckFailed(f'pairing changed after Cancel: {before} → {after}')
+        raise CheckFailed(f'pairing changed after a link: {before} → {after}')
     if connected:
-        wait_for('the connected status after Cancel', timeout=20, contains='Connected to')
-    return f'outside address ignored; asked about {PAIR_ADDRESS} from cold; Cancel and Back left it {after}'
+        wait_for('the connected status after the links', timeout=20, contains='Connected to')
+    if after == 'not paired' and not find(screen(), text="Scan the laptop's code"):
+        raise CheckFailed("no Scan the laptop's code button")
+    return f'links from cold and while open only pointed to the scanner; pairing left {after}'
 
 
 def scroll_list() -> bool:

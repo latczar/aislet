@@ -37,6 +37,7 @@ MAX_TEXT_FILE = 20 << 20    # text, Markdown and HTML
 MAX_BOOK_FILE = 300 << 20   # PDF and EPUB
 MAX_PAGES = 3000
 MAX_ENTRIES = 5000          # files inside an EPUB
+MAX_CENTRAL = 4 << 20       # bytes of an EPUB's list of files: plenty for MAX_ENTRIES names
 MAX_UNPACKED = 300 << 20    # an EPUB's contents, unpacked
 MAX_ENTRY = 30 << 20        # one file inside an EPUB, unpacked
 MAX_CHARS = 30_000_000      # text kept from one file
@@ -64,6 +65,10 @@ PDF_NO_TEXT = "This PDF has no text to search. It may be scanned pages."
 TOO_SLOW = "This file took too long to read. It may be very large or damaged."
 UNREADABLE = "This file couldn't be opened. Check it isn't still downloading."
 DAMAGED = "This file couldn't be read. It may be damaged."
+STOPPED = "Aislet stopped while reading this file. It may be damaged, or too big for this computer."
+# A file being read now. Saved before reading starts, so if the hub stops part-way, the file is shown with STOPPED
+# afterwards instead of being read again (and stopping the hub again) on every refresh. Same as LibraryFiles.kt.
+READING = "<reading>"
 ZIM_ON_PC = "Kiwix libraries can only be searched on a phone for now."
 
 
@@ -214,10 +219,28 @@ def read_bounded(z: zipfile.ZipFile, info: zipfile.ZipInfo, budget: list[int]) -
 FONT_OBFUSCATION = {"http://www.idpf.org/2008/embedding", "http://ns.adobe.com/pdf/enc#RC"}
 
 
+def check_zip_list(path: Path) -> None:
+    """An EPUB's file count and the size of its list of files, from the zip's last bytes, before it's opened:
+    opening a zip reads its whole list, which a hostile file can make millions of entries long."""
+    with open(path, "rb") as f:
+        size = f.seek(0, os.SEEK_END)
+        f.seek(max(0, size - 22 - 65535))
+        tail = f.read()
+    at = tail.rfind(b"PK\x05\x06", 0, max(0, len(tail) - 18))  # the record is 22 bytes
+    if at < 0:
+        raise Problem(NOT_EPUB)
+    # A ZIP64 record (for zips over 4 GB or 65,535 files) can claim any size: an EPUB never needs one.
+    if at >= 20 and tail[at - 20:at - 16] == b"PK\x06\x07":
+        raise Problem(NOT_EPUB)
+    if int.from_bytes(tail[at + 10:at + 12], "little") > MAX_ENTRIES or int.from_bytes(tail[at + 12:at + 16], "little") > MAX_CENTRAL:
+        raise Problem(f"This ebook has more than {MAX_ENTRIES:,} files inside.")
+
+
 def read_epub(path: Path, started: float) -> tuple[str, list[tuple[str, str]]]:
     with open(path, "rb") as f:
         if f.read(4) != b"PK\x03\x04":
             raise Problem(NOT_EPUB)
+    check_zip_list(path)
     try:
         z = zipfile.ZipFile(path)
     except (zipfile.BadZipFile, OSError):
@@ -370,6 +393,7 @@ class FileLibrary:
         self.kiwix_here = kiwix_here  # True where .zim files are handled elsewhere (the phone)
         self.index_lock = threading.Lock()
         self.visible: set[int] = set()  # documents in the last look at the folders: only these are searched
+        self.reading_now = ""  # the file being read now, if any
 
     # The index is Aislet's own cache: if it's damaged or from another version, it's rebuilt.
     @contextmanager
@@ -464,7 +488,11 @@ class FileLibrary:
                 book["problem"] = ZIM_ON_PC
             elif row and row[1] == st.st_size and row[2] == st.st_mtime_ns // 1_000_000:
                 book.update(title=row[4], articles=row[5])
-                if row[6]:
+                if row[6] == READING and self.reading_now == str(path):
+                    book["pending"] = True
+                elif row[6] == READING:
+                    book["problem"] = STOPPED
+                elif row[6]:
                     book["problem"] = row[6]
                 elif row[7] is not None:
                     book["sameAs"] = titles.get(row[7], "another file")
@@ -508,7 +536,7 @@ class FileLibrary:
             FileLibrary._forget(db, copy_id)
 
     def _read_one(self, db: sqlite3.Connection, path: Path, size: int, modified: int, fmt: str) -> None:
-        title, parts, problem, digest, same_as, sections = path.stem, 0, "", "", None, []
+        title, parts, problem, digest, same_as, sections, doc_id = path.stem, 0, "", "", None, [], None
         limit = MAX_BOOK_FILE if fmt in ("pdf", "epub") else MAX_TEXT_FILE
         try:
             if size == 0:
@@ -521,6 +549,12 @@ class FileLibrary:
             if twin:  # the same file is already here: search it once, but keep this file's own name
                 same_as, parts = twin
             else:
+                doc_id = db.execute(  # saved now (see READING)
+                    "INSERT INTO docs(path, size, modified, hash, format, title, parts, problem, same_as) VALUES (?,?,?,?,?,?,?,?,?)",
+                    (str(path), size, modified, digest, fmt, title, 0, READING, None),
+                ).lastrowid
+                db.commit()
+                self.reading_now = str(path)
                 title, parts, sections = read_file(path, fmt, size, self.read_pdf)
                 if not sections:
                     raise Problem(NO_TEXT)
@@ -530,11 +564,16 @@ class FileLibrary:
             problem = UNREADABLE
         except Exception:  # anything else odd in one file never stops the others being read
             problem = DAMAGED
-        cur = db.execute(
-            "INSERT INTO docs(path, size, modified, hash, format, title, parts, problem, same_as) VALUES (?,?,?,?,?,?,?,?,?)",
-            (str(path), size, modified, digest, fmt, title, parts, problem, same_as),
-        )
-        doc_id, kept = cur.lastrowid, 0
+        finally:
+            self.reading_now = ""
+        if doc_id is None:
+            doc_id = db.execute(
+                "INSERT INTO docs(path, size, modified, hash, format, title, parts, problem, same_as) VALUES (?,?,?,?,?,?,?,?,?)",
+                (str(path), size, modified, digest, fmt, title, parts, problem, same_as),
+            ).lastrowid
+        else:
+            db.execute("UPDATE docs SET title = ?, parts = ?, problem = ? WHERE id = ?", (title, parts, problem, doc_id))
+        kept = 0
         for section, text in sections:
             for passage in split_passages(text):
                 if kept + len(passage) > MAX_CHARS:

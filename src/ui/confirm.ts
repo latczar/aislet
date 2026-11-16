@@ -11,6 +11,12 @@ export function confirm(title: string, message: string, action = 'Delete'): Prom
   );
 }
 
+/** Tell the user something, with just OK. */
+export function notice(title: string, message: string): void {
+  if (Platform.OS === 'web') window.alert(`${title}\n\n${message}`);
+  else Alert.alert(title, message, [{ text: 'OK' }]);
+}
+
 export function formatSize(bytes: number): string {
   if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
   if (bytes >= 1e6) return `${Math.round(bytes / 1e6)} MB`;
