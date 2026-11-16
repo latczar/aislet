@@ -8,20 +8,38 @@ import java.io.File
 /**
  * The private link's native code must give the same bytes as the hub (pc/link.py) and src/link.ts.
  * The vectors are made by pc/tests/link_test.py. Run in the Android project:
- *   ./gradlew :untethered-library:testReleaseUnitTest
+ *   ./gradlew :untethered-library:testDebugUnitTest
  */
 class LinkCryptoTest {
   private val v: Map<String, String> by lazy {
     var dir: File? = File("").absoluteFile
     while (dir != null && !File(dir, "pc/tests/link_vectors.json").isFile) dir = dir.parentFile
     val text = File(dir ?: error("pc/tests/link_vectors.json not found"), "pc/tests/link_vectors.json").readText()
-    // Flat JSON of strings and numbers: no JSON library needed.
-    Regex("\"(\\w+)\": (\"((?:[^\"\\\\]|\\\\.)*)\"|\\d+)").findAll(text).associate { m ->
-      m.groupValues[1] to (if (m.groupValues[2].startsWith("\"")) unescape(m.groupValues[3]) else m.groupValues[2])
+    // Flat JSON of strings and numbers, read with a plain scan: no JSON library (and no regex over long values).
+    val out = HashMap<String, String>()
+    var i = 0
+    fun string(): String {
+      val s = StringBuilder()
+      i++ // the opening quote
+      while (text[i] != '"') {
+        if (text[i] == '\\') {
+          i++
+          s.append(when (text[i]) { 'n' -> '\n'; 't' -> '\t'; else -> text[i] })
+        } else s.append(text[i])
+        i++
+      }
+      i++
+      return s.toString()
     }
+    while (true) {
+      i = text.indexOf('"', i)
+      if (i < 0) break
+      val key = string()
+      while (text[i] == ':' || text[i] == ' ') i++
+      out[key] = if (text[i] == '"') string() else text.substring(i).takeWhile { it.isDigit() }.also { i += it.length }
+    }
+    out
   }
-
-  private fun unescape(s: String) = s.replace("\\n", "\n").replace("\\\"", "\"").replace("\\\\", "\\")
 
   private fun replyContext(sig: String, status: Int, index: Int, last: Boolean) =
     "aislet 2 reply\n$sig\n$status\n$index\n${if (last) 1 else 0}\n"
