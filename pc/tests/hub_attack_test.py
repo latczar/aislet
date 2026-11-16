@@ -4,7 +4,8 @@ Run them against a test hub with its own data folder and port, because the last 
 computer out of that hub for 10 minutes. In PowerShell, from the project folder:
 
     $env:LOCALAPPDATA = "$env:TEMP\\untethered-test"; $env:UNTETHERED_PORT = "8768"
-    python pc/hub.py          # leave it running, then in a second window with the same two settings:
+    $env:UNTETHERED_LIBRARY = "$env:TEMP\\untethered-test\\Libraries"   # a test library, not your Documents
+    python pc/hub.py          # leave it running, then in a second window with the same settings:
     python pc/tests/hub_attack_test.py "$env:TEMP\\untethered-test\\Aislet\\hub.json" pc/tests/good.pdf
 
 Needs Ollama running with qwen3.5:9b, and pypdf. The data it sends is made up and is cleaned up afterwards.
@@ -12,7 +13,7 @@ Needs Ollama running with qwen3.5:9b, and pypdf. The data it sends is made up an
 On Linux (or WSL), the data folder follows XDG_DATA_HOME instead. Without Ollama, run the stand-in first:
 
     python3 pc/tests/fake_ollama.py &
-    XDG_DATA_HOME=/tmp/untethered-test UNTETHERED_PORT=8768 python3 pc/hub.py &
+    XDG_DATA_HOME=/tmp/untethered-test UNTETHERED_PORT=8768 UNTETHERED_LIBRARY=/tmp/untethered-test/Libraries python3 pc/hub.py &
     UNTETHERED_PORT=8768 python3 pc/tests/hub_attack_test.py /tmp/untethered-test/Aislet/hub.json pc/tests/good.pdf
 """
 import base64, hashlib, hmac, http.client, json, os, secrets, sys, time
@@ -83,6 +84,22 @@ check("PDF read in a separate process", s == 200 and b"Rent is due" in b, b[:80]
 body = json.dumps({"model": "qwen3.5:9b", "messages": [{"role": "user", "content": "Reply with just: hello"}], "stream": True, "think": False}).encode()
 h = signed("POST", "/api/chat", body); s, b = req("POST", "/api/chat", body, headers=h)
 check("signed chat streams from the laptop's AI", s == 200 and b.count(b"\n") >= 2, b[:60])
+# The laptop's own library folder: its window may list and search it; phones and strangers may not.
+s, b = req("POST", "/api/library/books", b"{}"); check("library needs credentials", s == 401, s)
+h = signed("POST", "/api/library/books", b"{}"); s, b = req("POST", "/api/library/books", b"{}", headers=h)
+check("phone can't list the laptop's files", s == 403, s)
+q = json.dumps({"query": "rent"}).encode()
+h = signed("POST", "/api/library/search", q); s, b = req("POST", "/api/library/search", q, headers=h)
+check("phone can't search the laptop's files", s == 403, s)
+h = signed("POST", "/api/library/open", b"{}"); s, b = req("POST", "/api/library/open", b"{}", headers=h)
+check("phone can't open folders on the laptop", s == 403, s)
+s, b = req("POST", "/api/library/books", b"{}", headers={"X-Key": TOKEN}); check("PC lists its library", s == 200 and "books" in json.loads(b), s)
+s, b = req("GET", "/api/library/books", headers={"X-Key": TOKEN}); check("library only answers POST", s == 404, s)
+for bad in (b'{"query": 5}', b'{"query": "x", "limit": 500}', b'{"query": "x", "limit": true}', b"[]", b"not json",
+            json.dumps({"query": "x" * 600}).encode()):
+    s, b = req("POST", "/api/library/search", bad, headers={"X-Key": TOKEN}); check(f"bad library search refused: {bad[:24]!r}", s == 400, s)
+odd = json.dumps({"query": '" OR * NEAR(rent) -x'}).encode()
+s, b = req("POST", "/api/library/search", odd, headers={"X-Key": TOKEN}); check("search syntax in a question is harmless", s == 200, s)
 s, b = req("POST", "/api/sync", b"{}", headers={"X-Key": TOKEN, "Origin": "http://evil.example"}); check("cross-site request refused", s == 403, s)
 s, b = req("GET", "/api/hub", headers={"Host": f"evil.example:{PORT}"}); check("fake host name refused", s == 403, s)
 # Lock-out last: 10 wrong attempts from this address, then even a correct request is paused.

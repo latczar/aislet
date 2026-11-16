@@ -40,6 +40,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import library  # noqa: E402 (pc/library.py, next to this file)
+
 APP = Path(__file__).resolve().parent.parent
 DIST = APP / "dist"
 PORT = int(os.environ.get("UNTETHERED_PORT", "8766"))
@@ -56,11 +59,28 @@ def data_dir() -> Path:
     return (Path(xdg) if os.path.isabs(xdg) else Path.home() / ".local" / "share") / "Aislet"
 
 
+def documents_dir() -> Path:
+    """The person's Documents folder (on Windows it may have been moved, for example into OneDrive)."""
+    if WINDOWS:
+        try:
+            import ctypes
+            buf = ctypes.create_unicode_buffer(260)
+            if ctypes.windll.shell32.SHGetFolderPathW(None, 5, None, 0, buf) == 0 and buf.value:  # 5: My Documents
+                return Path(buf.value)
+        except (AttributeError, OSError):
+            pass
+    xdg = os.environ.get("XDG_DOCUMENTS_DIR", "")
+    return Path(xdg) if os.path.isabs(xdg) else Path.home() / "Documents"
+
+
 DATA_DIR = data_dir()
 # Earlier names, newest first; data is moved over on first run.
 OLD_DATA_DIRS = [DATA_DIR.parent / name for name in (["Untethered", "Unplugged", "Assistant"] if WINDOWS else ["Untethered"])]
 STORE = DATA_DIR / "hub.json"
 LOG = DATA_DIR / "hub.log"
+# Your own files for answers (PDFs, ebooks, text, web pages): read, never changed. Tests use their own folder.
+LIBRARY_DIR = (Path(os.environ["UNTETHERED_LIBRARY"]) if os.environ.get("UNTETHERED_LIBRARY")
+               else documents_dir() / "Aislet" / "Libraries")
 OLLAMA = ("127.0.0.1", 11434)
 # Where Ollama's installer puts it when it isn't on the PATH.
 OLLAMA_EXE = (Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "Programs" / "Ollama" / "ollama.exe" if WINDOWS
@@ -192,34 +212,77 @@ def merge(store: dict, incoming: dict) -> dict:
 
 
 # PDF text is read in a separate, time-limited process, so a hostile PDF can't hang or exhaust the hub.
+# With "pages", a file path and a page limit, it reads that file and gives each page's text separately, as JSON.
 _PDF_READER = r"""
-import io, sys
+import io, json, sys
 from pypdf import PdfReader
-reader = PdfReader(io.BytesIO(sys.stdin.buffer.read()), strict=False)
+pages_mode = len(sys.argv) > 3 and sys.argv[1] == "pages"
+reader = PdfReader(sys.argv[2] if pages_mode else io.BytesIO(sys.stdin.buffer.read()), strict=False)
 if reader.is_encrypted:
-    sys.exit(3)
-sys.stdout.buffer.write("\n\n".join((p.extract_text() or "").strip() for p in reader.pages).encode("utf-8"))
+    try:
+        if not reader.decrypt(""):  # many PDFs are locked only against editing, with no password to open them
+            sys.exit(3)
+    except Exception:
+        sys.exit(3)
+if pages_mode and len(reader.pages) > int(sys.argv[3]):
+    sys.exit(4)
+texts = [(p.extract_text() or "").strip() for p in reader.pages]
+sys.stdout.buffer.write((json.dumps(texts) if pages_mode else "\n\n".join(texts)).encode("utf-8"))
 """
+
+
+def run_pdf_reader(args: list[str], raw: bytes | None, timeout: int, error: type[Exception] = ValueError,
+                   subject: str = "That PDF") -> str:
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        result = subprocess.run(  # -E ignores Python environment variables; runs in our own data folder
+            [sys.executable, "-E", "-c", _PDF_READER, *args], input=raw, capture_output=True, timeout=timeout,
+            cwd=str(DATA_DIR), creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            **({} if raw is not None else {"stdin": subprocess.DEVNULL}),
+        )
+    except subprocess.TimeoutExpired:
+        raise error(f"{subject} took too long to read. It may be very large or damaged.") from None
+    if result.returncode == 3:
+        raise error(f"{subject} is password-protected, so it can't be read.")
+    if result.returncode == 4:
+        raise error(f"{subject} has more than {library.MAX_PAGES:,} pages.")
+    if result.returncode != 0:
+        if b"No module named 'pypdf'" in result.stderr:
+            raise error("The laptop can't read PDFs yet. Run: python -m pip install --user --upgrade pypdf")
+        raise error(f"{subject} couldn't be read. It may be damaged.")
+    return result.stdout.decode("utf-8", errors="replace")
 
 
 def read_document(name: str, raw: bytes) -> str:
     if not name.lower().endswith(".pdf"):
         return raw.decode("utf-8", errors="replace")
+    return run_pdf_reader([], raw, 60).strip()
+
+
+def read_pdf_pages(path: Path) -> list[str]:
+    """Each page's text from a PDF in the library folder (a path the hub found itself, never one sent to it)."""
+    out = run_pdf_reader(["pages", str(path), str(library.MAX_PAGES)], None, library.READ_SECONDS, library.Problem, "This PDF")
     try:
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-        result = subprocess.run(  # -E ignores Python environment variables; runs in our own data folder
-            [sys.executable, "-E", "-c", _PDF_READER], input=raw, capture_output=True, timeout=60, cwd=str(DATA_DIR),
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-    except subprocess.TimeoutExpired:
-        raise ValueError("That PDF took too long to read. It may be very large or damaged.") from None
-    if result.returncode == 3:
-        raise ValueError("That PDF is password-protected, so it can't be read.")
-    if result.returncode != 0:
-        if b"No module named 'pypdf'" in result.stderr:
-            raise ValueError("The laptop can't read PDFs yet. Run: python -m pip install --user --upgrade pypdf")
-        raise ValueError("That PDF couldn't be read. It may be damaged.")
-    return result.stdout.decode("utf-8", errors="replace").strip()
+        pages = json.loads(out)
+    except ValueError:
+        raise library.Problem(library.NOT_PDF) from None
+    return [str(p) for p in pages] if isinstance(pages, list) else []
+
+
+files = library.FileLibrary(DATA_DIR / "library-index.db", [LIBRARY_DIR], read_pdf_pages)
+
+
+def open_folder(folder: Path) -> None:
+    """Show the library folder in Explorer, Finder or the file manager, making it first if needed."""
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        if WINDOWS:
+            os.startfile(str(folder))  # a fixed folder of our own, never a path sent to the hub
+        else:
+            subprocess.Popen(["open" if MAC else "xdg-open", str(folder)], stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    except OSError:
+        raise ValueError(f"Couldn't open the folder. It's at {folder}") from None
 
 
 # ---- Ollama: the laptop's AI ---------------------------------------------------------------
@@ -446,6 +509,8 @@ class Handler(BaseHTTPRequestHandler):
                 data = parse_json(body)
                 text = read_document(str(data.get("name", "")), base64.b64decode(str(data.get("data", ""))))
                 return self.send_json({"text": text[:300_000]})
+            if path.startswith("/api/library/"):
+                return self.library(role, path, method, body)
             if path in ("/api/chat", "/api/embed") and method == "POST" or path == "/api/tags" and method == "GET":
                 return self.proxy(method, path, body if method == "POST" else None)
             return self.send_json({"error": "Not found."}, 404)
@@ -461,6 +526,28 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": "Something went wrong on the laptop. Details are in hub.log."}, 500)
             except OSError:
                 pass
+
+    def library(self, role: str, path: str, method: str, body: bytes) -> None:
+        """The laptop's own library folder. Only the laptop's window may use it: phones search their own."""
+        if role != "pc":
+            return self.send_json({"error": "Only available on the laptop."}, 403)
+        if method != "POST":
+            return self.send_json({"error": "Not found."}, 404)
+        if path == "/api/library/books":
+            return self.send_json({"folder": str(LIBRARY_DIR), **files.books()})
+        if path == "/api/library/index":
+            return self.send_json({"folder": str(LIBRARY_DIR), **files.index()})
+        if path == "/api/library/search":
+            data = parse_json(body)
+            query, limit = (data.get("query"), data.get("limit", 8)) if isinstance(data, dict) else (None, None)
+            if (not isinstance(query, str) or len(query) > 500 or not isinstance(limit, int) or isinstance(limit, bool)
+                    or not 1 <= limit <= 20):
+                raise ValueError("Bad request.")
+            return self.send_json({"pages": files.search(query, limit)})
+        if path == "/api/library/open":
+            open_folder(LIBRARY_DIR)
+            return self.send_json({"ok": True})
+        return self.send_json({"error": "Not found."}, 404)
 
     def hub_info(self, role: str | None):
         ok = ollama_running()

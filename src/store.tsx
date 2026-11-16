@@ -11,10 +11,10 @@ import { createOllamaEngine } from './engine/ollama';
 import type { Engine, EngineStatus } from './engine/types';
 import { type HubInfo, type HubTarget, STALE_PC_KEY, hubHeaders, hubPing, hubSync, localHub } from './hub';
 import {
-  KIWIX_FOLDER, LIBRARY_FOLDER, OLD_LIBRARY_FOLDER, type LibraryBook, type LibraryHit, OTHER_FOLDERS, libraryCandidates, overviewTitles, searchQuery,
-  titleQueries,
+  type FileList, KIWIX_FOLDER, LIBRARY_FOLDER, OLD_LIBRARY_FOLDER, type LibraryBook, type LibraryHit, type LibraryPage, OTHER_FOLDERS,
+  libraryCandidates, overviewTitles, searchQuery, titleQueries,
 } from './library';
-import { nativeLibrary } from './libraryNative';
+import { fileLibrary, nativeLibrary } from './libraryNative';
 import { KEYS, load, newId, remove, save, today } from './storage';
 import { exportFile, pickFile } from './transfer';
 import { setHaptics } from './ui/actions';
@@ -45,13 +45,16 @@ export interface HubState {
   problem?: string;
 }
 
-/** Offline libraries on this device. `supported` is false on the PC and on builds without the reader. */
+/** Offline libraries on this device: Kiwix libraries (phone only) and your own files. */
 export interface LibraryState {
   supported: boolean;
-  access: boolean;                            // phone: "All files access" is on
-  books: LibraryBook[];                       // in Aislet's own folder (or the one from before the rename)
+  access: boolean;                            // phone: "All files access" is on (always true on the PC)
+  books: LibraryBook[];                       // Kiwix libraries and your own files in the library folder(s)
   elsewhere: LibraryBook[];                   // .zim files in Kiwix's folder, Download or Documents
-  folder: string;                             // where Aislet keeps them
+  folder: string;                             // where to put them
+  skipped: number;                            // your own files left out because there were too many
+  reading: boolean;                           // your own files are being read
+  problem?: string;                           // your own files couldn't be read at all, and why
 }
 
 interface Store {
@@ -94,6 +97,7 @@ interface Store {
   allowLibraries(): Promise<void>;          // opens Android's "All files access" page
   moveLibraries(): Promise<string>;         // moves .zim files found elsewhere into Aislet; returns a summary
   removeLibrary(path: string): Promise<void>;
+  openLibraryFolder: (() => Promise<void>) | null; // the PC shows the folder; null on a phone
   snapshot(): Backup;                    // memory, notes, name and instructions, for a backup
   restore(backup: Backup): Promise<string>; // adds anything new from a backup; returns a summary
 }
@@ -141,7 +145,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const notesRef = useRef(notes);
-  const [libraries, setLibraries] = useState<LibraryState>({ supported: !!nativeLibrary, access: false, books: [], elsewhere: [], folder: '' });
+  const [libraries, setLibraries] = useState<LibraryState>({
+    supported: !!fileLibrary, access: !nativeLibrary, books: [], elsewhere: [], folder: '', skipped: 0, reading: false,
+  });
+  const readingFiles = useRef(false);
   const librariesRef = useRef(libraries);
   librariesRef.current = libraries;
   notesRef.current = notes;
@@ -340,23 +347,58 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  // ---- Offline libraries (Kiwix .zim files) on this phone ----
-  const refreshLibraries = useCallback(async () => {
-    if (!nativeLibrary) return;
-    const root = nativeLibrary.storage();
+  // ---- Offline libraries: Kiwix .zim files (phone) and your own files (phone and PC) ----
+
+  /** Kiwix libraries on this phone: in Aislet's folders, and elsewhere (to offer moving them in). */
+  const kiwixBooks = useCallback(async (): Promise<{ books: LibraryBook[]; elsewhere: LibraryBook[] }> => {
+    if (!nativeLibrary) return { books: [], elsewhere: [] };
+    const lib = nativeLibrary;
+    const root = lib.storage();
     const folder = `${root}/${LIBRARY_FOLDER}`;
     const oldFolder = `${root}/${OLD_LIBRARY_FOLDER}`;
-    const access = nativeLibrary.hasAccess();
+    const info = async (path: string) => {
+      const book = await lib.info(path).catch(() => null);
+      return book ? { ...book, format: 'zim' } : null;
+    };
     // The app's own folder needs no permission (the phone tests put a made-up library there).
-    const own = await nativeLibrary.find([folder, oldFolder, nativeLibrary.appFolder()].filter(Boolean)).catch(() => []);
-    const books = (await Promise.all(own.map((f) => nativeLibrary!.info(f.path).catch(() => null))))
-      .filter((b): b is LibraryBook => !!b)
-      .sort((a, b) => a.title.localeCompare(b.title));
-    const found = access ? await nativeLibrary.find([KIWIX_FOLDER, ...OTHER_FOLDERS].map((d) => `${root}/${d}`)).catch(() => []) : [];
-    const elsewhere = (await Promise.all(found.filter((f) => !f.path.startsWith(`${folder}/`) && !f.path.startsWith(`${oldFolder}/`)).map((f) => nativeLibrary!.info(f.path).catch(() => null))))
-      .filter((b): b is LibraryBook => !!b);
-    setLibraries({ supported: true, access, books, elsewhere, folder });
+    const own = await lib.find([folder, oldFolder, lib.appFolder()].filter(Boolean)).catch(() => []);
+    const books = (await Promise.all(own.map((f) => info(f.path)))).filter((b): b is LibraryBook => !!b);
+    const found = lib.hasAccess() ? await lib.find([KIWIX_FOLDER, ...OTHER_FOLDERS].map((d) => `${root}/${d}`)).catch(() => []) : [];
+    const outside = found.filter((f) => !f.path.startsWith(`${folder}/`) && !f.path.startsWith(`${oldFolder}/`));
+    const elsewhere = (await Promise.all(outside.map((f) => info(f.path)))).filter((b): b is LibraryBook => !!b);
+    return { books, elsewhere };
   }, []);
+
+  const refreshLibraries = useCallback(async () => {
+    if (!fileLibrary) return;
+    const files = fileLibrary;
+    const access = nativeLibrary ? nativeLibrary.hasAccess() : true;
+    if (nativeLibrary && access) nativeLibrary.makeFolder(`${nativeLibrary.storage()}/${LIBRARY_FOLDER}`); // so people can find it
+    const kiwix = await kiwixBooks();
+    const show = (list: FileList | null, reading: boolean, problem?: string) => setLibraries({
+      supported: true, access, elsewhere: kiwix.elsewhere, reading, problem,
+      books: [...kiwix.books, ...(list?.books ?? [])].sort((a, b) => a.title.localeCompare(b.title)),
+      folder: list?.folder ?? '', skipped: list?.skipped ?? 0,
+    });
+    let list: FileList | null = null;
+    try {
+      list = await files.books();
+    } catch (e) {
+      return show(null, false, (e as Error).message);
+    }
+    // New or changed files are read in the background, one pass at a time; the list shows them meanwhile.
+    const toRead = settingsRef.current.useLibraries && list.books.some((b) => b.pending);
+    if (!toRead || readingFiles.current) return show(list, readingFiles.current);
+    show(list, true);
+    readingFiles.current = true;
+    try {
+      show(await files.index(), false);
+    } catch (e) {
+      show(list, false, (e as Error).message);
+    } finally {
+      readingFiles.current = false;
+    }
+  }, [kiwixBooks]);
 
   const allowLibraries = useCallback(async () => {
     await nativeLibrary?.requestAccess(); // the page opens; the list refreshes when the app comes back
@@ -385,19 +427,25 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     await refreshLibraries();
   }, [refreshLibraries]);
 
-  /** Passages from this phone's libraries that may help answer `question`. */
+  /** Passages from this device's libraries (Kiwix and your own files) that may help answer `question`. */
   const searchLibraries = useCallback(async (question: string, vec: number[] | null): Promise<LibraryHit[]> => {
     const books = librariesRef.current.books.filter((b) => b.searchable && !b.problem);
-    if (!nativeLibrary || !settingsRef.current.useLibraries || !books.length) return [];
+    if (!settingsRef.current.useLibraries || !books.length) return [];
     const query = searchQuery(question);
     if (!query) return [];
-    const lib = nativeLibrary;
-    const paths = books.map((b) => b.path);
-    // Overview articles found by title ("Compost") go first, then what the full-text search found.
-    const titled = overviewTitles(query, await lib.titles(paths, titleQueries(query), 3).catch(() => []));
-    const overviews = await Promise.all(titled.map(async (t) => ({ ...t, rank: 0, html: await lib.read(t.book, t.path, 60000).catch(() => '') })));
-    const pages = await lib.search(paths, query, 5, 60000);
-    const candidates = libraryCandidates(question, [...overviews, ...pages], 4);
+    const kiwix = async (): Promise<LibraryPage[]> => {
+      const lib = nativeLibrary;
+      const paths = books.filter((b) => b.format === 'zim').map((b) => b.path);
+      if (!lib || !paths.length) return [];
+      // Overview articles found by title ("Compost") go first, then what the full-text search found.
+      const titled = overviewTitles(query, await lib.titles(paths, titleQueries(query), 3).catch(() => []));
+      const overviews = await Promise.all(titled.map(async (t) => ({ ...t, rank: 0, html: await lib.read(t.book, t.path, 60000).catch(() => '') })));
+      return [...overviews, ...(await lib.search(paths, query, 5, 60000).catch(() => []))];
+    };
+    const own = async (): Promise<LibraryPage[]> =>
+      fileLibrary && books.some((b) => b.format !== 'zim') ? fileLibrary.search(query, 6).catch(() => []) : [];
+    const [kiwixPages, ownPages] = await Promise.all([kiwix(), own()]);
+    const candidates = libraryCandidates(question, [...kiwixPages, ...ownPages], 4);
     if (!candidates.length) return [];
     // Judge by meaning when an embedding model is available, otherwise by sharing most of the question's words.
     const vectors = vec ? await engineRef.current.embed(candidates.map((c) => `${c.title}\n${c.text}`), 'document').catch(() => null) : null;
@@ -810,7 +858,7 @@ ${interviewPrompt(s.name)}` : prompt };
     loaded, startView, settings, updateSettings, status, refreshStatus, engine, hub, syncNow, memories, addMemory, removeMemory, proposeTidy, applyTidy,
     notes, saveNote, deleteNote, chats, chat, openChat, newChat, deleteChat, clearChats, busy, error, clearError, noted,
     send, regenerate, startInterview, stop, exportData, importData, snapshot, restore,
-    libraries, refreshLibraries, allowLibraries, moveLibraries, removeLibrary,
+    libraries, refreshLibraries, allowLibraries, moveLibraries, removeLibrary, openLibraryFolder: fileLibrary?.openFolder ?? null,
   };
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

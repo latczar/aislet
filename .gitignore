@@ -60,3 +60,6 @@ e2e/phone/out/
 
 # Wrangler (website deploys)
 .wrangler/
+
+# Python (the hub runs from this folder)
+__pycache__/

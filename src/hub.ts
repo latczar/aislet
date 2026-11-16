@@ -85,6 +85,11 @@ export function hubNewCode(): Promise<{ code: string; urls: string[] }> {
   return call(localHub()!, '/api/pairing/new', { method: 'POST', body: {} });
 }
 
+/** PC only: the laptop's own library folder (list, read, search or open it). */
+export function hubLibrary<T>(action: 'books' | 'index' | 'search' | 'open', body: unknown = {}, timeoutMs = 15000): Promise<T> {
+  return call<T>(localHub()!, `/api/library/${action}`, { method: 'POST', body }, timeoutMs);
+}
+
 /** PC: the token launch.py put after # in the address. Kept in this browser window, then hidden from the address. */
 function pcToken(): string {
   try {

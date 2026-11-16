@@ -19,10 +19,13 @@ a screenshot and screen dump go to e2e/phone/out/.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import struct
 import xml.etree.ElementTree as ET
@@ -1210,6 +1213,103 @@ def check_library() -> str:
         adb('shell', f'rm -rf {LIBRARY_DIR}', check=False)
 
 
+# Your own files: made up (pc/tests/made_up_files.py), in the app's own folder, so no "All files access" is
+# needed and nothing of yours is touched. Each one's checksum and date are compared before and after.
+FILES_PROMPT = 'E2E check: what pressure does the Zephyrion 9 boiler run at when cold'
+
+
+def own_test_files() -> dict[str, bytes]:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'pc' / 'tests'))
+    from made_up_files import epub, pdf  # noqa: E402
+    return {
+        'e2e-boiler-notes.md': b'# E2E boiler notes\n\n## Pressure\n\nThe made-up Zephyrion 9 boiler runs at 1.4 bar when cold.\n',
+        'e2e-tale.epub': epub('E2E Tale of Orrin', [('The Harbour', 'Orrin sailed from Velmor at dawn.'), ('The Storm', 'A storm broke the mast.')]),
+        'e2e-manual.pdf': pdf(['Welcome to the made-up Glimmerfold manual.', 'Hold the amber key for 7 seconds to reset it.']),
+        'e2e-not-really.pdf': b'This is not a PDF.',
+        'e2e-letter.docx': b'PK\x03\x04 not a real Word file',
+    }
+
+
+def remote_fingerprints(names: list[str]) -> dict[str, str]:
+    """Each file's checksum and date (seconds) on the phone."""
+    out = shell('cd ' + LIBRARY_DIR + ' && for f in ' + ' '.join(names) + '; do echo "$f $(sha256sum "$f" | cut -c1-64) $(stat -c %Y "$f")"; done')
+    return {parts[0]: ' '.join(parts[1:]) for parts in (line.split() for line in out.splitlines()) if len(parts) == 3}
+
+
+def check_library_files() -> str:
+    """Your own files in the library folder are listed (or say why not), searched, cited, and never changed."""
+    files = own_test_files()
+    local = Path(tempfile.mkdtemp(prefix='aislet-e2e-files-'))
+    try:
+        shell(f'mkdir -p {LIBRARY_DIR}')
+        for name, data in files.items():
+            (local / name).write_bytes(data)
+            adb('push', str(local / name), f'{LIBRARY_DIR}/{name}')
+        before = remote_fingerprints(list(files))
+        expected = {n: hashlib.sha256(d).hexdigest() for n, d in files.items()}
+        if len(before) != len(files) or any(before[n].split()[0] != expected[n] for n in files):
+            raise CheckFailed(f'the test files did not reach the phone intact: {before}')
+        check_launch()  # a fresh start lists them and reads them
+        go_tab('Settings')
+        rows = {
+            'e2e-boiler-notes': 'Markdown',
+            'E2E Tale of Orrin': 'Ebook · 2 chapters',
+            'e2e-manual': 'PDF · 2 pages',
+            'e2e-not-really': "This isn't a PDF, or it's damaged.",
+            'e2e-letter': "Aislet can't read .docx files yet.",
+        }
+        seen = []
+        for title, described in rows.items():
+            row = scroll_to(f'"{title}" in Settings, Libraries', text=title)
+            end = time.time() + 90  # the first read happens in the background
+            while True:
+                near = [n.text for n in screen() if n.text and 0 < n.cy - row.cy < 160]
+                if any(described in t for t in near):
+                    break
+                if time.time() > end:
+                    raise CheckFailed(f'"{title}" never showed "{described}" (showed {near[:2]})')
+                time.sleep(1.5)
+                row = scroll_to(f'"{title}" in Settings, Libraries', text=title)
+            seen.append(title)
+        if find(screen(), desc='Delete e2e-boiler-notes') or find(screen(), desc='Delete e2e-manual'):
+            raise CheckFailed('your own files have a delete button')
+        scroll_to_top()
+        tap(open_new_chat())
+        wait_keyboard(True)
+        type_text(FILES_PROMPT)
+        time.sleep(0.5)
+        send = find(screen(), desc='Send')
+        if not send:
+            raise CheckFailed('no Send button')
+        tap(send[0])
+        wait_for('the sent message in the thread', timeout=10, text=FILES_PROMPT)
+        hide_keyboard()
+        started, end = time.time(), time.time() + 180
+        while True:
+            nodes = screen()
+            if find(nodes, desc='Copy') and not find(nodes, desc='Stop'):
+                break
+            if find(nodes, text='Dismiss'):
+                raise CheckFailed('the reply failed with an error card')
+            if time.time() > end:
+                raise CheckFailed('no reply within 180 s')
+            time.sleep(1.5)
+        reply = ' '.join(n.text for n in screen() if n.text and n.text != FILES_PROMPT)
+        if '1.4' not in reply:
+            raise CheckFailed(f'the reply did not use the note (no "1.4 bar"): {reply[:160]!r}')
+        cited = 'e2e-boiler-notes' in reply
+        after = remote_fingerprints(list(files))
+        if after != before:
+            raise CheckFailed(f'a file was changed by reading it: before {before}, after {after}')
+        return (f'{len(seen)} files listed (2 with reasons they can\'t be read); reply in {time.time() - started:.0f} s used the '
+                f'note{" and named it" if cited else ""}; all {len(files)} files unchanged')
+    finally:
+        if not delete_test_chat():
+            print('  note: could not find the test chat to delete', file=sys.stderr)
+        adb('shell', f'rm -rf {LIBRARY_DIR}', check=False)
+        shutil.rmtree(local, ignore_errors=True)
+
+
 # The backup check drives Android's own folder and file picker, which Aislet opens. Only while it does
 # may taps go to the picker as well as to Aislet.
 PICKER = 'documentsui'
@@ -1423,6 +1523,7 @@ CHECKS = {
     'privacy': check_privacy,
     'layout': check_layout,
     'library': check_library,
+    'library_files': check_library_files,
 }
 
 

@@ -1,26 +1,50 @@
-// Offline libraries: Kiwix .zim files (Appropedia, Wikipedia, WikiMed and so on). For each question the
-// app searches them with Kiwix's own full-text index, picks the passages that best match, and gives
-// those to the AI, which names the article it used. Libraries are searched on the device that holds them.
+// Offline libraries: the person's own files (PDFs, ebooks, text, Markdown, web pages) and Kiwix .zim files
+// (Appropedia, Wikipedia, WikiMed and so on). For each question the app searches them (Kiwix with its own
+// full-text index, your own files with Aislet's index of them), picks the passages that best match, and
+// gives those to the AI, which names the file or article it used. Libraries are searched on the device that
+// holds them. Your own files are only ever read: Aislet never changes, moves or deletes them.
 import { STOP_WORDS, chunkText, keywordScore } from './brain';
+
+/** 'zim' is a Kiwix library; the rest are your own files. */
+export type LibraryFormat = 'zim' | 'pdf' | 'epub' | 'text' | 'markdown' | 'html' | string;
 
 export interface LibraryBook {
   path: string;
   title: string;
   description: string;
-  articles: number;
+  articles: number;    // Kiwix: articles. Your own files: pages (PDF), chapters (EPUB) or sections
   size: number;        // bytes
   searchable: boolean; // has a full-text index
-  problem?: string;    // couldn't be opened
+  format: LibraryFormat;
+  problem?: string;    // couldn't be opened or read, and why
+  pending?: boolean;   // your own file, new or changed, not read yet
+  sameAs?: string;     // your own file, identical to this one already in the library (searched once)
 }
 
-/** A page a library search found, with its HTML (cut to a sensible length). */
+/** A page a library search found: a Kiwix page's HTML (cut to a sensible length) or a passage of your own file. */
 export interface LibraryPage {
   book: string;      // the library file's path
   bookTitle: string; // e.g. "Appropedia"
   path: string;      // the page inside the library
-  title: string;
+  title: string;     // the article, or the part of your file ("page 12", a heading); may be empty
   rank: number;      // 0 = the library's best match
-  html: string;
+  html?: string;     // Kiwix
+  text?: string;     // your own files
+}
+
+/** Your own files in a library folder, as the phone's or laptop's reader lists them. */
+export interface FileList {
+  folder: string;    // where to put them
+  books: LibraryBook[];
+  skipped: number;   // files left out because there were too many
+}
+
+/** Where your own files are read: the phone (native module) or the laptop (hub). */
+export interface FileLibrary {
+  books(): Promise<FileList>;  // quick: no file contents read
+  index(): Promise<FileList>;  // reads new and changed files; can take a while the first time
+  search(query: string, limit: number): Promise<LibraryPage[]>;
+  openFolder: (() => Promise<void>) | null; // the laptop can show the folder; on a phone, people use their Files app
 }
 
 /** A page found by its title. */
@@ -28,14 +52,14 @@ export type LibraryTitle = Pick<LibraryPage, 'book' | 'bookTitle' | 'path' | 'ti
 
 /** A passage chosen to help answer. */
 export interface LibraryHit {
-  book: string;   // e.g. "Appropedia"
-  title: string;  // the article
+  book: string;   // e.g. "Appropedia", or your file's name
+  title: string;  // the article, or the part of your file; may be empty
   text: string;
   score: number;  // for ordering
   match?: number; // share of the question's words in the passage
 }
 
-/** Where Aislet keeps libraries, under the phone's shared storage. */
+/** Where Aislet keeps libraries, and where you put your own files, under the phone's shared storage. */
 export const LIBRARY_FOLDER = 'Aislet/Libraries';
 /** Where it kept them when it was called Untethered. Libraries there are still used, where they are. */
 export const OLD_LIBRARY_FOLDER = 'Untethered/Libraries';
@@ -134,11 +158,13 @@ export function libraryCandidates(question: string, pages: LibraryPage[], max = 
   const candidates: LibraryHit[] = [];
   for (const page of pages) {
     const key = `${page.book}\n${page.path}`;
-    if (seen.has(key) || isTranslation(page.title)) continue;
+    const kiwix = page.html !== undefined;
+    if (seen.has(key) || (kiwix && isTranslation(page.title))) continue;
     seen.add(key);
     const bonus = keywordScore(question, page.title) * 0.15 + 0.1 / (1 + page.rank);
-    chunkText(htmlToText(page.html), 700)
-      .filter((c) => c.length >= 120)
+    // Kiwix pages have menus and captions to skip; your own notes can be short and still be the answer.
+    chunkText(kiwix ? htmlToText(page.html ?? '') : (page.text ?? ''), 700)
+      .filter((c) => c.length >= (kiwix ? 120 : 1))
       .map((text) => ({ text, score: keywordScore(question, text) }))
       .sort((a, b) => b.score - a.score)
       .slice(0, 2)
@@ -147,10 +173,25 @@ export function libraryCandidates(question: string, pages: LibraryPage[], max = 
   return candidates.sort((a, b) => b.score - a.score).slice(0, max);
 }
 
-/** How a library reads in a list, e.g. "30,736 articles · 582 MB". */
-export function describeBook(book: LibraryBook, size: string): string {
+const KINDS: Record<string, string> = { pdf: 'PDF', epub: 'Ebook', text: 'Text', markdown: 'Markdown', html: 'Web page' };
+
+function count(n: number, one: string, many: string): string {
+  return `${n.toLocaleString('en-GB')} ${n === 1 ? one : many}`;
+}
+
+/** How a library reads in a list, e.g. "30,736 articles · 582 MB" or "PDF · 24 pages · 3.1 MB". */
+export function describeBook(book: LibraryBook, size: string, reading = false): string {
   if (book.problem) return book.problem;
-  const parts = [`${book.articles.toLocaleString('en-GB')} ${book.articles === 1 ? 'article' : 'articles'}`, size];
-  if (!book.searchable) parts.push("can't be searched");
+  if (book.pending) return reading ? 'Reading…' : 'Not read yet';
+  if (book.sameAs) return `The same file as ${book.sameAs}, so it's only searched once`;
+  if (book.format === 'zim') {
+    const parts = [count(book.articles, 'article', 'articles'), size];
+    if (!book.searchable) parts.push("can't be searched");
+    return parts.join(' · ');
+  }
+  const parts = [KINDS[book.format] ?? book.format.toUpperCase()];
+  if (book.format === 'pdf') parts.push(count(book.articles, 'page', 'pages'));
+  if (book.format === 'epub') parts.push(count(book.articles, 'chapter', 'chapters'));
+  parts.push(size);
   return parts.join(' · ');
 }

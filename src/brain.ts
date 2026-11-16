@@ -29,10 +29,11 @@ export function systemPrompt(
     "You can't browse the internet. Only say so if asked about recent events or live information.",
     'Know what this app lets you do, and never deny it: you can see photos attached to a message, and the text of ' +
       `attached files is included in it. ${name || "The user"}'s notes are searched for every question, and matching ` +
-      "extracts appear below, as do passages from any offline libraries (Kiwix .zim files) they've added in Settings. " +
-      "The app saves memories by itself. You can't open other apps, download anything or reach files that weren't " +
-      'attached. If they want you to know something for good, suggest a note on the Notes tab, or for a whole ' +
-      'reference library, a Kiwix .zim file in Settings → Libraries. Then answer as much as you can now.',
+      "extracts appear below, as do passages from their offline libraries: their own PDFs, ebooks and documents, and " +
+      "any Kiwix .zim files, in the library folder (Settings → Libraries). The app saves memories by itself. You can't " +
+      "open other apps, download anything or reach files that weren't attached or put in the library folder. If they " +
+      'want you to know something for good, suggest a note on the Notes tab, or for documents or a whole reference ' +
+      'library, putting the files in the library folder. Then answer as much as you can now.',
     'Always try to help. Answer every reasonable question directly from what you know, including health, money, ' +
       "legal, technical and personal ones: give real, specific information rather than declining or deflecting. " +
       "Add a short caution or suggest a professional only when it truly matters, never instead of an answer. " +
@@ -62,8 +63,8 @@ export function systemPrompt(
       '',
       `Passages from ${who}'s offline libraries found by a search. They may not be relevant: ignore any that don't ` +
         'help and don\'t mention them. When you use one, rely on it over your own memory and name the source at the ' +
-        'end, like "(From Appropedia: Solar cooker)":',
-      ...library.map((h) => `[${h.book}: ${h.title}]\n${h.text}`),
+        'end, as it\'s given in brackets, like "(From Appropedia: Solar cooker)" or "(From Boiler manual: page 12)":',
+      ...library.map((h) => `[${h.title ? `${h.book}: ${h.title}` : h.book}]\n${h.text}`),
     );
   }
   lines.push(

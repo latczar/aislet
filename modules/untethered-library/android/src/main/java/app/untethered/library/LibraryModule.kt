@@ -5,8 +5,11 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
+import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.kiwix.libkiwix.JNIKiwix
 import org.kiwix.libzim.Archive
 import org.kiwix.libzim.Query
@@ -15,9 +18,9 @@ import org.kiwix.libzim.SuggestionSearcher
 import java.io.File
 
 /**
- * Offline libraries: Kiwix .zim files on this phone, opened with Kiwix's own reader.
- * Untethered searches them to help answer questions. Reading files outside the app's own folders
- * needs "All files access", which the person grants in Android's settings.
+ * Offline libraries on this phone: Kiwix .zim files, opened with Kiwix's own reader, and the person's own
+ * files (PDFs, ebooks, text, web pages; see LibraryFiles). Aislet searches them to help answer questions.
+ * Reading files outside the app's own folders needs "All files access", which the person grants in Android's settings.
  */
 class LibraryModule : Module() {
   private val lock = Any()
@@ -25,6 +28,13 @@ class LibraryModule : Module() {
   private val open = HashMap<String, Pair<Long, Archive>>() // path -> (size and date, the open file)
 
   private val context get() = appContext.reactContext ?: throw IllegalStateException("The app isn't ready yet.")
+  private val files by lazy { LibraryFiles(context.applicationContext) }
+
+  /** The folders that may be read: without "All files access", only the app's own. */
+  private fun readable(dirs: List<String>): List<File> {
+    val own = context.getExternalFilesDir(null)?.absolutePath
+    return (if (hasAccess()) dirs else dirs.filter { own != null && it.startsWith("$own/") }).map { File(it) }
+  }
 
   private fun archive(path: String): Archive {
     val file = File(path)
@@ -68,6 +78,31 @@ class LibraryModule : Module() {
       } catch (e: Exception) {
         ctx.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
       }
+    }
+
+    /** Make Aislet's own library folder (only that one), so people can find it to put files in. */
+    Function("makeFolder") { path: String ->
+      val root = Environment.getExternalStorageDirectory().absolutePath
+      if (!hasAccess() || !path.startsWith("$root/") || path.contains("/../")) return@Function false
+      File(path).mkdirs() || File(path).isDirectory
+    }
+
+    // The person's own files. These are only ever read, and run off the shared queue so a long read
+    // never holds up anything else.
+
+    /** Every file in these folders, with what's known about it. Reads no file contents. */
+    AsyncFunction("filesBooks") Coroutine { dirs: List<String> ->
+      withContext(Dispatchers.IO) { files.books(readable(dirs)) }
+    }
+
+    /** Read new and changed files into the index; forget ones that have gone. */
+    AsyncFunction("filesIndex") Coroutine { dirs: List<String> ->
+      withContext(Dispatchers.IO) { files.index(readable(dirs)) }
+    }
+
+    /** Passages that match a search, best first. */
+    AsyncFunction("filesSearch") Coroutine { query: String, limit: Int ->
+      withContext(Dispatchers.IO) { files.search(query, limit.coerceIn(1, 20)) }
     }
 
     /** .zim files in these folders, up to three levels down. */

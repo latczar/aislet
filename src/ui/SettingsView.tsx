@@ -9,7 +9,7 @@ import { findLaptops } from '../discover';
 import { engine } from '../engine';
 import type { ModelInfo } from '../engine/types';
 import { STALE_PC_KEY, hubNewCode, hubPairing, hubPing, normaliseAddress } from '../hub';
-import { KIWIX_FOLDER, LIBRARY_FOLDER, describeBook } from '../library';
+import { KIWIX_FOLDER, LIBRARY_FOLDER, type LibraryBook, describeBook } from '../library';
 import { makePairLink } from '../pairLink';
 import { useStore } from '../store';
 import type { Accel, AnswerLength, Appearance, Performance } from '../types';
@@ -94,108 +94,189 @@ function ModelRow({ model, selected, onSelect, onChanged, icon = 'text-search' }
   );
 }
 
-/** Phone: offline libraries (Kiwix .zim files) searched when answering. */
+/** Your own files are listed one by one up to this many (anything needing attention first); the rest are counted. */
+const SHOWN_FILES = 12;
+const FILE_ICONS: Record<string, string> = {
+  pdf: 'file-pdf-box', epub: 'book-outline', text: 'file-document-outline', markdown: 'language-markdown-outline', html: 'web',
+};
+
+/** Offline libraries searched when answering: your own files (phone and PC) and Kiwix .zim files (phone). */
 function Libraries({ onToast }: { onToast: (message: string) => void }) {
   const theme = useTheme();
-  const { libraries, settings, updateSettings, allowLibraries, moveLibraries, removeLibrary } = useStore();
+  const {
+    libraries, settings, updateSettings, refreshLibraries, allowLibraries, moveLibraries, removeLibrary, openLibraryFolder,
+  } = useStore();
   const [moving, setMoving] = useState(false);
-  const { access, books, elsewhere } = libraries;
+  const { access, books, elsewhere, folder, skipped, reading, problem } = libraries;
+  const phone = Platform.OS !== 'web';
 
+  const kiwix = books.filter((b) => b.format === 'zim');
+  const order = (b: LibraryBook) => (b.problem ? 0 : b.pending ? 1 : 2);
+  const own = books.filter((b) => b.format !== 'zim').sort((a, b) => order(a) - order(b) || a.title.localeCompare(b.title));
+  const more = own.length - SHOWN_FILES;
   const fromKiwix = elsewhere.every((b) => b.path.includes(`/${KIWIX_FOLDER}/`));
   const names = elsewhere.map((b) => b.title).join(', ');
-  return (
-    <>
-      {!access && (
-        <Row
-          title="Allow access to libraries"
-          description={'Answer from Kiwix libraries (.zim files) such as Wikipedia. Needs "All files access".'}
-          left={(p) => <List.Icon {...p} icon="folder-key-outline" />}
-          right={(p) => <Button mode="contained-tonal" compact style={p.style} onPress={() => allowLibraries().catch((e) => onToast((e as Error).message))}>Allow</Button>}
-        />
-      )}
-      {(access || books.length > 0) && (
-        <>
-          {!access && <Divider />}
-          <Row
-            title="Use libraries in answers"
-            description="Searched on this phone for every question, even when the laptop's AI answers"
-            left={(p) => <List.Icon {...p} icon="bookshelf" />}
-            right={(p) => <Switch style={p.style} value={settings.useLibraries} onValueChange={(v) => updateSettings({ useLibraries: v })} />}
+  const fileIcon = (b: LibraryBook) =>
+    b.problem ? 'alert-circle-outline' : b.pending ? 'progress-clock' : FILE_ICONS[b.format] ?? 'file-outline';
+
+  const rows: React.ReactNode[] = [];
+  if (!access) {
+    rows.push(
+      <Row
+        key="allow"
+        title="Allow access to libraries"
+        description={'Answer from your own PDFs, ebooks and documents, and from Kiwix libraries such as Wikipedia. Needs "All files access".'}
+        left={(p) => <List.Icon {...p} icon="folder-key-outline" />}
+        right={(p) => <Button mode="contained-tonal" compact style={p.style} onPress={() => allowLibraries().catch((e) => onToast((e as Error).message))}>Allow</Button>}
+      />,
+    );
+  }
+  if (access || books.length > 0) {
+    rows.push(
+      <Row
+        key="use"
+        title="Use libraries in answers"
+        description={phone ? "Searched on this phone for every question, even when the laptop's AI answers" : 'Searched on this computer for every question'}
+        left={(p) => <List.Icon {...p} icon="bookshelf" />}
+        right={(p) => (
+          <Switch
+            style={p.style}
+            value={settings.useLibraries}
+            onValueChange={async (v) => {
+              await updateSettings({ useLibraries: v });
+              if (v) refreshLibraries(); // reads any files added while it was off
+            }}
           />
-        </>
-      )}
-      {books.map((b) => (
-        <View key={b.path}>
-          <Divider />
-          <Row
-            title={b.title}
-            description={describeBook(b, formatSize(b.size))}
-            left={(p) => <List.Icon {...p} icon={b.problem ? 'alert-circle-outline' : 'book-open-page-variant-outline'} />}
-            right={(p) => (
-              <IconButton
-                icon="trash-can-outline"
-                style={[styles.iconAction, p.style]}
-                iconColor={theme.colors.onSurfaceVariant}
-                accessibilityLabel={`Delete ${b.title}`}
-                onPress={async () => {
-                  if (await confirm(`Delete ${b.title}?`, `This deletes the file and frees ${formatSize(b.size)}. You can download it again from library.kiwix.org.`)) {
-                    await removeLibrary(b.path).catch((e) => onToast((e as Error).message));
-                  }
-                }}
-              />
-            )}
+        )}
+      />,
+    );
+  }
+  if (openLibraryFolder && folder) {
+    rows.push(
+      <Row
+        key="folder"
+        title="Library folder"
+        description={folder}
+        left={(p) => <List.Icon {...p} icon="folder-outline" />}
+        right={(p) => <Button mode="contained-tonal" compact style={p.style} onPress={() => openLibraryFolder().catch((e) => onToast((e as Error).message))}>Open</Button>}
+      />,
+    );
+  }
+  for (const b of kiwix) {
+    rows.push(
+      <Row
+        key={b.path}
+        title={b.title}
+        description={describeBook(b, formatSize(b.size))}
+        left={(p) => <List.Icon {...p} icon={b.problem ? 'alert-circle-outline' : 'book-open-page-variant-outline'} />}
+        right={phone ? (p) => ( // the laptop only lists Kiwix libraries (it can't read them yet), so they can't be deleted there
+          <IconButton
+            icon="trash-can-outline"
+            style={[styles.iconAction, p.style]}
+            iconColor={theme.colors.onSurfaceVariant}
+            accessibilityLabel={`Delete ${b.title}`}
+            onPress={async () => {
+              if (await confirm(`Delete ${b.title}?`, `This deletes the file and frees ${formatSize(b.size)}. You can download it again from library.kiwix.org.`)) {
+                await removeLibrary(b.path).catch((e) => onToast((e as Error).message));
+              }
+            }}
           />
-        </View>
-      ))}
-      {elsewhere.length > 0 && (
-        <>
-          <Divider />
-          <Row
-            title={fromKiwix ? `Move ${elsewhere.length === 1 ? 'a library' : `${elsewhere.length} libraries`} from Kiwix` : `Move ${elsewhere.length === 1 ? 'a library' : `${elsewhere.length} libraries`} into Aislet`}
-            description={`${names}. They're moved, not copied, so no extra space is used.`}
-            left={(p) => <List.Icon {...p} icon="folder-move-outline" />}
-            right={(p) => (
-              <Button
-                mode="contained-tonal"
-                compact
-                style={p.style}
-                loading={moving}
-                disabled={moving}
-                onPress={async () => {
-                  const ok = await confirm(
-                    `Move ${elsewhere.length === 1 ? elsewhere[0].title : `${elsewhere.length} libraries`}?`,
-                    `They'll be in ${LIBRARY_FOLDER} on your phone. ${fromKiwix ? "Kiwix won't see them afterwards, and you can uninstall Kiwix without losing them." : 'Other apps can still open them there.'}`,
-                    'Move',
-                  );
-                  if (!ok) return;
-                  setMoving(true);
-                  try {
-                    onToast(await moveLibraries());
-                  } catch (e) {
-                    onToast((e as Error).message);
-                  } finally {
-                    setMoving(false);
-                  }
-                }}
-              >
-                Move
-              </Button>
-            )}
-          />
-        </>
-      )}
-      {access && books.length === 0 && elsewhere.length === 0 && (
-        <>
-          <Divider />
-          <Row
-            title="No libraries yet"
-            description={`Download a .zim file from library.kiwix.org, such as Wikipedia or WikiMed, and put it in ${LIBRARY_FOLDER} on your phone.`}
-            left={(p) => <List.Icon {...p} icon="book-plus-outline" />}
-          />
-        </>
-      )}
-    </>
-  );
+        ) : undefined}
+      />,
+    );
+  }
+  // Your own files have no delete button: Aislet only reads them.
+  for (const b of own.slice(0, SHOWN_FILES)) {
+    rows.push(
+      <Row
+        key={b.path}
+        title={b.title}
+        description={describeBook(b, formatSize(b.size), reading)}
+        left={(p) => <List.Icon {...p} icon={fileIcon(b)} color={b.problem ? theme.colors.error : p.color} />}
+      />,
+    );
+  }
+  if (more > 0) {
+    rows.push(
+      <Row
+        key="more"
+        title={`${more.toLocaleString('en-GB')} more ${more === 1 ? 'file' : 'files'}`}
+        description={reading ? 'Reading…' : 'Searched like the ones above'}
+        left={(p) => <List.Icon {...p} icon="file-multiple-outline" />}
+      />,
+    );
+  }
+  if (skipped > 0) {
+    rows.push(
+      <Row
+        key="skipped"
+        title={`${skipped.toLocaleString('en-GB')} ${skipped === 1 ? "file wasn't" : "files weren't"} read`}
+        description="There are too many files in the library folder. Move some to another folder."
+        left={(p) => <List.Icon {...p} icon="alert-circle-outline" color={theme.colors.error} />}
+      />,
+    );
+  }
+  if (problem) {
+    rows.push(
+      <Row
+        key="problem"
+        title="Your files couldn't be read"
+        description={problem}
+        left={(p) => <List.Icon {...p} icon="alert-circle-outline" color={theme.colors.error} />}
+        right={(p) => <Button mode="contained-tonal" compact style={p.style} onPress={() => refreshLibraries()}>Try again</Button>}
+      />,
+    );
+  }
+  if (elsewhere.length > 0) {
+    rows.push(
+      <Row
+        key="move"
+        title={fromKiwix ? `Move ${elsewhere.length === 1 ? 'a library' : `${elsewhere.length} libraries`} from Kiwix` : `Move ${elsewhere.length === 1 ? 'a library' : `${elsewhere.length} libraries`} into Aislet`}
+        description={`${names}. They're moved, not copied, so no extra space is used.`}
+        left={(p) => <List.Icon {...p} icon="folder-move-outline" />}
+        right={(p) => (
+          <Button
+            mode="contained-tonal"
+            compact
+            style={p.style}
+            loading={moving}
+            disabled={moving}
+            onPress={async () => {
+              const ok = await confirm(
+                `Move ${elsewhere.length === 1 ? elsewhere[0].title : `${elsewhere.length} libraries`}?`,
+                `They'll be in ${LIBRARY_FOLDER} on your phone. ${fromKiwix ? "Kiwix won't see them afterwards, and you can uninstall Kiwix without losing them." : 'Other apps can still open them there.'}`,
+                'Move',
+              );
+              if (!ok) return;
+              setMoving(true);
+              try {
+                onToast(await moveLibraries());
+              } catch (e) {
+                onToast((e as Error).message);
+              } finally {
+                setMoving(false);
+              }
+            }}
+          >
+            Move
+          </Button>
+        )}
+      />,
+    );
+  }
+  if (access && books.length === 0 && elsewhere.length === 0 && !problem) {
+    rows.push(
+      <Row
+        key="empty"
+        title="No libraries yet"
+        description={phone
+          ? `Put your own PDFs, ebooks (EPUB), text or web pages in ${LIBRARY_FOLDER} on your phone. Kiwix libraries such as Wikipedia (.zim files from library.kiwix.org) go there too.`
+          : 'Put your own PDFs, ebooks (EPUB), text or web pages in the library folder.'}
+        left={(p) => <List.Icon {...p} icon="book-plus-outline" />}
+      />,
+    );
+  }
+  return <>{rows.map((row, i) => <View key={i}>{i > 0 && <Divider />}{row}</View>)}</>;
 }
 
 /** PC: a QR code for the phone's camera, and the address and code to type in instead. */
@@ -824,7 +905,7 @@ export function SettingsView() {
         </Section>
 
         {libraries.supported && (
-          <Section title="Libraries" footer="Passages that match your question go to the AI, which says which article it used.">
+          <Section title="Libraries" footer="Passages that match your question go to the AI, which says which file or article it used. Aislet only reads your own files: it never changes, moves or deletes them.">
             <Libraries onToast={setToast} />
           </Section>
         )}

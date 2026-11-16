@@ -12,7 +12,9 @@ export function confirm(title: string, message: string, action = 'Delete'): Prom
 }
 
 export function formatSize(bytes: number): string {
-  return bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.round(bytes / 1e6)} MB`;
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
+  if (bytes >= 1e6) return `${Math.round(bytes / 1e6)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1e3))} KB`; // your own notes and documents can be small
 }
 
 export function formatWhen(ts: number): string {

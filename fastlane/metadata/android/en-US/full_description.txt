@@ -4,7 +4,7 @@ Aislet (say "eye-let") is a private AI assistant that runs on your own devices. 
 <ul>
 <li>Chats offline with an AI model on your phone (Qwen3.5 4B, downloaded once on Wi-Fi).</li>
 <li>Reads photos, PDFs and text files, and takes shares from any app.</li>
-<li>Answers from offline Kiwix libraries (.zim files) such as Wikipedia, and names the article it used.</li>
+<li>Answers from your own PDFs, ebooks and documents, and from offline Kiwix libraries such as Wikipedia, and names the file or article it used. It only reads your files, never changes them.</li>
 <li>Learns lasting facts about you, which you can see, edit or forget.</li>
 <li>Pairs with your computer by QR code. At home the phone uses the computer's bigger AI (through Ollama), and memory and notes stay in sync.</li>
 <li>Talk instead of typing, with the phone's offline speech recognition.</li>
@@ -16,7 +16,7 @@ The internet is only used to download AI models. Chats, memory, notes, photos an
 
 <b>Permissions</b>
 <ul>
-<li>All files access (optional): reads Kiwix libraries in Aislet/Libraries, and moves them out of Kiwix's folder without copying them. You switch it on yourself in Settings.</li>
+<li>All files access (optional): reads your own files and Kiwix libraries in Aislet/Libraries, and moves Kiwix libraries out of Kiwix's folder without copying them. You switch it on yourself in Settings.</li>
 <li>Microphone (optional): voice typing.</li>
 <li>Internet: model downloads, and reaching your own computer on your home Wi-Fi.</li>
 </ul>
