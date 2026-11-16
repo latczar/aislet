@@ -227,6 +227,57 @@ check(took < 30 and len(hostile_books) == 5, f"hostile files are read or refused
 check(any("Start of the made-up page" in h["text"] for h in hostile.search("made up page start", 3)),
       "text before an unclosed script is still found")
 
+# ---- An EPUB's list of files is checked before the zip is opened (opening reads the whole list) ----
+LISTS = TMP / "Lists"
+LISTS.mkdir()
+
+
+def claims(entries: int, central: int, zip64: bool = False) -> bytes:
+    """A small real EPUB whose end record claims a different number of files or size of list."""
+    data = bytearray(epub("Claims", [("Only", "text")]))
+    at = data.rfind(b"PK\x05\x06")
+    data[at + 8:at + 12] = entries.to_bytes(2, "little") * 2
+    data[at + 12:at + 16] = central.to_bytes(4, "little")
+    if zip64:
+        data[at:at] = b"PK\x06\x07" + bytes(16)
+    return bytes(data)
+
+
+(LISTS / "Many.epub").write_bytes(claims(60_000, 3_000_000))
+(LISTS / "Long list.epub").write_bytes(claims(10, 50_000_000))
+(LISTS / "Zip64.epub").write_bytes(claims(10, 100, zip64=True))
+(LISTS / "No end.epub").write_bytes(b"PK\x03\x04" + b"x" * 100)
+lists = {Path(b["path"]).name: b.get("problem", "")
+         for b in library.FileLibrary(TMP / "appdata" / "lists.db", [LISTS], hub.read_pdf_pages).index()["books"]}
+check("more than 5,000 files" in lists["Many.epub"], "an EPUB claiming too many files is refused before opening", lists["Many.epub"])
+check("more than 5,000 files" in lists["Long list.epub"], "an EPUB with a huge list of files is refused before opening", lists["Long list.epub"])
+check(lists["Zip64.epub"] == library.NOT_EPUB and lists["No end.epub"] == library.NOT_EPUB, "ZIP64 and broken EPUBs are refused", str(lists))
+
+# ---- A file that stopped the hub part-way is reported, not read again on every refresh ----
+STOP = TMP / "Stop"
+STOP.mkdir()
+(STOP / "Heavy.txt").write_text("The made-up word quorlix is in here.", encoding="utf-8")
+real_read = library.read_file
+
+
+def stops(*args, **kwargs):
+    raise SystemExit("the hub stopped")  # like the process ending part-way through reading
+
+
+library.read_file = stops
+try:
+    library.FileLibrary(TMP / "appdata" / "stop.db", [STOP], hub.read_pdf_pages).index()
+except SystemExit:
+    pass
+reads: list[int] = []
+library.read_file = lambda *a, **k: reads.append(1) or real_read(*a, **k)
+again = library.FileLibrary(TMP / "appdata" / "stop.db", [STOP], hub.read_pdf_pages)  # the hub starting again
+stopped = again.index()["books"][0]
+check(stopped.get("problem") == library.STOPPED and not reads, "a file that stopped the hub isn't read again", str(stopped))
+(STOP / "Heavy.txt").write_text("Changed: the made-up word quorlix is fine now.", encoding="utf-8")
+check(again.index()["books"][0].get("searchable") and reads, "once the file changes, it's read again")
+library.read_file = real_read
+
 failed = [n for ok, n in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")
 sys.exit(1 if failed else 0)

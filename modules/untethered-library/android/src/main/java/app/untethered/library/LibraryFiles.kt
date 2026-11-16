@@ -52,6 +52,8 @@ class LibraryFiles(private val context: Context) {
     const val MAX_BOOK_FILE = 300L shl 20
     const val MAX_PAGES = 3000
     const val MAX_ENTRIES = 5000
+    const val MAX_CENTRAL = 4 shl 20 // bytes of an EPUB's list of files: plenty for MAX_ENTRIES names
+    const val MAX_SCRATCH = 256L shl 20 // temporary space a PDF may use while it's read
     const val MAX_UNPACKED = 300L shl 20
     const val MAX_ENTRY = 30 shl 20
     const val MAX_CHARS = 30_000_000
@@ -74,6 +76,10 @@ class LibraryFiles(private val context: Context) {
     const val TOO_SLOW = "This file took too long to read. It may be very large or damaged."
     const val UNREADABLE = "This file couldn't be opened. Check it isn't still downloading."
     const val DAMAGED = "This file couldn't be read. It may be damaged."
+    const val STOPPED = "Aislet stopped while reading this file. It may be damaged, or too big for this phone."
+    // A file being read now. Saved before reading starts, so if Android stops the app part-way, the file is
+    // shown with STOPPED afterwards instead of being read again (and stopping the app again) on every refresh.
+    const val READING = "<reading>"
 
     fun count(n: Number): String = String.format(Locale.ROOT, "%,d", n)
     fun tooBig(limit: Long) = "This file is too big to read (over ${count(limit shr 20)} MB)."
@@ -85,6 +91,7 @@ class LibraryFiles(private val context: Context) {
 
   private val indexLock = Any()
   @Volatile private var visible: Set<Long> = emptySet() // documents in the last look at the folders: only these are searched
+  @Volatile private var readingNow: String? = null // the file being read now, if any
   private var pdfReady = false
   private var db: SQLiteDatabase? = null
   private var reader: ExecutorService = Executors.newSingleThreadExecutor()
@@ -211,6 +218,7 @@ class LibraryFiles(private val context: Context) {
           book["title"] = row.title
           book["articles"] = row.parts
           when {
+            row.problem == READING -> if (readingNow == f.file.absolutePath) book["pending"] = true else book["problem"] = STOPPED
             row.problem.isNotEmpty() -> book["problem"] = row.problem
             row.sameAs != null -> book["sameAs"] = titles[row.sameAs] ?: "another file"
             else -> { book["searchable"] = true; seen.add(row.id) }
@@ -241,9 +249,7 @@ class LibraryFiles(private val context: Context) {
       }
       val known = rows(d).keys
       for ((path, f) in here) {
-        if (path in known) continue
-        d.beginTransaction()
-        try { readOne(d, f); d.setTransactionSuccessful() } finally { d.endTransaction() }
+        if (path !in known) readOne(d, f)
       }
     }
     return books(roots)
@@ -265,7 +271,14 @@ class LibraryFiles(private val context: Context) {
     var digest = ""
     var sameAs: Long? = null
     var sections: List<Pair<String, String>> = emptyList()
+    var id: Long? = null
     val limit = if (format == "pdf" || format == "epub") MAX_BOOK_FILE else MAX_TEXT_FILE
+    fun values() = ContentValues().apply {
+      put("path", f.file.absolutePath); put("size", f.size); put("modified", f.modified); put("hash", digest)
+      put("format", format); put("title", title); put("parts", parts); put("problem", problem)
+      val twin = sameAs
+      if (twin != null) put("same_as", twin) else putNull("same_as")
+    }
     try {
       if (f.size == 0L) throw Problem(EMPTY)
       if (f.size > limit) throw Problem(tooBig(limit))
@@ -274,6 +287,10 @@ class LibraryFiles(private val context: Context) {
         if (it.moveToFirst()) { sameAs = it.getLong(0); parts = it.getInt(1) } // the same file is already here: search it once
       }
       if (sameAs == null) {
+        problem = READING
+        id = d.insertOrThrow("docs", null, values()) // saved now, outside any transaction (see READING)
+        problem = ""
+        readingNow = f.file.absolutePath
         val read = readWithLimit(f.file, format)
         title = read.first.ifBlank { title }
         parts = read.second
@@ -288,21 +305,25 @@ class LibraryFiles(private val context: Context) {
       problem = "This file is too big to read on this phone."
     } catch (e: Throwable) { // anything else odd in one file never stops the others being read
       problem = DAMAGED
+    } finally {
+      readingNow = null
     }
-    val values = ContentValues().apply {
-      put("path", f.file.absolutePath); put("size", f.size); put("modified", f.modified); put("hash", digest)
-      put("format", format); put("title", title); put("parts", parts); put("problem", problem)
-      val twin = sameAs
-      if (twin != null) put("same_as", twin) else putNull("same_as")
-    }
-    val id = d.insertOrThrow("docs", null, values)
-    var kept = 0L
-    for ((section, text) in sections) {
-      for (passage in splitPassages(text)) {
-        if (kept + passage.length > MAX_CHARS) return
-        kept += passage.length
-        d.execSQL("INSERT INTO passages(doc, section, text) VALUES (?, ?, ?)", arrayOf(id, section, passage))
+    d.beginTransaction()
+    try {
+      val saved = id
+      val doc = if (saved != null) saved.also { d.update("docs", values(), "id = ?", arrayOf(it.toString())) }
+        else d.insertOrThrow("docs", null, values())
+      var kept = 0L
+      fill@ for ((section, text) in sections) {
+        for (passage in splitPassages(text)) {
+          if (kept + passage.length > MAX_CHARS) break@fill
+          kept += passage.length
+          d.execSQL("INSERT INTO passages(doc, section, text) VALUES (?, ?, ?)", arrayOf(doc, section, passage))
+        }
       }
+      d.setTransactionSuccessful()
+    } finally {
+      d.endTransaction()
     }
   }
 
@@ -360,7 +381,7 @@ class LibraryFiles(private val context: Context) {
       pdfReady = true
     }
     val document = try {
-      PDDocument.load(file, MemoryUsageSetting.setupTempFileOnly()) // works from a temporary file, not memory
+      PDDocument.load(file, MemoryUsageSetting.setupTempFileOnly(MAX_SCRATCH)) // a temporary file, not memory, and capped
     } catch (e: InvalidPasswordException) {
       throw Problem(PDF_LOCKED)
     } catch (e: Throwable) {
@@ -398,6 +419,27 @@ class LibraryFiles(private val context: Context) {
     }
   }
 
+  /**
+   * An EPUB's file count and the size of its list of files, from the zip's last bytes, before it's opened: opening a
+   * zip reads its whole list, which a hostile file can make millions of entries long. Same as pc/library.py.
+   */
+  private fun checkZipList(file: File) {
+    val size = file.length()
+    val tailLength = minOf(size, 22L + 65535L).toInt()
+    val tail = ByteArray(tailLength)
+    java.io.RandomAccessFile(file, "r").use { f ->
+      f.seek(size - tailLength)
+      f.readFully(tail)
+    }
+    var at = tailLength - 22
+    while (at >= 0 && !(tail[at] == 'P'.code.toByte() && tail[at + 1] == 'K'.code.toByte() && tail[at + 2] == 5.toByte() && tail[at + 3] == 6.toByte())) at--
+    if (at < 0) throw Problem(NOT_EPUB)
+    fun le(off: Int, n: Int): Long = (0 until n).fold(0L) { acc, i -> acc or ((tail[off + i].toLong() and 0xff) shl (8 * i)) }
+    // A ZIP64 record (for zips over 4 GB or 65,535 files) can claim any size: an EPUB never needs one.
+    if (at >= 20 && le(at - 20, 4) == 0x07064b50L) throw Problem(NOT_EPUB)
+    if (le(at + 10, 2) > MAX_ENTRIES || le(at + 12, 4) > MAX_CENTRAL) throw Problem("This ebook has more than ${count(MAX_ENTRIES)} files inside.")
+  }
+
   private fun readEpub(file: File, started: Long): Pair<String, List<Pair<String, String>>> {
     file.inputStream().use { input ->
       val head = ByteArray(4)
@@ -405,6 +447,7 @@ class LibraryFiles(private val context: Context) {
         throw Problem(NOT_EPUB)
       }
     }
+    checkZipList(file)
     val zip = try { ZipFile(file) } catch (e: Exception) { throw Problem(NOT_EPUB) }
     zip.use { z ->
       val entries = try { z.entries().toList() } catch (e: Exception) { throw Problem(NOT_EPUB) }
