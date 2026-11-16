@@ -7,7 +7,7 @@ export const voiceSupported = false;
 export function useVoice(_onText: (text: string, final: boolean) => void, _onEnd?: (failed: boolean) => void) {
   return {
     listening: false, error: null as string | null, clearError: () => undefined,
-    start: async () => false, stop: () => undefined, abort: () => undefined,
+    prepare: async () => false, start: async () => false, stop: () => undefined, abort: () => undefined,
   };
 }
 

@@ -372,13 +372,17 @@ function Composer({ ready, incoming, onIncomingTaken }: ComposerProps) {
     if (note) setProblem(note);
   }
 
-  const startHandsFree = () => {
-    if (!ready || busy || phase.current !== 'off') return;
+  const preparing = useRef(false);
+  const startHandsFree = async () => {
+    if (!ready || busy || phase.current !== 'off' || preparing.current) return;
     tap();
     Keyboard.dismiss();
     setProblem(null);
-    voice.clearError();
-    listen();
+    // The microphone prompt (first time only) pauses the app, which ends hands-free, so ask before starting.
+    preparing.current = true;
+    const ok = await voice.prepare();
+    preparing.current = false;
+    if (ok && phase.current === 'off') listen();
   };
 
   // The answer is finished: read it aloud, then listen again. A failed reply ends hands-free (its error shows).

@@ -87,10 +87,10 @@ export function useVoice(onText: (text: string, final: boolean) => void, onEnd?:
     );
   });
 
-  /** Start listening. False when it couldn't start; the reason is in `error`. */
-  const start = async (): Promise<boolean> => {
+  /** Ask for the microphone if needed and check the phone can listen offline. False, with the reason in
+   * `error`, when it can't. (Android's permission prompt pauses the app, so callers that stop on a pause ask first.) */
+  const prepare = async (): Promise<boolean> => {
     setError(null);
-    failed.current = false;
     const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
     if (!permission.granted) {
       setError('Allow microphone access to talk to your assistant.');
@@ -101,6 +101,13 @@ export function useVoice(onText: (text: string, final: boolean) => void, onEnd?:
       setError("This phone can't recognise speech offline, so voice is off to keep what you say on the phone. Typing works as normal.");
       return false;
     }
+    return true;
+  };
+
+  /** Start listening. False when it couldn't start; the reason is in `error`. */
+  const start = async (): Promise<boolean> => {
+    failed.current = false;
+    if (!(await prepare())) return false;
     lang.current = await listeningLanguage();
     ExpoSpeechRecognitionModule.start({
       lang: lang.current,
@@ -115,5 +122,5 @@ export function useVoice(onText: (text: string, final: boolean) => void, onEnd?:
   const stop = () => ExpoSpeechRecognitionModule.stop(); // keeps what was heard so far
   const abort = () => ExpoSpeechRecognitionModule.abort(); // drops it
 
-  return { listening, error, clearError: () => setError(null), start, stop, abort };
+  return { listening, error, clearError: () => setError(null), prepare, start, stop, abort };
 }
