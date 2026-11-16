@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="aislet_widget_name">Aislet</string>
+  <string name="aislet_widget_description">Ask, or start talking hands-free, in one tap.</string>
+  <string name="aislet_widget_ask">Ask Aislet</string>
+  <string name="aislet_widget_talk">Talk hands-free</string>
+</resources>

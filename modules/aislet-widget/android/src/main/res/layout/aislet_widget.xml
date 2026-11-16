@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- RemoteViews: only plain layouts and views. The whole bar opens a new chat; the round button starts hands-free. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/aislet_widget_ask"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:minHeight="48dp"
+  android:background="@drawable/aislet_widget_bar"
+  android:gravity="center_vertical"
+  android:orientation="horizontal"
+  android:paddingStart="14dp"
+  android:paddingEnd="6dp">
+
+  <ImageView
+    android:layout_width="22dp"
+    android:layout_height="22dp"
+    android:importantForAccessibility="no"
+    android:src="@drawable/aislet_widget_mark" />
+
+  <TextView
+    android:layout_width="0dp"
+    android:layout_height="wrap_content"
+    android:layout_marginStart="12dp"
+    android:layout_weight="1"
+    android:ellipsize="end"
+    android:maxLines="1"
+    android:text="@string/aislet_widget_ask"
+    android:textColor="#E4E4E7"
+    android:textSize="16sp" />
+
+  <ImageView
+    android:id="@+id/aislet_widget_talk"
+    android:layout_width="40dp"
+    android:layout_height="40dp"
+    android:background="@drawable/aislet_widget_talk_bg"
+    android:contentDescription="@string/aislet_widget_talk"
+    android:padding="9dp"
+    android:src="@drawable/aislet_widget_talk" />
+</LinearLayout>

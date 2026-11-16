@@ -1752,6 +1752,60 @@ def check_actions() -> str:
             print('  note: could not find the actions test chat to delete', file=sys.stderr)
 
 
+WIDGET = 'app.aislet.widget.AskWidget'
+
+
+def widget_count() -> int:
+    """How many Aislet widgets are on the home screen (the instances, not the provider entry)."""
+    out = adb('shell', 'dumpsys appwidget', timeout=40, check=False)
+    return sum(1 for line in out.splitlines() if 'provider=ProviderId{' in line and f'{PKG}/{WIDGET}' in line)
+
+
+def check_widget() -> str:
+    """The widget is registered and Settings offers it to the home screen (cancelled there); links that aren't the widget's own do nothing."""
+    receivers = adb('shell', f'cmd package query-receivers --components -a android.appwidget.action.APPWIDGET_UPDATE -p {PKG}', check=False)
+    if WIDGET not in receivers:
+        raise CheckFailed('the widget is not registered with Android')
+    go_tab('Settings')
+    scroll_to_top()
+    row = scroll_to('the Home-screen widget row', text='Home-screen widget')
+    # Links any app could send: none is the widget's own, so none may start listening or open a new chat.
+    for url in ('aislet://talk', 'aislet://new', f"aislet://talk?k={'0' * 32}", f"aislet://new?k={'ab' * 16}&x=1", 'aislet://talk/?k='):
+        open_link(url)
+        time.sleep(1.5)
+        if foreground() != PKG:
+            raise CheckFailed(f'{url} left Aislet')
+        nodes = screen()
+        if find(nodes, desc='End hands-free'):
+            raise CheckFailed(f'{url} started hands-free')
+        if not find(nodes, text='Home-screen widget'):
+            raise CheckFailed(f'{url} changed the screen (it should be ignored)')
+    # Add asks the home screen, which shows its own prompt. Back cancels it, so nothing is added.
+    before = widget_count()
+    row = wait_for('the Home-screen widget row', timeout=5, text='Home-screen widget')
+    add = [n for n in find(screen(), text='Add') if abs(n.cy - row.cy) < row.height * 2]
+    if not add:
+        raise CheckFailed('no Add button on the Home-screen widget row')
+    tap(add[0])
+    end = time.time() + 8
+    while not any(l in foreground() for l in LAUNCHERS):
+        if time.time() > end:
+            raise CheckFailed(f'the home screen did not offer to add the widget ({foreground() or "unknown"} is in front)')
+        time.sleep(0.5)
+    time.sleep(1)
+    offered = ' '.join(n.text for n in screen() if n.text)
+    key(4)
+    time.sleep(1.5)
+    if foreground() != PKG:
+        safe_front('opening the app')
+        shell(f'am start -W -n {PKG}/.MainActivity')
+    if widget_count() != before:
+        raise CheckFailed('a widget was added although the prompt was cancelled')
+    if 'Aislet' not in offered:
+        raise CheckFailed(f'the home screen prompt did not show Aislet: {offered[:120]!r}')
+    return 'registered; offered to the home screen and cancelled there; 5 links without the right token ignored'
+
+
 def mic_allowed() -> bool:
     return 'android.permission.RECORD_AUDIO: granted=true' in shell(f'dumpsys package {PKG}')
 
@@ -1866,6 +1920,7 @@ CHECKS = {
     'backup': check_backup,
     'voice_language': check_voice_language,
     'hands_free': check_hands_free,
+    'widget': check_widget,
     'privacy': check_privacy,
     'layout': check_layout,
     'library': check_library,

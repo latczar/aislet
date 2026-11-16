@@ -24,6 +24,7 @@ import { Lead, Row } from './rows';
 import { SHORTCUTS } from './shortcuts';
 import { FONT, STATUS_COLOURS } from './theme';
 import { offlineLanguages, voiceSupported } from './voice';
+import { addWidget, widgetSupported } from '../widget';
 
 function Section({ title, children, footer }: { title: string; children: React.ReactNode; footer?: string }) {
   const theme = useTheme();
@@ -748,6 +749,29 @@ function VoiceLanguage() {
   );
 }
 
+/** Phone: add the home-screen widget. The home screen asks first, so nothing is added without a yes there. */
+function WidgetRow({ onToast }: { onToast: (message: string) => void }) {
+  return (
+    <Row
+      title="Home-screen widget"
+      description="Ask, or start talking hands-free, in one tap."
+      left={(p) => <List.Icon {...p} icon="widgets-outline" />}
+      right={(p) => (
+        <Button
+          mode="contained-tonal" compact style={p.style}
+          onPress={async () => {
+            if (!(await addWidget().catch(() => false))) {
+              onToast("Your home screen can't add it from here. Touch and hold the home screen, tap Widgets, then find Aislet.");
+            }
+          }}
+        >
+          Add
+        </Button>
+      )}
+    />
+  );
+}
+
 /** Exactly what goes online, and what never does. Keep this true: check it whenever something new uses the network. */
 const PRIVACY = Platform.OS === 'web'
   ? [
@@ -850,6 +874,12 @@ export function SettingsView() {
             footer="Talking uses your phone's offline speech recognition, so it works without the internet. To add a language, download its offline pack in the phone's voice input settings."
           >
             <VoiceLanguage />
+          </Section>
+        )}
+
+        {widgetSupported && (
+          <Section title="Widget">
+            <WidgetRow onToast={setToast} />
           </Section>
         )}
 

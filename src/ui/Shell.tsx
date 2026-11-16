@@ -16,6 +16,7 @@ import { KEYS, save } from '../storage';
 import { useKeyboardInset } from './keyboard';
 import { type Incoming, useIncomingShare } from './share';
 import { focusSoon, useShortcuts } from './shortcuts';
+import { type WidgetAction, useWidgetLinks } from '../widget';
 import { FONT } from './theme';
 
 type ViewKey = 'chat' | 'memory' | 'notes' | 'settings';
@@ -54,6 +55,23 @@ export function Shell() {
   }, [shared, busy, newChat]);
   const takeIncoming = useCallback(() => setIncoming(null), []);
 
+  // The home-screen widget opens a new chat, ready to type in or, from its round button, talking hands-free.
+  const [widget, setWidget] = useState<WidgetAction | null>(null);
+  const [talkRequest, setTalkRequest] = useState(0);
+  useWidgetLinks((action) => {
+    if (busy) stop();
+    setWidget(action);
+  });
+  useEffect(() => {
+    if (!widget || busy) return;
+    newChat();
+    setView('chat');
+    setChatsOpen(false);
+    setWidget(null);
+    if (widget === 'talk') setTalkRequest(Date.now());
+    else focusSoon('message');
+  }, [widget, busy, newChat]);
+
   // Remember the screen, so coming back to the app opens it again.
   useEffect(() => {
     save(KEYS.lastView, view).catch(() => undefined);
@@ -71,7 +89,7 @@ export function Shell() {
   }, [snapshot]);
 
   const content =
-    view === 'chat' ? <ChatView onOpenSettings={() => setView('settings')} incoming={incoming} onIncomingTaken={takeIncoming} />
+    view === 'chat' ? <ChatView onOpenSettings={() => setView('settings')} incoming={incoming} onIncomingTaken={takeIncoming} talkRequest={talkRequest} />
       : view === 'memory' ? <MemoryView onStartInterview={() => setView('chat')} />
         : view === 'notes' ? <NotesView />
           : <SettingsView />;

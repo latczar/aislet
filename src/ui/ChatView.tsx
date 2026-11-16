@@ -300,7 +300,7 @@ const UserMessage = React.memo(function UserMessage({ message: m, onCopied }: { 
 
 const NEEDS_LAPTOP = 'Reading PDFs needs your laptop. Connect it in Settings → Home, or attach a text file.';
 
-type ComposerProps = { ready: boolean; incoming?: Incoming | null; onIncomingTaken?: () => void };
+type ComposerProps = { ready: boolean; incoming?: Incoming | null; onIncomingTaken?: () => void; talkRequest?: number };
 
 // Hands-free: listen → send what was heard → read the answer aloud → listen again. The microphone is never on
 // while an answer is being written or read aloud, and it all stops after a quiet moment, a tap on End, or
@@ -312,7 +312,7 @@ const HANDS_FREE_HINT: Record<HandsFree, string> = {
 };
 const HANDS_FREE_ICON: Record<HandsFree, string> = { off: 'waveform', listening: 'microphone', thinking: 'dots-horizontal', speaking: 'volume-high' };
 
-function Composer({ ready, incoming, onIncomingTaken }: ComposerProps) {
+function Composer({ ready, incoming, onIncomingTaken, talkRequest = 0 }: ComposerProps) {
   const theme = useTheme();
   const { busy, send, stop, hub, settings, status, chat, error } = useStore();
   const [text, setText] = useState('');
@@ -412,6 +412,20 @@ function Composer({ ready, incoming, onIncomingTaken }: ComposerProps) {
     if (shownChat.current !== chatId && phase.current !== 'thinking') endHandsFree();
     shownChat.current = chatId;
   }, [chatId]);
+  // The widget's round button: start hands-free once the AI is ready. If that takes more than half a minute,
+  // say so rather than starting to listen long after the tap.
+  const handledTalk = useRef(0);
+  useEffect(() => {
+    if (!talkRequest || handledTalk.current === talkRequest) return;
+    if (Date.now() - talkRequest > 30_000) {
+      handledTalk.current = talkRequest;
+      setProblem("Hands-free didn't start because the AI took a while to get ready. Tap Hands-free to start it now.");
+      return;
+    }
+    if (!ready || busy || phase.current !== 'off') return;
+    handledTalk.current = talkRequest;
+    startHandsFree();
+  }, [talkRequest, ready, busy]);
   useEffect(() => {
     const sub = AppState.addEventListener('change', (s) => { if (s !== 'active') endHandsFree(); });
     return () => {
@@ -646,9 +660,9 @@ function Composer({ ready, incoming, onIncomingTaken }: ComposerProps) {
   );
 }
 
-type ChatViewProps = { onOpenSettings: () => void; incoming?: Incoming | null; onIncomingTaken?: () => void };
+type ChatViewProps = { onOpenSettings: () => void; incoming?: Incoming | null; onIncomingTaken?: () => void; talkRequest?: number };
 
-export function ChatView({ onOpenSettings, incoming, onIncomingTaken }: ChatViewProps) {
+export function ChatView({ onOpenSettings, incoming, onIncomingTaken, talkRequest }: ChatViewProps) {
   const theme = useTheme();
   const { chat, busy, error, clearError, status, refreshStatus, noted, regenerate, notes, saveNote } = useStore();
   const scroll = useRef<ScrollViewInstance>(null);
@@ -728,7 +742,7 @@ export function ChatView({ onOpenSettings, incoming, onIncomingTaken }: ChatView
             <Button compact onPress={onOpenSettings}>Settings</Button>
           </View>
         )}
-        <Composer ready={ready} incoming={incoming} onIncomingTaken={onIncomingTaken} />
+        <Composer ready={ready} incoming={incoming} onIncomingTaken={onIncomingTaken} talkRequest={talkRequest} />
       </View>
       <Snackbar visible={!!toast} onDismiss={() => setToast(null)} duration={1500}>{toast ?? ''}</Snackbar>
     </View>

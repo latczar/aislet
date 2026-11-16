@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A one-row bar, 3 cells wide by default. It never updates by itself (updatePeriodMillis 0), so it costs no battery. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+  android:minWidth="180dp"
+  android:minHeight="40dp"
+  android:minResizeWidth="110dp"
+  android:minResizeHeight="40dp"
+  android:targetCellWidth="3"
+  android:targetCellHeight="1"
+  android:resizeMode="horizontal"
+  android:updatePeriodMillis="0"
+  android:initialLayout="@layout/aislet_widget"
+  android:previewLayout="@layout/aislet_widget"
+  android:description="@string/aislet_widget_description"
+  android:widgetCategory="home_screen" />

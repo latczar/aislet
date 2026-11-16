@@ -1,0 +1,7 @@
+{
+  "name": "aislet-widget",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Aislet's Android home-screen widget: ask, or start talking, in one tap.",
+  "license": "GPL-3.0-or-later"
+}
