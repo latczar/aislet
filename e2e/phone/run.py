@@ -1506,6 +1506,102 @@ def check_resume() -> str:
             print('  note: could not find the resume test chat to delete', file=sys.stderr)
 
 
+def mic_allowed() -> bool:
+    return 'android.permission.RECORD_AUDIO: granted=true' in shell(f'dumpsys package {PKG}')
+
+
+def delete_open_chat() -> None:
+    """Delete the chat that's open, found by the title in the chat header (for a chat the test started)."""
+    menu = wait_for('the Chats button', desc='Chats')
+    titles = [n for n in screen() if n.text and '·' not in n.text and n.y1 >= menu.y1 - 20 and n.y2 <= menu.y2 + 20
+              and n.x1 > menu.x2 and n.text != 'New chat']
+    if not titles:
+        return
+    title = titles[0].text
+    tap(menu)
+    time.sleep(1)
+    b = row_button(title, 'Delete chat')
+    if b:
+        tap_xy(b.cx, b.cy)
+        confirm_alert('Delete')
+    key(4)
+    time.sleep(0.8)
+
+
+def check_hands_free() -> str:
+    """Hands-free takes Send's place only while the box is empty; it listens, and stops on End, in the background and after silence."""
+    box = open_new_chat()
+    nodes = screen()
+    if not find(nodes, desc='Hands-free'):
+        raise CheckFailed('no Hands-free button while the message box is empty')
+    if find(nodes, desc='Send'):
+        raise CheckFailed('Send and Hands-free both show while the box is empty')
+    tap(box)
+    wait_keyboard(True)
+    type_text('E2E hands-free check')
+    time.sleep(0.6)
+    nodes = screen()
+    if find(nodes, desc='Hands-free') or not find(nodes, desc='Send'):
+        raise CheckFailed('typing should put Send in place of Hands-free')
+    clear_focused_field()
+    time.sleep(0.5)
+    hide_keyboard()
+    wait_for('Hands-free again after clearing the box', timeout=5, desc='Hands-free')
+    if not mic_allowed():
+        return 'Hands-free swaps with Send; the microphone is not allowed, so listening was not tried'
+
+    heard_nearby = False
+    try:
+        # End stops it, and the message box comes back.
+        tap(wait_for('the Hands-free button', desc='Hands-free'))
+        wait_for('hands-free listening', timeout=8, contains='Listening')
+        tap(wait_for('the End button', desc='End hands-free'))
+        wait_gone('the hands-free bar', timeout=5, desc='End hands-free')
+        if not editable(screen()):
+            raise CheckFailed('the message box did not come back after End')
+
+        # Going to the background stops it.
+        tap(wait_for('the Hands-free button', desc='Hands-free'))
+        wait_for('hands-free listening', timeout=8, contains='Listening')
+        key(3)
+        time.sleep(1.5)
+        safe_front('opening the app')
+        shell(f'am start -W -n {PKG}/.MainActivity')  # back to the same task, not a fresh start
+        wait_for('the chat after coming back', timeout=10, desc='Hands-free')
+        if find(screen(), desc='End hands-free'):
+            raise CheckFailed('hands-free was still on after the app went to the background')
+
+        # A quiet moment stops it, with a message saying why.
+        tap(wait_for('the Hands-free button', desc='Hands-free'))
+        wait_for('hands-free listening', timeout=8, contains='Listening')
+        end = time.time() + 25
+        while True:
+            nodes = screen()
+            if find(nodes, contains='no speech heard'):
+                quiet = 'stopped after silence with a message'
+                break
+            if find(nodes, contains='Thinking') or find(nodes, contains='Speaking'):
+                heard_nearby = True  # someone talked near the phone: stop, and remove the chat it started
+                quiet = 'heard speech nearby, so the silence stop was not checked'
+                break
+            if not find(nodes, desc='End hands-free'):
+                raise CheckFailed('hands-free ended after silence without saying why')
+            if time.time() > end:
+                raise CheckFailed('still listening after 25 s of quiet')
+            time.sleep(1)
+        return f'swaps with Send; End and the background stop it; {quiet}'
+    finally:
+        end_button = find(screen(), desc='End hands-free')
+        if end_button:
+            tap(end_button[0])
+        if heard_nearby:
+            stop = find(screen(), desc='Stop')
+            if stop:
+                tap(stop[0])
+            time.sleep(1)
+            delete_open_chat()
+
+
 CHECKS = {
     'launch': check_launch,
     'chat_typing': check_chat_typing,
@@ -1520,6 +1616,7 @@ CHECKS = {
     'haptics': check_haptics,
     'backup': check_backup,
     'voice_language': check_voice_language,
+    'hands_free': check_hands_free,
     'privacy': check_privacy,
     'layout': check_layout,
     'library': check_library,

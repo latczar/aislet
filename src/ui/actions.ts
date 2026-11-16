@@ -77,3 +77,8 @@ export function speak(text: string, onDone: () => void) {
 export function stopSpeaking() {
   Speech.stop();
 }
+
+/** Whether anything is being read aloud right now. */
+export async function isSpeaking(): Promise<boolean> {
+  return Speech.isSpeakingAsync().catch(() => false);
+}

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Animated, Image, Platform, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, TextInput,
+  Animated, AppState, Image, Keyboard, Platform, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, TextInput,
   type TextInputInstance, View, useWindowDimensions,
 } from 'react-native';
 import { ActivityIndicator, Button, Icon, IconButton, Menu, ProgressBar, Snackbar, Surface, Text, useTheme } from 'react-native-paper';
@@ -8,7 +8,7 @@ import { engine } from '../engine';
 import { hubExtract, localHub } from '../hub';
 import { useStore } from '../store';
 import type { Message } from '../types';
-import { copy, speak, stopSpeaking, tap } from './actions';
+import { copy, isSpeaking, speak, stopSpeaking, tap } from './actions';
 import { cameraSupported, pickDocument, pickPhoto, readBase64, readText } from './attach';
 import { formatSize } from './confirm';
 import { cancelDownload, startDownload, useDownload } from './downloads';
@@ -232,9 +232,19 @@ const NEEDS_LAPTOP = 'Reading PDFs needs your laptop. Connect it in Settings →
 
 type ComposerProps = { ready: boolean; incoming?: Incoming | null; onIncomingTaken?: () => void };
 
+// Hands-free: listen → send what was heard → read the answer aloud → listen again. The microphone is never on
+// while an answer is being written or read aloud, and it all stops after a quiet moment, a tap on End, or
+// when the app goes to the background.
+type HandsFree = 'off' | 'listening' | 'thinking' | 'speaking';
+const HANDS_FREE_LABEL: Record<HandsFree, string> = { off: '', listening: 'Listening…', thinking: 'Thinking…', speaking: 'Speaking…' };
+const HANDS_FREE_HINT: Record<HandsFree, string> = {
+  off: '', listening: 'Speak now. It stops when you go quiet.', thinking: 'Writing the answer.', speaking: 'It listens again when the answer ends.',
+};
+const HANDS_FREE_ICON: Record<HandsFree, string> = { off: 'waveform', listening: 'microphone', thinking: 'dots-horizontal', speaking: 'volume-high' };
+
 function Composer({ ready, incoming, onIncomingTaken }: ComposerProps) {
   const theme = useTheme();
-  const { busy, send, stop, hub, settings, status } = useStore();
+  const { busy, send, stop, hub, settings, status, chat, error } = useStore();
   const [text, setText] = useState('');
   const [height, setHeight] = useState(24);
   const [images, setImages] = useState<string[]>([]);
@@ -248,13 +258,98 @@ function Composer({ ready, incoming, onIncomingTaken }: ComposerProps) {
   const before = useRef('');
   const input = useRef<TextInputInstance>(null);
   useEffect(() => registerFocus('message', () => input.current?.focus()), []);
-  const voice = useVoice((heard, final) => {
-    setText(before.current ? `${before.current} ${heard}` : heard);
+  const [handsFree, setHandsFreeState] = useState<HandsFree>('off');
+  const phase = useRef<HandsFree>('off');
+  const setHandsFree = (p: HandsFree) => { phase.current = p; setHandsFreeState(p); };
+  const [heard, setHeard] = useState(''); // what hands-free is hearing, shown as it comes
+  const said = useRef('');                // the final words, sent when listening ends
+  const replyStarted = useRef(false);
+  const voice = useVoice((words, final) => {
+    if (phase.current !== 'off') {
+      if (phase.current !== 'listening') return;
+      setHeard(words);
+      if (final) said.current = words.trim();
+      return;
+    }
+    setText(before.current ? `${before.current} ${words}` : words);
     if (final) before.current = '';
+  }, (failed) => {
+    if (phase.current !== 'listening') return;
+    const words = said.current;
+    said.current = '';
+    if (failed) return endHandsFree(); // the reason shows above the box
+    if (!words) return endHandsFree('Hands-free stopped: no speech heard.');
+    setHandsFree('thinking');
+    replyStarted.current = false;
+    send(words);
   });
+
+  const listen = async () => {
+    said.current = '';
+    setHeard('');
+    setHandsFree('listening');
+    if (!(await voice.start()) && phase.current === 'listening') endHandsFree();
+  };
+
+  function endHandsFree(note?: string) {
+    const was = phase.current;
+    if (was === 'off') return;
+    setHandsFree('off');
+    setHeard('');
+    said.current = '';
+    if (was === 'listening') voice.abort();
+    if (was === 'speaking') stopSpeaking();
+    if (note) setProblem(note);
+  }
+
+  const startHandsFree = () => {
+    if (!ready || busy || phase.current !== 'off') return;
+    tap();
+    Keyboard.dismiss();
+    setProblem(null);
+    voice.clearError();
+    listen();
+  };
+
+  // The answer is finished: read it aloud, then listen again. A failed reply ends hands-free (its error shows).
+  useEffect(() => {
+    if (busy) {
+      if (phase.current === 'thinking') replyStarted.current = true;
+      else if (phase.current !== 'off') endHandsFree(); // something else started a reply
+      return;
+    }
+    if (phase.current !== 'thinking' || !replyStarted.current) return;
+    const last = chat?.messages[chat.messages.length - 1];
+    if (error || last?.role !== 'assistant' || !last.content.trim()) return endHandsFree();
+    setHandsFree('speaking');
+    speak(last.content, async () => {
+      if (phase.current !== 'speaking') return;
+      // Something else is being read aloud (Read aloud on an answer): stop rather than talk over it.
+      if (await isSpeaking()) return endHandsFree();
+      listen();
+    });
+  }, [busy]);
+
+  // Opening another chat, or leaving the chat screen or the app, ends hands-free.
+  const chatId = chat?.id;
+  const shownChat = useRef(chatId);
+  useEffect(() => {
+    if (shownChat.current !== chatId && phase.current !== 'thinking') endHandsFree();
+    shownChat.current = chatId;
+  }, [chatId]);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => { if (s !== 'active') endHandsFree(); });
+    return () => {
+      sub.remove();
+      endHandsFree();
+    };
+  }, []);
+
   const hasAttachments = images.length > 0 || files.length > 0;
   const working = reading || pdfs.length > 0;
   const canSend = (!!text.trim() || hasAttachments) && ready && !working;
+  // With nothing to send, the Send button's place offers hands-free instead.
+  const offerHandsFree = voiceSupported && ready && !busy && !canSend && !working;
 
   const laptop = () => localHub() ?? (hub.connected ? { base: settings.hubUrl, key: settings.hubKey, kind: 'phone' as const } : null);
   const readPdf = async (name: string, base64: string) => {
@@ -377,6 +472,32 @@ function Composer({ ready, incoming, onIncomingTaken }: ComposerProps) {
             {working && <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant, alignSelf: 'center' }}>Reading file…</Text>}
           </View>
         )}
+        {handsFree !== 'off' ? (
+        <View style={styles.composer}>
+          <Pressable
+            style={styles.handsFree}
+            onPress={() => { tap(); endHandsFree(); }}
+            accessibilityRole="button"
+            accessibilityLabel={`Hands-free, ${HANDS_FREE_LABEL[handsFree]} Tap to end.`}
+          >
+            <View style={[styles.handsFreeIcon, { backgroundColor: theme.colors.primaryContainer }]}>
+              <Icon source={HANDS_FREE_ICON[handsFree]} size={20} color={theme.colors.onPrimaryContainer} />
+            </View>
+            <View style={styles.flex}>
+              <Text variant="labelLarge" style={{ fontFamily: FONT.semibold }}>Hands-free · {HANDS_FREE_LABEL[handsFree]}</Text>
+              <Text variant="bodySmall" numberOfLines={2} style={{ color: theme.colors.onSurfaceVariant }}>
+                {handsFree === 'listening' && heard ? `“${heard}”` : HANDS_FREE_HINT[handsFree]}
+              </Text>
+            </View>
+          </Pressable>
+          <Button
+            mode="contained-tonal" compact onPress={() => { tap(); endHandsFree(); }}
+            style={styles.handsFreeEnd} accessibilityLabel="End hands-free"
+          >
+            End
+          </Button>
+        </View>
+        ) : (
         <View style={styles.composer}>
         <Menu
           visible={menu}
@@ -430,6 +551,11 @@ function Composer({ ready, incoming, onIncomingTaken }: ComposerProps) {
         )}
         {busy ? (
           <IconButton icon="stop" mode="contained" size={20} onPress={stop} accessibilityLabel="Stop" style={styles.composerIcon} />
+        ) : offerHandsFree ? (
+          <IconButton
+            icon="waveform" mode="contained" size={20} onPress={startHandsFree}
+            accessibilityLabel="Hands-free" style={styles.composerIcon}
+          />
         ) : (
           <IconButton
             icon="arrow-up" mode="contained" size={20} disabled={!canSend} onPress={submit}
@@ -439,6 +565,7 @@ function Composer({ ready, incoming, onIncomingTaken }: ComposerProps) {
           />
         )}
         </View>
+        )}
       </Surface>
     </View>
   );
@@ -566,5 +693,8 @@ const styles = StyleSheet.create({
   // with the icons; as the text grows, the icons stay at the bottom.
   input: { flex: 1, fontSize: 16, lineHeight: 22, paddingTop: 9, paddingBottom: 9, minHeight: 40, maxHeight: 160, marginVertical: 2 },
   composerIcon: { margin: 2, width: 40, height: 40, borderRadius: 20 },
+  handsFree: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 6, minHeight: 48 },
+  handsFreeIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  handsFreeEnd: { alignSelf: 'center', marginHorizontal: 4 },
   voiceError: { paddingHorizontal: 8 },
 });
