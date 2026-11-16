@@ -193,12 +193,14 @@ export function actionsPrompt(now = new Date()): string {
   const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   return [
     "You can set alarms and timers in the phone's Clock app and add events to its calendar. When asked to, write one " +
-      'short sentence, then put the action alone on the last line, in exactly one of these forms:',
+      "short sentence saying it's ready, such as \"Here's an alarm for 7:30.\", then put the action alone on the last " +
+      'line, in exactly one of these forms:',
     '[[alarm 07:30 | Wake up]] (24-hour time; to repeat it, add days: [[alarm 06:45 | Gym | mon wed fri]])',
     '[[timer 10m | Pasta]] (lengths like 45s, 10m or 1h30m, up to 24 hours)',
     '[[event 2026-11-18 15:00 | 60m | Dentist]] (date, start, length, title; all day: [[event 2026-11-18 | all day | Birthday]])',
-    "The app shows it as a card and nothing is set until they tap it, so never say it's done. If the time or date " +
-      `is unclear, ask first. Only add an action line when they ask for one. It is now ${weekday}, ${today}, ` +
+    "The app shows it as a card and nothing is set until they tap it, so never say it's set, added or done. Use the " +
+      'name they gave, word for word. If the time or date is unclear, ask first. Only add an action line when they ' +
+      `ask for one. It is now ${weekday}, ${today}, ` +
       `${pad(now.getHours())}:${pad(now.getMinutes())}.`,
   ].join('\n');
 }

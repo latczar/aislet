@@ -1638,7 +1638,8 @@ def check_pin_chat() -> str:
 
 
 ACTIONS_PROMPT = 'E2E check: add E2E check event to my calendar on 2030-01-15 at 10:00 for 30 minutes'
-ACTIONS_EVENT = 'E2E check event'
+ACTIONS_EVENT = 'E2E check'  # the AI may shorten "E2E check event"
+CHOOSER = 'com.android.internal.app.ResolverActivity'  # Android's "Complete action using" picker
 ALARM_PROMPT = 'E2E check: now set an alarm for 06:15 called E2E check alarm'
 
 
@@ -1663,6 +1664,18 @@ def wait_reply(timeout: float = 180) -> None:
         time.sleep(1.5)
 
 
+def open_activities(package: str) -> int:
+    """How many of this app's screens are open, in any task."""
+    out = adb('shell', 'dumpsys activity activities', timeout=40, check=False)
+    return len(re.findall(rf'^\s*\* Hist\s+#\d+: ActivityRecord\{{\S+ u\d+ {re.escape(package)}/', out, re.M))
+
+
+def resumed_activity() -> str:
+    """The screen in front, as package/activity."""
+    m = re.search(r'topResumedActivity=ActivityRecord\{\S+ u\d+ (\S+)', adb('shell', 'dumpsys activity activities', timeout=40, check=False))
+    return m.group(1) if m else ''
+
+
 def back_to_aislet() -> None:
     """Bring Aislet back to the front without touching the app in front (no taps or keys go to it). Aislet's
     screen is "single task", so this also closes anything it opened on top of itself, unsaved."""
@@ -1685,10 +1698,9 @@ def check_actions() -> str:
         ask_and_wait(ACTIONS_PROMPT)
         button = wait_for('the Add to calendar button on the card', timeout=10, text='Add to calendar')
         nodes = screen()
-        if not find(nodes, text=ACTIONS_EVENT):
-            raise CheckFailed('the card does not show the event name')
-        if not find(nodes, contains='2030'):
-            raise CheckFailed('the card does not show the date')
+        card = [n.text for n in nodes if n.text and abs(n.cy - button.cy) < 250 and n.text != 'Add to calendar']
+        if not any(ACTIONS_EVENT.lower() in t.lower() for t in card) or not any('2030' in t for t in card):
+            raise CheckFailed(f'the card does not show the event name and date: {card}')
         if any('[[' in n.text for n in nodes if n.text):
             raise CheckFailed('the action line shows as text in the chat')
         # An alarm card too. It's never tapped: that would set a real alarm.
@@ -1704,23 +1716,35 @@ def check_actions() -> str:
             raise CheckFailed('the alarm card does not show 06:15')
         # Add to calendar: the calendar opens with the event filled in. Nothing is tapped there.
         button = wait_for('the Add to calendar button', timeout=5, text='Add to calendar')
+        calendar_screens = open_activities(calendar)
         tap(button)
+        # The calendar opens, or, with more than one calendar app and none chosen as the default, Android asks which.
         end = time.time() + 10
-        while foreground() != calendar:
+        while True:
+            front = resumed_activity()
+            if front.startswith(f'{calendar}/') or CHOOSER in front:
+                break
             if time.time() > end:
-                raise CheckFailed(f'the calendar did not open ({foreground() or "unknown"} is in front)')
+                raise CheckFailed(f"neither the calendar nor Android's app picker opened ({front or 'unknown'} is in front)")
             time.sleep(0.5)
-        opened = calendar
+        opened = front.split('/')[0]
         time.sleep(1.5)
-        shown = find(screen(), contains=ACTIONS_EVENT)
-        back_to_aislet()
+        texts = ' '.join(n.text for n in screen() if n.text)
+        back_to_aislet()  # nothing is tapped in the calendar or the picker
         opened = ''
-        if not shown:
-            raise CheckFailed('the calendar opened without the event name filled in')
-        if calendar in shell('dumpsys activity recents | grep -i "realActivity"'):
-            raise CheckFailed('the unsaved event is still open in the calendar')
+        if CHOOSER in front:
+            if 'calendar' not in texts.lower():
+                raise CheckFailed(f"Android's app picker did not offer a calendar app: {texts[:120]!r}")
+            how = "Android's app picker offered the calendar apps and was closed"
+        else:
+            if ACTIONS_EVENT.lower() not in texts.lower():
+                raise CheckFailed('the calendar opened without the event name filled in')
+            how = f'{calendar} opened with the event and was closed unsaved'
+        time.sleep(1)
+        if open_activities(calendar) > calendar_screens or CHOOSER in adb('shell', 'dumpsys activity activities', timeout=40, check=False).split('Hist', 1)[-1]:
+            raise CheckFailed('the calendar or the app picker is still open behind Aislet')
         wait_for('the card showing it was opened', timeout=5, text='Opened')
-        return f'event and alarm cards shown; {calendar} opened with the event and was closed unsaved'
+        return f'event and alarm cards shown; {how}'
     finally:
         if opened and foreground() == opened:
             back_to_aislet()
