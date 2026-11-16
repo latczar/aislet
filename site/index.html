@@ -136,7 +136,7 @@
       </li>
       <li>
         <h3>Works in aeroplane mode</h3>
-        <p>On a plane, off-grid or abroad without data, it still answers. Only downloads need a connection.</p>
+        <p>On a plane, off-grid or abroad without data, it still answers. Only downloads, and web search if you switch it on, need a connection.</p>
       </li>
       <li>
         <h3>Talk instead of typing</h3>
@@ -152,7 +152,7 @@
     <div class="ledger">
       <div class="ledger__col">
         <h3>What goes online</h3>
-        <p>Downloads, and nothing else: AI models when you tap Download, the computer app when you install it, and the libraries you choose to add.</p>
+        <p>Downloads: AI models when you tap Download, the computer app when you install it, and the libraries you choose to add. Web searches, only if you switch on Search the web: just the search words go to DuckDuckGo.</p>
       </div>
       <div class="ledger__col">
         <h3>What never does</h3>
@@ -161,8 +161,8 @@
     </div>
     <ul class="proofs">
       <li><h3>Voice stays on the phone</h3><p>Aislet only uses the phone’s offline speech recognition. If a phone has none, there’s no voice typing rather than audio sent online.</p></li>
-      <li><h3>Phone and computer talk directly</h3><p>Every request is signed with your pairing code, which never crosses the network. Replayed or altered requests are refused.</p></li>
-      <li><h3>Check it yourself</h3><p>Turn off Wi-Fi and mobile data: everything except downloads still works. Or read the <a href="https://github.com/latczar/aislet/blob/main/docs/DEVELOPMENT.md#security-model">security model</a> and the <a href="https://github.com/latczar/aislet/blob/main/pc/tests/hub_attack_test.py">attack tests</a>.</p></li>
+      <li><h3>Phone and computer talk directly</h3><p>Everything between them is encrypted with a key made from your pairing code, which never crosses the network. Replayed or altered requests are refused.</p></li>
+      <li><h3>Check it yourself</h3><p>Turn off Wi-Fi and mobile data: everything except downloads and web search still works. Or read the <a href="https://github.com/latczar/aislet/blob/main/docs/DEVELOPMENT.md#security-model">security model</a> and the <a href="https://github.com/latczar/aislet/blob/main/pc/tests/hub_attack_test.py">attack tests</a>.</p></li>
     </ul>
   </div>
 </section>
@@ -200,7 +200,7 @@
         <p class="small">Linux is tested on Ubuntu 24.04. The Mac version hasn’t been tested yet; if you try it, please <a href="https://github.com/latczar/aislet/issues">say how it went</a>.</p>
       </div>
     </div>
-    <p class="install__pair">To link them, open Settings, then Home, on the computer and scan the QR code with the phone’s camera. Both need to be on the same Wi-Fi.</p>
+    <p class="install__pair">To link them, open Settings, then Home, on the computer. On the phone, open Aislet’s Settings, then Home, and tap Scan the laptop’s code. Both need to be on the same Wi-Fi.</p>
   </div>
 </section>
 
