@@ -15,9 +15,10 @@ export interface Chat {
   updated: number;
   messages: Message[];
   mode?: 'interview'; // a "get to know me" chat
+  pinned?: boolean;   // shown at the top of the chat list (synced with the laptop)
 }
 
-export type ChatSummary = Pick<Chat, 'id' | 'title' | 'updated'>;
+export type ChatSummary = Pick<Chat, 'id' | 'title' | 'updated' | 'pinned'>;
 
 export type MemoryCategory = 'about' | 'preferences' | 'goals' | 'people' | 'projects';
 

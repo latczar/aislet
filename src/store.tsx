@@ -81,6 +81,7 @@ interface Store {
   openChat(id: string): Promise<void>;
   newChat(): void;
   deleteChat(id: string): Promise<void>;
+  pinChat(id: string, pinned: boolean): Promise<void>;
   clearChats(): Promise<void>;
   busy: boolean;
   error: string | null;
@@ -154,6 +155,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   notesRef.current = notes;
   const chatRef = useRef(chat);
   chatRef.current = chat;
+  const chatsRef = useRef(chats);
+  chatsRef.current = chats;
   const busyRef = useRef(false);
   const hubRef = useRef(hub);
   hubRef.current = hub;
@@ -263,7 +266,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
       const fromHub = new Map(merged.chats.map((c) => [c.id, c]));
       const nextIndex: ChatSummary[] = [
-        ...merged.chats.map((c) => ({ id: c.id, title: c.title, updated: Math.max(c.updated, mine.get(c.id)?.updated ?? 0) })),
+        ...merged.chats.map((c) => {
+          const have = mine.get(c.id);
+          const pinned = (have && c.updated <= have.updated ? have : c).pinned || undefined; // from the copy that was kept
+          return { id: c.id, title: c.title, updated: Math.max(c.updated, have?.updated ?? 0), pinned };
+        }),
         ...latestIndex.filter((c) => !fromHub.has(c.id) && (merged.deleted[c.id] ?? -1) < c.updated), // new here since the sync started
       ].sort((a, b) => b.updated - a.updated);
       await save(KEYS.chats, nextIndex);
@@ -637,7 +644,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const saveChat = useCallback(async (c: Chat) => {
     await save(KEYS.chat(c.id), c);
     setChats((prev) => {
-      const next = [{ id: c.id, title: c.title, updated: c.updated }, ...prev.filter((p) => p.id !== c.id)];
+      const next = [{ id: c.id, title: c.title, updated: c.updated, pinned: c.pinned }, ...prev.filter((p) => p.id !== c.id)];
       save(KEYS.chats, next);
       return next;
     });
@@ -672,6 +679,24 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setChat((current) => (current?.id === id ? null : current));
     scheduleSync();
   }, [markDeleted, scheduleSync]);
+
+  const pinChat = useCallback(async (id: string, pinned: boolean) => {
+    const c = await load<Chat | null>(KEYS.chat(id), null);
+    if (!c || !!c.pinned === pinned) return;
+    // One millisecond newer: enough for sync to carry the pin, never enough to win over newer messages
+    // written on the other device. The chat keeps its place in the list by date.
+    const next: Chat = { ...c, updated: c.updated + 1 };
+    if (pinned) next.pinned = true;
+    else delete next.pinned;
+    await save(KEYS.chat(id), next);
+    setChats((prev) => {
+      const list = prev.map((p) => (p.id === id ? { ...p, updated: next.updated, pinned: next.pinned } : p));
+      save(KEYS.chats, list);
+      return list;
+    });
+    setChat((current) => (current?.id === id ? { ...current, pinned: next.pinned } : current));
+    scheduleSync();
+  }, [scheduleSync]);
 
   const clearChats = useCallback(async () => {
     const all = await load<ChatSummary[]>(KEYS.chats, []);
@@ -739,6 +764,7 @@ ${interviewPrompt(s.name)}` : prompt };
     answer = stripThinking(answer).trim();
     const finalChat: Chat = {
       ...base,
+      pinned: chatsRef.current.find((c) => c.id === base.id)?.pinned, // pinned or unpinned while it answered
       updated: Date.now(),
       messages: answer ? [...base.messages, userMsg, { role: 'assistant', content: answer }] : base.messages,
     };
@@ -856,7 +882,7 @@ ${interviewPrompt(s.name)}` : prompt };
 
   const value: Store = {
     loaded, startView, settings, updateSettings, status, refreshStatus, engine, hub, syncNow, memories, addMemory, removeMemory, proposeTidy, applyTidy,
-    notes, saveNote, deleteNote, chats, chat, openChat, newChat, deleteChat, clearChats, busy, error, clearError, noted,
+    notes, saveNote, deleteNote, chats, chat, openChat, newChat, deleteChat, pinChat, clearChats, busy, error, clearError, noted,
     send, regenerate, startInterview, stop, exportData, importData, snapshot, restore,
     libraries, refreshLibraries, allowLibraries, moveLibraries, removeLibrary, openLibraryFolder: fileLibrary?.openFolder ?? null,
   };

@@ -3,15 +3,17 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { IconButton, Searchbar, Text, TouchableRipple, useTheme } from 'react-native-paper';
 import { useStore } from '../store';
 import type { ChatSummary } from '../types';
+import { tap } from './actions';
 import { confirm } from './confirm';
 import { registerFocus } from './shortcuts';
 
 function group(chats: ChatSummary[]): [string, ChatSummary[]][] {
   const startOfToday = new Date().setHours(0, 0, 0, 0);
   const day = 86_400_000;
-  const buckets: Record<string, ChatSummary[]> = { Today: [], Yesterday: [], 'Previous 7 days': [], Older: [] };
-  for (const c of chats) {
-    if (c.updated >= startOfToday) buckets.Today.push(c);
+  const buckets: Record<string, ChatSummary[]> = { Pinned: [], Today: [], Yesterday: [], 'Previous 7 days': [], Older: [] };
+  for (const c of [...chats].sort((a, b) => b.updated - a.updated)) {
+    if (c.pinned) buckets.Pinned.push(c);
+    else if (c.updated >= startOfToday) buckets.Today.push(c);
     else if (c.updated >= startOfToday - day) buckets.Yesterday.push(c);
     else if (c.updated >= startOfToday - 7 * day) buckets['Previous 7 days'].push(c);
     else buckets.Older.push(c);
@@ -21,7 +23,7 @@ function group(chats: ChatSummary[]): [string, ChatSummary[]][] {
 
 export function ChatList({ onPicked }: { onPicked?: () => void }) {
   const theme = useTheme();
-  const { chats, chat, openChat, deleteChat } = useStore();
+  const { chats, chat, openChat, deleteChat, pinChat } = useStore();
   const [query, setQuery] = useState('');
   const search = useRef<{ focus(): void }>(null);
   const searchable = chats.length > 4;
@@ -63,9 +65,18 @@ export function ChatList({ onPicked }: { onPicked?: () => void }) {
                   <View style={styles.rowInner}>
                     <Text variant="bodyMedium" numberOfLines={1} style={styles.title}>{c.title}</Text>
                     <IconButton
+                      icon={c.pinned ? 'pin' : 'pin-outline'}
+                      size={17}
+                      iconColor={c.pinned ? theme.colors.primary : theme.colors.onSurfaceVariant}
+                      style={styles.rowAction}
+                      accessibilityLabel={c.pinned ? 'Unpin chat' : 'Pin chat'}
+                      onPress={() => { tap(); pinChat(c.id, !c.pinned); }}
+                    />
+                    <IconButton
                       icon="trash-can-outline"
                       size={17}
                       iconColor={theme.colors.onSurfaceVariant}
+                      style={styles.rowAction}
                       accessibilityLabel="Delete chat"
                       onPress={async () => {
                         if (await confirm('Delete this chat?', c.title)) deleteChat(c.id);
@@ -89,7 +100,8 @@ const styles = StyleSheet.create({
   list: { paddingHorizontal: 8, paddingBottom: 12 },
   section: { paddingHorizontal: 12, paddingTop: 12, paddingBottom: 4 },
   row: { borderRadius: 12 },
-  rowInner: { flexDirection: 'row', alignItems: 'center', paddingLeft: 12, minHeight: 44 },
+  rowInner: { flexDirection: 'row', alignItems: 'center', paddingLeft: 12, paddingRight: 4, minHeight: 44 },
   title: { flex: 1 },
+  rowAction: { margin: 0 },
   empty: { padding: 16 },
 });

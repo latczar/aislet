@@ -43,7 +43,7 @@ To link them, open Settings → Home on the computer and scan the QR code with t
 - Reads photos, PDFs and text files. On Android, share text, a screenshot or a PDF from any app to Aislet to ask about it.
 - On Android, talk instead of typing, and have answers read aloud, using the phone's offline speech, in any language it has an offline speech pack for. Or go hands-free: speak, hear the answer, and keep talking.
 - Shows tables and dividers, and code you can copy with one tap.
-- Picks up where you left off: the chat and screen you had open come back.
+- Picks up where you left off: the chat and screen you had open come back. Pin the chats you use most to the top of the list.
 
 **Knows you, and you stay in charge**
 - Learns lasting facts about you as you talk. See them, edit them or forget them in Memory.

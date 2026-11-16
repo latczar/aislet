@@ -1578,6 +1578,65 @@ def check_save_note() -> str:
             print('  note: could not find the save-note test chat to delete', file=sys.stderr)
 
 
+PIN_PROMPT = 'E2E check: pin chat, reply with one word, ok'
+DATE_SECTIONS = ('Today', 'Yesterday', 'Previous 7 days', 'Older')
+
+
+def in_pinned_section(title: str) -> bool:
+    """Whether the chat list row with this title sits under the Pinned heading (the chat list is open)."""
+    nodes = screen()
+    rows = sorted(find(nodes, contains=title), key=lambda n: n.height)
+    if not rows:
+        raise CheckFailed(f'no chat titled {title!r} in the chat list')
+    pinned = find(nodes, text='Pinned')
+    if not pinned:
+        return False
+    below = [n.cy for n in nodes if n.text in DATE_SECTIONS and n.cy > pinned[0].cy]
+    return pinned[0].cy < rows[0].cy < min(below, default=10 ** 6)
+
+
+def check_pin_chat() -> str:
+    """Pin chat moves a chat under Pinned at the top of the chat list; it stays pinned after the app restarts; Unpin puts it back."""
+    try:
+        ask_and_wait(PIN_PROMPT)
+        tap(wait_for('the Chats button', desc='Chats'))
+        wait_for('the test chat in the chat list', timeout=5, contains=PIN_PROMPT)
+        if in_pinned_section(PIN_PROMPT):
+            raise CheckFailed('a new chat is already pinned')
+        pin = row_button(PIN_PROMPT, 'Pin chat')
+        if not pin:
+            raise CheckFailed('no Pin chat button on the test chat')
+        tap(pin)
+        time.sleep(1)
+        if not in_pinned_section(PIN_PROMPT):
+            raise CheckFailed('the chat did not move under Pinned')
+        if not row_button(PIN_PROMPT, 'Unpin chat'):
+            raise CheckFailed('a pinned chat has no Unpin chat button')
+        key(4)  # close the chat list
+        time.sleep(0.8)
+        relaunch()
+        go_tab('Chat')
+        tap(wait_for('the Chats button', desc='Chats'))
+        wait_for('the test chat after restarting', timeout=5, contains=PIN_PROMPT)
+        if not in_pinned_section(PIN_PROMPT):
+            raise CheckFailed('the pin was lost when the app restarted')
+        tap(row_button(PIN_PROMPT, 'Unpin chat') or wait_for('the Unpin chat button', desc='Unpin chat'))
+        time.sleep(1)
+        if in_pinned_section(PIN_PROMPT):
+            raise CheckFailed('the chat stayed under Pinned after Unpin')
+        if not row_button(PIN_PROMPT, 'Pin chat'):
+            raise CheckFailed('an unpinned chat has no Pin chat button')
+        key(4)
+        time.sleep(0.8)
+        return 'pinned to the top, kept after a restart, and unpinned'
+    finally:
+        if find(screen(), desc='Delete chat'):  # the chat list is still open
+            key(4)
+            time.sleep(0.8)
+        if not delete_test_chat():
+            print('  note: could not find the pin test chat to delete', file=sys.stderr)
+
+
 def mic_allowed() -> bool:
     return 'android.permission.RECORD_AUDIO: granted=true' in shell(f'dumpsys package {PKG}')
 
@@ -1679,6 +1738,7 @@ CHECKS = {
     'chat_typing': check_chat_typing,
     'chat_send': check_chat_send,
     'save_note': check_save_note,
+    'pin_chat': check_pin_chat,
     'share': check_share,
     'resume': check_resume,
     'text_fields': check_text_fields,

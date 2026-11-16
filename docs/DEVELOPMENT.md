@@ -7,7 +7,7 @@ TypeScript · React Native (Expo) · React Native Paper · Ollama on the compute
 ## Layout
 
 - `src/engine`: the two AI engines. `ollama.ts` is used on the PC, and on the phone via the hub. `device.ts` runs on-device on the phone.
-- `src/store.tsx`: app state, learning and sync.
+- `src/store.tsx`: app state, learning and sync. Sync is newest-wins per item, by `updated`, and the hub (`merge()` in `pc/hub.py`) keeps every field of a chat, so new chat fields such as `pinned` sync with no hub change. Pinning or unpinning makes a chat just 1 ms newer: enough for sync to carry it, never enough to win over newer messages from the other device, and the chat keeps its place by date.
 - `src/brain.ts`: prompts, memory and notes search.
 - `src/ui`: the screens.
 - `src/backup.ts`: automatic encrypted backups on the phone (Settings → Your data). Each day, when memory, notes, name or instructions have changed, it saves `aislet-backup-YYYY-MM-DD-HHMM.json` (`untethered-backup-…` before the rename; both are kept, pruned and restored) to a folder the user picks with Android's folder picker. The app keeps access to that folder. It keeps the newest 7 and only ever deletes its own backup files. Restoring merges like Import: anything new is added and nothing is overwritten. The PC has no automatic backups (`backup.web.ts`), because the hub's data file already holds a copy.
@@ -117,6 +117,7 @@ python e2e/phone/run.py
 | `chat_send` | Tapping Send with the keyboard open sends the message, clears the box, and a reply arrives. |
 | `resume` | After Android closes the app (force-stop) and it's opened again, it shows the chat that was open, and then the Notes screen when that was open. The test chat is deleted. |
 | `save_note` | Save to Notes on an answer saves it as a note titled with the question. The button then shows it as saved and can't save a copy. The note holds the answer. Deleting the note frees the button again. The note and the chat are deleted afterwards. |
+| `pin_chat` | Pin chat on a chat in the chat list moves it under Pinned at the top, with an Unpin chat button. It is still pinned after the app is closed and opened again. Unpin chat puts it back under its date. The chat is deleted afterwards. |
 | `share` | Android shares reach the app. Text shared while the app is open on another tab opens a new chat with the text in the message box, unsent. A photo shared while the app is closed starts it with the photo attached. A shared PDF is read by the laptop and attached, or, when the laptop isn't connected, the app says it needs the laptop. |
 | `text_fields` | Typing shows, above the keyboard, in Memory's "Add a fact", a new note's title and text, and Settings' name and custom instructions. |
 | `find_laptop` | Settings → Home shows the pairing status. When paired, Advanced → "Find again" finds the laptop with the same code and stays connected. When not paired, "Find my laptop" lists it. It never unpairs. |
