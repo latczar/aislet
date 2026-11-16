@@ -62,8 +62,8 @@ export function ScanPair({ onPaired, mode = 'contained' }: Props) {
     } catch (e) {
       const message = (e as Error).message;
       setPairing(null);
-      setProblem(message === "Couldn't reach the laptop." ? `${message} Check the phone and laptop are on the same Wi-Fi.` : message);
-      handled.current = ''; // the same code may work on a second try
+      // The camera still sees the same code: it isn't tried again (and again) until the scanner is reopened.
+      setProblem(message === "Couldn't reach the laptop." ? `${message} Check the phone and laptop are on the same Wi-Fi, then tap Scan again.` : message);
     }
   };
 
@@ -116,6 +116,9 @@ export function ScanPair({ onPaired, mode = 'contained' }: Props) {
             {problem && <Text variant="bodyMedium" style={{ color: theme.colors.error }}>{problem}</Text>}
           </Dialog.Content>
           <Dialog.Actions>
+            {problem && !pairing && (
+              <Button onPress={() => { handled.current = ''; setProblem(null); }}>Scan again</Button>
+            )}
             <Button onPress={close} disabled={!!pairing}>Cancel</Button>
           </Dialog.Actions>
         </Dialog>
