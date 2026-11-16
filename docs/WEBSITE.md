@@ -36,7 +36,6 @@ It rewrites the logo SVGs, icons, `og.png`, the WebP screenshots and `demo.mp4` 
 
 - **Rename the GitHub repository first.** Every link on the page points to `github.com/latczar/aislet`, including the Windows install command and the APK download. Until `latczar/untethered` is renamed, those links show GitHub's 404 page.
 - **Release 1.0.7 before going live.** Both Android buttons download `releases/latest/download/Aislet.apk` directly. Releases up to 1.0.6 named the file `Untethered.apk`, so the buttons only work once a release with `Aislet.apk` is marked Latest.
-- The hero shows a rebuilt chat (an example answer that cites Wikipedia), because there's no real screenshot of a library answer yet. A real phone screenshot would be better; it can replace the `<figure class="hero__figure">` block.
 
 ## How it's hosted
 

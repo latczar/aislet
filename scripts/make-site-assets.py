@@ -101,7 +101,7 @@ def write_og() -> None:
 
 def write_screens(src: Path) -> None:
     out = SITE / 'img'
-    for name in ('summarise-pdf', 'settings-ai'):
+    for name in ('summarise-pdf', 'settings-ai', 'library-answer'):
         Image.open(src / f'{name}.png').convert('RGB').save(out / f'{name}.webp', quality=86, method=6)
     gif = src / 'demo.gif'
     im = Image.open(gif)

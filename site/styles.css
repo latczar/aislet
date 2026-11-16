@@ -168,22 +168,8 @@ a:hover { color: var(--color-accent-hover); text-decoration-thickness: 2px; }
 .hero__figure { grid-column: 8 / -1; }
 .hero__figure figcaption { margin-top: var(--space-sm); font-size: var(--text-sm); color: var(--color-on-dark-muted); }
 
-/* The rebuilt chat: the app's own light theme */
-.chat {
-  background: var(--color-paper); color: var(--color-ink);
-  border: var(--rule-hair) solid var(--color-rule); border-radius: var(--radius-media);
-  padding: 0 var(--space-lg) var(--space-lg);
-  display: grid; gap: var(--space-lg); font-size: var(--text-md); line-height: 1.55;
-}
-.chat__bar { display: grid; gap: 2px; padding: var(--space-md) 0; border-bottom: var(--rule-hair) solid var(--color-rule); margin-inline: calc(-1 * var(--space-lg)); padding-inline: var(--space-lg); }
-.chat__title { font-weight: 600; }
-.chat__sub { font-size: 0.8125rem; color: var(--color-muted); }
-.chat__you { justify-self: end; max-width: 86%; background: var(--color-paper-3); border-radius: 18px; padding: var(--space-sm) var(--space-md); }
-.chat__ai { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: var(--space-sm); align-items: start; }
-.chat__avatar { width: 28px; height: 28px; border-radius: 8px; background: var(--color-graphite); color: var(--color-on-dark); display: grid; place-items: center; overflow: hidden; }
-.chat__avatar svg { width: 28px; height: 28px; }
-.chat__text { display: grid; gap: var(--space-sm); }
-.chat__source { color: var(--color-ink-2); font-weight: 600; }
+/* The hero screenshot: a real answer from a library */
+.hero__shot { width: 100%; height: auto; border-radius: var(--radius-media); background: var(--color-paper-3); }
 
 /* Library */
 .libraries {
@@ -291,8 +277,6 @@ a:hover { color: var(--color-accent-hover); text-decoration-thickness: 2px; }
   .hero { padding-top: var(--space-lg); }
   .hero__text { gap: var(--space-md); }
   .hero__figure { margin-top: var(--space-xl); }
-  .chat { padding: 0 var(--space-md) var(--space-md); gap: var(--space-md); }
-  .chat__bar { margin-inline: calc(-1 * var(--space-md)); padding-inline: var(--space-md); padding-block: var(--space-sm); }
   .libraries, .features, .proofs, .ledger { grid-template-columns: minmax(0, 1fr); }
   .features { gap: var(--space-xl); }
   /* Screenshots become a row you swipe, each one most of the screen wide */
