@@ -6,6 +6,7 @@ import {
   interviewPrompt, keywordScore, learnMessages, parseFacts, parseTidy, relevantMemories, similarity, stripThinking,
   systemPrompt, tidyMessages, titleFrom, worthLearning,
 } from './brain';
+import { actionsSupported, mayWantAction } from './deviceActions';
 import { engine as localEngine } from './engine';
 import { createOllamaEngine } from './engine/ollama';
 import type { Engine, EngineStatus } from './engine/types';
@@ -747,7 +748,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const recentAsks = base.messages.filter((m) => m.role === 'user').slice(-2).map((m) => m.display ?? m.content);
       const memories = await pickMemories([...recentAsks, userMsg.content].join('\n'), queryVec, base.mode === 'interview' ? 80 : MEMORY_LIMIT)
         .catch(() => memRef.current.slice(-MEMORY_LIMIT));
-      const prompt = systemPrompt(s, memories, hits, active.where, library);
+      const actions = actionsSupported && mayWantAction([...recentAsks, userMsg.display ?? userMsg.content]);
+      const prompt = systemPrompt(s, memories, hits, active.where, library, actions);
       const sys: Message = { role: 'system', content: base.mode === 'interview' ? `${prompt}
 
 ${interviewPrompt(s.name)}` : prompt };

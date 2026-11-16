@@ -28,7 +28,7 @@
         "android.permission.WRITE_EXTERNAL_STORAGE"
       ],
       "allowBackup": false,
-      "permissions": ["android.permission.MANAGE_EXTERNAL_STORAGE"]
+      "permissions": ["android.permission.MANAGE_EXTERNAL_STORAGE", "com.android.alarm.permission.SET_ALARM"]
     },
     "web": {
       "favicon": "./assets/favicon.png",

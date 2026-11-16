@@ -1,5 +1,6 @@
 // The thinking parts that don't depend on which device runs the model:
 // prompts, learning facts, splitting notes and finding the relevant ones.
+import { actionsPrompt } from './deviceActions';
 import type { LibraryHit } from './library';
 import type { AnswerLength, Memory, MemoryCategory, Message, NoteHit, Settings } from './types';
 
@@ -17,6 +18,7 @@ export function systemPrompt(
   notes: NoteHit[],
   where: 'laptop' | 'phone',
   library: LibraryHit[] = [],
+  actions = false, // explain alarms, timers and events: this phone can hand them to its Clock and Calendar apps
 ): string {
   const name = settings.name;
   const who = name || 'the user';
@@ -30,8 +32,9 @@ export function systemPrompt(
     'Know what this app lets you do, and never deny it: you can see photos attached to a message, and the text of ' +
       `attached files is included in it. ${name || "The user"}'s notes are searched for every question, and matching ` +
       "extracts appear below, as do passages from their offline libraries: their own PDFs, ebooks and documents, and " +
-      "any Kiwix .zim files, in the library folder (Settings → Libraries). The app saves memories by itself. You can't " +
-      "open other apps, download anything or reach files that weren't attached or put in the library folder. If they " +
+      "any Kiwix .zim files, in the library folder (Settings → Libraries). The app saves memories by itself. " +
+      (actions ? 'Apart from the alarms, timers and calendar events described below, you ' : 'You ') +
+      "can't open other apps, download anything or reach files that weren't attached or put in the library folder. If they " +
       'want you to know something for good, suggest a note on the Notes tab, or for documents or a whole reference ' +
       'library, putting the files in the library folder. Then answer as much as you can now.',
     'Always try to help. Answer every reasonable question directly from what you know, including health, money, ' +
@@ -72,6 +75,8 @@ export function systemPrompt(
     `If the notes and memories don't cover something, use general knowledge. Never invent facts about ${who}. ` +
       "Don't say that you've noted or remembered something: the app saves memories by itself.",
   );
+  // Last, because it holds the current time: everything above stays the same from one message to the next.
+  if (actions) lines.push('', actionsPrompt());
   return lines.join('\n');
 }
 

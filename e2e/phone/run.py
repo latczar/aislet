@@ -1637,6 +1637,97 @@ def check_pin_chat() -> str:
             print('  note: could not find the pin test chat to delete', file=sys.stderr)
 
 
+ACTIONS_PROMPT = 'E2E check: add E2E check event to my calendar on 2030-01-15 at 10:00 for 30 minutes'
+ACTIONS_EVENT = 'E2E check event'
+ALARM_PROMPT = 'E2E check: now set an alarm for 06:15 called E2E check alarm'
+
+
+def handler(action: str, data: str = '') -> str:
+    """The package that would open this intent, or '' if none would."""
+    out = adb('shell', f"cmd package resolve-activity --brief -a {action}" + (f" -d '{data}'" if data else ''), check=False)
+    last = out.strip().splitlines()[-1] if out.strip() else ''
+    return last.split('/')[0] if '/' in last else ''
+
+
+def wait_reply(timeout: float = 180) -> None:
+    """Wait until the reply that's being written has finished."""
+    end = time.time() + timeout
+    while True:
+        nodes = screen()
+        if find(nodes, desc='Copy') and not find(nodes, desc='Stop'):
+            return
+        if find(nodes, text='Dismiss'):
+            raise CheckFailed('the reply failed with an error card')
+        if time.time() > end:
+            raise CheckFailed(f'no reply within {timeout:.0f} s')
+        time.sleep(1.5)
+
+
+def back_to_aislet() -> None:
+    """Bring Aislet back to the front without touching the app in front (no taps or keys go to it). Aislet's
+    screen is "single task", so this also closes anything it opened on top of itself, unsaved."""
+    adb('shell', f'am start -W -n {PKG}/.MainActivity')
+    end = time.time() + 8
+    while foreground() != PKG:
+        if time.time() > end:
+            raise CheckFailed(f'Aislet did not come back to the front ({foreground() or "unknown"} is in front)')
+        time.sleep(0.5)
+
+
+def check_actions() -> str:
+    """Asking for a calendar event or an alarm gets a card, not a raw action line; Add to calendar opens the calendar filled in, which is closed unsaved."""
+    calendar = handler('android.intent.action.INSERT', 'content://com.android.calendar/events')
+    clock = handler('android.intent.action.SET_ALARM')
+    if not calendar or not clock:
+        raise CheckFailed(f'no app for calendar events ({calendar or "none"}) or alarms ({clock or "none"})')
+    opened = ''
+    try:
+        ask_and_wait(ACTIONS_PROMPT)
+        button = wait_for('the Add to calendar button on the card', timeout=10, text='Add to calendar')
+        nodes = screen()
+        if not find(nodes, text=ACTIONS_EVENT):
+            raise CheckFailed('the card does not show the event name')
+        if not find(nodes, contains='2030'):
+            raise CheckFailed('the card does not show the date')
+        if any('[[' in n.text for n in nodes if n.text):
+            raise CheckFailed('the action line shows as text in the chat')
+        # An alarm card too. It's never tapped: that would set a real alarm.
+        tap(message_box())
+        wait_keyboard(True)
+        type_text(ALARM_PROMPT)
+        time.sleep(0.5)
+        tap(wait_for('the Send button', desc='Send'))
+        hide_keyboard()
+        wait_reply()
+        wait_for('the Set alarm button on the alarm card', timeout=10, text='Set alarm')
+        if not find(screen(), contains='06:15') and not find(screen(), contains='6:15'):
+            raise CheckFailed('the alarm card does not show 06:15')
+        # Add to calendar: the calendar opens with the event filled in. Nothing is tapped there.
+        button = wait_for('the Add to calendar button', timeout=5, text='Add to calendar')
+        tap(button)
+        end = time.time() + 10
+        while foreground() != calendar:
+            if time.time() > end:
+                raise CheckFailed(f'the calendar did not open ({foreground() or "unknown"} is in front)')
+            time.sleep(0.5)
+        opened = calendar
+        time.sleep(1.5)
+        shown = find(screen(), contains=ACTIONS_EVENT)
+        back_to_aislet()
+        opened = ''
+        if not shown:
+            raise CheckFailed('the calendar opened without the event name filled in')
+        if calendar in shell('dumpsys activity recents | grep -i "realActivity"'):
+            raise CheckFailed('the unsaved event is still open in the calendar')
+        wait_for('the card showing it was opened', timeout=5, text='Opened')
+        return f'event and alarm cards shown; {calendar} opened with the event and was closed unsaved'
+    finally:
+        if opened and foreground() == opened:
+            back_to_aislet()
+        if not delete_test_chat():
+            print('  note: could not find the actions test chat to delete', file=sys.stderr)
+
+
 def mic_allowed() -> bool:
     return 'android.permission.RECORD_AUDIO: granted=true' in shell(f'dumpsys package {PKG}')
 
@@ -1739,6 +1830,7 @@ CHECKS = {
     'chat_send': check_chat_send,
     'save_note': check_save_note,
     'pin_chat': check_pin_chat,
+    'actions': check_actions,
     'share': check_share,
     'resume': check_resume,
     'text_fields': check_text_fields,

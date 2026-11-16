@@ -1,0 +1,7 @@
+{
+  "name": "aislet-actions",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Opens the phone's own Clock and Calendar apps to set alarms, timers and events for Aislet.",
+  "license": "GPL-3.0-or-later"
+}

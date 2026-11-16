@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { ActivityIndicator, Button, Icon, IconButton, Menu, ProgressBar, Snackbar, Surface, Text, useTheme } from 'react-native-paper';
 import { titleFrom } from '../brain';
+import { type DeviceAction, actionsSupported, describe, parseActions, runAction, shownText } from '../deviceActions';
 import { engine } from '../engine';
 import { hubExtract, localHub } from '../hub';
 import { useStore } from '../store';
@@ -152,22 +153,83 @@ function Welcome({ onOpenSettings }: { onOpenSettings: () => void }) {
   );
 }
 
+/** An alarm, timer or event the AI proposed. Nothing happens until it's tapped; then the phone's own app takes over. */
+function ActionCard({ action }: { action: DeviceAction }) {
+  const theme = useTheme();
+  const [state, setState] = useState<'ready' | 'busy' | 'opened'>('ready');
+  const [problem, setProblem] = useState('');
+  const d = describe(action);
+  const go = async () => {
+    tap();
+    setProblem('');
+    setState('busy');
+    try {
+      await runAction(action);
+      setState('opened');
+    } catch (e) {
+      setProblem(actionProblem(e));
+      setState('ready');
+    }
+  };
+  return (
+    <Surface style={[styles.actionCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]} elevation={0}>
+      <View style={styles.actionCardRow}>
+        <Icon source={d.icon} size={22} color={theme.colors.onSurface} />
+        <View style={styles.flex}>
+          <Text variant="titleSmall" style={{ fontFamily: FONT.semibold }}>{d.title}</Text>
+          {!!d.detail && <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>{d.detail}</Text>}
+        </View>
+        {actionsSupported && (
+          <Button
+            mode="contained-tonal" compact icon={state === 'opened' ? 'check' : undefined}
+            loading={state === 'busy'} disabled={state !== 'ready'} onPress={go}
+          >
+            {state === 'opened' ? 'Opened' : d.button}
+          </Button>
+        )}
+      </View>
+      {!!d.warning && <Text variant="bodySmall" style={{ color: theme.colors.error }}>{d.warning}</Text>}
+      <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+        {actionsSupported
+          ? `Opens your ${action.kind === 'event' ? 'calendar' : 'clock'} app to check and keep it.`
+          : 'Set it from Aislet on your phone.'}
+      </Text>
+      {!!problem && <Text variant="bodySmall" style={{ color: theme.colors.error }}>{problem}</Text>}
+    </Surface>
+  );
+}
+
+/** The readable part of a native module's error, without Expo's "Call to function … rejected" wrapping. */
+function actionProblem(e: unknown): string {
+  const message = (e as Error)?.message ?? '';
+  const reason = message.split('Caused by:').pop()?.replace(/^\s*[\w.$]+(Exception|Error):\s*/, '').trim();
+  return reason || "Couldn't open it. Try again, or set it in the app yourself.";
+}
+
 type AssistantProps = {
   index: number; text: string; last: boolean; streaming: boolean; busy: boolean; noted?: string[]; saved: boolean;
   onRetry: () => void; onSave: (index: number) => void;
 };
 
 // Memoised, like UserMessage: while a reply streams, only the message that's changing redraws.
-const AssistantMessage = React.memo(function AssistantMessage({ index, text, last, streaming, busy, noted, saved, onRetry, onSave }: AssistantProps) {
+const AssistantMessage = React.memo(function AssistantMessage({ index, text: reply, last, streaming, busy, noted, saved, onRetry, onSave }: AssistantProps) {
   const theme = useTheme();
   const [speaking, setSpeaking] = useState(false);
   const [copied, setCopied] = useState(false);
   useEffect(() => () => stopSpeaking(), []);
+  // Action lines like [[alarm 07:30 | Wake up]] become cards and never show as text.
+  const { text, actions, unreadable } = useMemo(() => parseActions(reply, streaming), [reply, streaming]);
   return (
     <View style={styles.aiRow}>
       <Image source={require('../../assets/icon.png')} style={styles.avatar} />
       <View style={styles.aiBody}>
         {text ? <Markdown text={text} /> : streaming ? <ThinkingDots /> : null}
+        {!streaming && actions.map((a, i) => <ActionCard key={i} action={a} />)}
+        {!streaming && unreadable > 0 && (
+          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+            The AI suggested an alarm, timer or event that Aislet couldn't read, so it isn't shown. Try asking again with the date and time.
+          </Text>
+        )}
         {!!text && !streaming && (
           <View style={styles.actions}>
             <IconButton
@@ -328,9 +390,10 @@ function Composer({ ready, incoming, onIncomingTaken }: ComposerProps) {
     }
     if (phase.current !== 'thinking' || !replyStarted.current) return;
     const last = chat?.messages[chat.messages.length - 1];
-    if (error || last?.role !== 'assistant' || !last.content.trim()) return endHandsFree();
+    const answer = last?.role === 'assistant' ? shownText(last.content) : '';
+    if (error || !answer) return endHandsFree();
     setHandsFree('speaking');
-    speak(last.content, async () => {
+    speak(answer, async () => {
       if (phase.current !== 'speaking') return;
       // Something else is being read aloud (Read aloud on an answer): stop rather than talk over it.
       if (await isSpeaking()) return endHandsFree();
@@ -595,12 +658,13 @@ export function ChatView({ onOpenSettings, incoming, onIncomingTaken }: ChatView
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
   const saveToNotes = useCallback(async (i: number) => {
-    const answer = messagesRef.current[i];
-    if (answer?.role !== 'assistant' || !answer.content.trim()) return;
+    const m = messagesRef.current[i];
+    const answer = m?.role === 'assistant' ? shownText(m.content).trim() : '';
+    if (!answer) return;
     const question = messagesRef.current[i - 1];
     const asked = question?.role === 'user' ? (question.display ?? question.content).trim() : '';
     try {
-      await saveNote({ title: titleFrom(asked || answer.content), text: answer.content });
+      await saveNote({ title: titleFrom(asked || answer), text: answer });
       setToast('Saved to Notes');
     } catch {
       setToast("Couldn't save the note. Try again.");
@@ -629,7 +693,7 @@ export function ChatView({ onOpenSettings, incoming, onIncomingTaken }: ChatView
             ) : (
               <AssistantMessage
                 key={i} index={i} text={m.content} last={i === lastAi} streaming={busy && i === messages.length - 1}
-                busy={busy} noted={noted[i]} saved={noteTexts.has(m.content.trim())} onRetry={regenerate} onSave={saveToNotes}
+                busy={busy} noted={noted[i]} saved={noteTexts.has(shownText(m.content).trim())} onRetry={regenerate} onSave={saveToNotes}
               />
             ),
           )
@@ -684,6 +748,8 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', marginLeft: -8, marginTop: -2 },
   action: { margin: 0 },
   noted: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', borderRadius: 12, paddingRight: 12, maxWidth: '100%' },
+  actionCard: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingVertical: 10, paddingLeft: 14, paddingRight: 10, gap: 6, maxWidth: 520, marginTop: 4 },
+  actionCardRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   notedIcon: { margin: 0 },
   dots: { flexDirection: 'row', gap: 5, paddingVertical: 10 },
   thinkDot: { width: 7, height: 7, borderRadius: 4 },
