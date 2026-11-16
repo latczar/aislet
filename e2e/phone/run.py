@@ -566,6 +566,7 @@ def check_find_laptop() -> str:
         found = wait_for('"Found it at …"', timeout=60, contains='Found it at')
         where = re.search(r'Found it at (\S+)', found.label)
         scroll_to_top()
+        scroll_to('the Home section', timeout_swipes=8, contains="Use the laptop's AI")  # the Widget section sits above Home
         wait_for('the connected status after finding', timeout=20, contains='Connected to')
         return f"paired and connected; Find again found it at {where.group(1) if where else '?'}{ai}"
 
