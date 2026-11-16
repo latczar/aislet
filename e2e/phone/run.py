@@ -857,12 +857,12 @@ def check_rows(nodes: list[Node], rows: dict[str, str], screen_name: str, dp: fl
     return lefts, rights
 
 
-PRIVACY_ROWS = ['What you say stays on your devices', 'Online only for downloads', 'Your laptop, directly',
-                'No account, no tracking', "How it's checked"]
+PRIVACY_ROWS = ['What you say stays on your devices', 'Online only for downloads', 'Web search only if you switch it on',
+                'Your laptop, directly', 'No account, no tracking', "How it's checked"]
 
 
 def check_privacy() -> str:
-    """Settings → Privacy says what goes online (downloads only). Nothing is tapped, so nothing opens."""
+    """Settings → Privacy says what goes online (downloads, and web search if switched on). Nothing is tapped."""
     go_tab('Settings')
     scroll_to_top()
     scroll_to('the Privacy section', timeout_swipes=14, text='Privacy')
@@ -871,7 +871,7 @@ def check_privacy() -> str:
     if not find(screen(), contains='Hugging Face'):
         scroll_to('where models come from', timeout_swipes=2, up=True, contains='Hugging Face')
     scroll_to_top()
-    return f'{len(PRIVACY_ROWS)} rows, downloads named as the only use of the internet'
+    return f'{len(PRIVACY_ROWS)} rows: downloads, and web search only if switched on'
 
 
 SAME_AS_PHONE = 'Same as the phone'  # the menu's first item: the phone's own language
@@ -1022,6 +1022,53 @@ def check_haptics() -> str:
         raise CheckFailed('could not put "Vibrate on taps" back')
     scroll_to_top()
     return f"switched {'off and on' if original else 'on and off'}"
+
+
+# A neutral question: these words are the only thing the check sends to DuckDuckGo.
+WEB_PROMPT = "E2E check: what's the latest Expo SDK version?"
+
+
+def web_switch() -> Node:
+    go_tab('Settings')
+    scroll_to_top()
+    row = scroll_to('Search the web', text='Search the web')
+    switches = [n for n in screen() if n.cls.endswith('Switch') and abs(n.cy - row.cy) < 120]
+    if not switches:
+        raise CheckFailed('no switch on the "Search the web" row')
+    return switches[0]
+
+
+def check_web_search() -> str:
+    """With Search the web on, a question about something current is searched: the reply says so and lists its
+    sources. The switch is put back as it was, and the test chat deleted."""
+    original = web_switch().checked
+    try:
+        if not original:
+            tap(web_switch())
+            time.sleep(0.6)
+            if not web_switch().checked:
+                raise CheckFailed('the switch did not turn on')
+        go_tab('Chat')
+        ask_and_wait(WEB_PROMPT)
+        nodes = screen()
+        if find(nodes, contains="Couldn't search the web"):
+            raise CheckFailed("the phone couldn't reach DuckDuckGo")
+        if not find(nodes, contains='Searched the web for'):
+            raise CheckFailed('the reply does not say it searched the web')
+        sources = find(nodes, contains='Sources:')
+        if not sources:
+            raise CheckFailed('no Sources line under the reply')
+        result = f'searched; {sources[0].text.strip()[:90]}'
+    finally:
+        if not delete_test_chat():
+            print('  note: could not find the web search test chat to delete', file=sys.stderr)
+        if web_switch().checked != original:
+            tap(web_switch())
+            time.sleep(0.6)
+    if web_switch().checked != original:
+        raise CheckFailed('could not put "Search the web" back')
+    scroll_to_top()
+    return f"{result} (switch left {'on' if original else 'off'})"
 
 
 # Files to share live in the app's own folder on the phone, so the app can read them without any storage
@@ -1911,6 +1958,7 @@ CHECKS = {
     'launch': check_launch,
     'chat_typing': check_chat_typing,
     'chat_send': check_chat_send,
+    'web_search': check_web_search,
     'save_note': check_save_note,
     'pin_chat': check_pin_chat,
     'actions': check_actions,

@@ -65,11 +65,12 @@ To link them, open Settings → Home on both, tap **Scan the laptop's code** on 
 **Your data stays yours**
 - On Android, an encrypted backup of your memory and notes is saved each day to a folder you choose. Restore it with your passphrase.
 - Export and import memory and notes as a file.
-- Nothing you say goes online. See below for exactly what does.
+- Nothing you say goes online, unless you switch on web search. See below for exactly what does.
 
 ## How private is it?
 
-- **What goes online:** downloads, and nothing else. The phone downloads AI models from Hugging Face when you tap Download. The computer's installer downloads the app, and Ollama downloads its models. Libraries are files you add yourself.
+- **What goes online:** downloads, and web search if you switch it on. The phone downloads AI models from Hugging Face when you tap Download. The computer's installer downloads the app, and Ollama downloads its models. Libraries are files you add yourself.
+- **Web search is off until you switch it on** (Settings → AI → Search the web). Then, for a question that needs current information, or when you tap the globe by the message box, only the search words go to DuckDuckGo, which needs no account. The answer says it searched and lists its sources. Nothing else you say, and nothing about you, is sent.
 - **What never does:** your chats, memory, notes, photos, PDFs, library files and voice. They're handled on your phone, or on your computer over your own Wi-Fi. There's no account, no analytics and no ads, and Android's cloud backup is off.
 - **Voice:** the phone only uses its offline speech recognition. Phones without it don't get voice typing, rather than sending audio online, and the computer has no voice input for the same reason.
 - **Phone to computer:** they talk directly on your home network, over a private link. Everything between them is encrypted with a key made from your pairing code, which itself never crosses the network. The phone only accepts replies that prove they came from your computer, so nothing else on the Wi-Fi can read your data, pretend to be your computer or change what it says, and replayed or tampered messages are refused. Pairing only happens when you scan the code from inside Aislet.
