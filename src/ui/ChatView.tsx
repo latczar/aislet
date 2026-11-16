@@ -115,7 +115,7 @@ const INTERVIEW = { icon: 'account-heart-outline', title: 'Get to know me', sub:
 function Welcome({ onOpenSettings }: { onOpenSettings: () => void }) {
   const theme = useTheme();
   const { width } = useWindowDimensions();
-  const { settings, status, send, memories, startInterview } = useStore();
+  const { settings, status, send, memories, startInterview, libraries } = useStore();
   // While it knows little about you, offer the get-to-know-me chat first.
   const cards = memories.length < 5 ? [INTERVIEW, ...SUGGESTIONS.slice(0, 3)] : SUGGESTIONS;
   const cardWidth = width >= 700 ? '48.8%' : '48%';
@@ -126,6 +126,14 @@ function Welcome({ onOpenSettings }: { onOpenSettings: () => void }) {
       <Text variant="bodyLarge" style={{ color: theme.colors.onSurfaceVariant, textAlign: 'center' }}>
         How can I help? Everything stays on this device.
       </Text>
+      {libraries.lostAccess && settings.useLibraries && (
+        <Surface style={[styles.notice, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]} elevation={0}>
+          <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, flex: 1 }}>
+            Your libraries aren't being searched: All files access is off.
+          </Text>
+          <Button compact mode="contained-tonal" onPress={onOpenSettings}>Settings</Button>
+        </Surface>
+      )}
       {status?.needsModel ? (
         <SetupCard onOpenSettings={onOpenSettings} />
       ) : (
@@ -546,6 +554,10 @@ const styles = StyleSheet.create({
   cardIcon: { margin: 0, marginLeft: -8, marginBottom: 2 },
   setup: { width: '100%', maxWidth: 560, borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, padding: 18, gap: 12, marginTop: 20 },
   setupProgress: { gap: 6 },
+  notice: {
+    width: '100%', maxWidth: 560, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingVertical: 10, paddingHorizontal: 14,
+    marginTop: 16, flexDirection: 'row', alignItems: 'center', gap: 10,
+  },
   bar: { height: 6, borderRadius: 3 },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   bottom: { paddingHorizontal: 12, paddingTop: 4, paddingBottom: 10, gap: 8, width: '100%', maxWidth: 804, alignSelf: 'center' },
