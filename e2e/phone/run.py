@@ -984,7 +984,8 @@ def check_layout() -> str:
     nodes = screen()
     l3, _ = check_rows(nodes, {'Notes search': '', 'Photo understanding': ''}, 'Settings → AI', dp)
     lined_up({**l3, 'Memory titles': title_x}, 'Settings → AI row titles')
-    gets = [b for b in (button_box(nodes, 'Get'),) if b] + [n for n in nodes if n.desc.startswith('Delete ') and n.clickable]
+    # Only buttons on screen: a library's Delete button half under the tab bar has bounds that end above where they start.
+    gets = [b for b in (button_box(nodes, 'Get'),) if b] + [n for n in nodes if n.desc.startswith('Delete ') and n.clickable and n.y2 > n.y1]
     if gets:
         lined_up({**{f'control {i + 1}': g.x2 for i, g in enumerate(gets)}, 'Memory buttons': button_x}, "Settings → AI controls' right edges")
         for g in gets:
