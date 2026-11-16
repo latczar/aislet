@@ -65,7 +65,10 @@ try {
   } else {
     $base = "https://github.com/$Repo/releases/latest/download"
     Invoke-WebRequest "$base/aislet-pc.zip" -OutFile $zipFile
-    $expected = ((Invoke-WebRequest "$base/aislet-pc.zip.sha256" -UseBasicParsing).Content -split '\s+')[0].Trim().ToLower()
+    # Saved to a file and read as text: GitHub serves .sha256 as binary, so .Content would be bytes, not the hash.
+    $shaFile = Join-Path $tmp 'aislet-pc.zip.sha256'
+    Invoke-WebRequest "$base/aislet-pc.zip.sha256" -OutFile $shaFile -UseBasicParsing
+    $expected = ((Get-Content $shaFile -Raw).Trim() -split '\s+')[0].ToLower()
     $actual = (Get-FileHash $zipFile -Algorithm SHA256).Hash.ToLower()
     if ($expected -ne $actual) { throw 'The download did not match its checksum, so it was not installed. Please try again later.' }
     Write-Host 'Download verified.'
@@ -117,7 +120,7 @@ try {
   Step 'Opening Aislet'
   Start-Process $pyw -ArgumentList "`"$(Join-Path $AppDir 'pc\launch.py')`""
   Write-Host "`nAll done. Open Aislet from the Start menu any time." -ForegroundColor Green
-  Write-Host 'For your phone: install Aislet.apk from the releases page, then open Settings > Home on this computer and scan the code with the phone's camera.'
+  Write-Host "For your phone: install Aislet.apk from the releases page, then open Settings > Home on this computer and scan the code with the phone's camera."
 } catch {
   Write-Host "`nInstall stopped: $($_.Exception.Message)" -ForegroundColor Red
   Write-Host 'Nothing was half-replaced: an earlier install, if any, is still in place.'
