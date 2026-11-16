@@ -6,6 +6,8 @@ export interface Message {
   display?: string;           // what the chat shows, when different from content
   images?: string[];          // attached photos, base64 JPEG (kept on this device only)
   files?: { name: string }[]; // names of attached files, for the chat to show
+  web?: boolean;              // you: search the web for this one (the globe by the message box)
+  searched?: { query: string; ok: boolean; sources?: { title: string; url: string }[] }; // AI: it searched the web first
 }
 
 export interface Chat {
@@ -57,6 +59,7 @@ export interface Settings {
   onboarded: boolean;  // finished the first-run set-up
   useLibraries: boolean; // search offline libraries (Kiwix .zim files) when answering
   voiceLang: string;   // phone: speech language for talking and reading aloud ('' = English)
+  webSearch: boolean;  // search the web (DuckDuckGo) when a question needs current information
 }
 
 /** Everything that moves between devices with Export / Import. */

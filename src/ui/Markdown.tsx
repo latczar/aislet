@@ -104,7 +104,7 @@ export function linkSite(url: string): string | null {
   return m[1].replace(/:\d*$/, '').toLowerCase();
 }
 
-async function openLink(url: string) {
+export async function openLink(url: string) {
   if (!SAFE_LINK.test(url)) return;
   const mail = /^mailto:/i.test(url);
   const site = mail ? '' : linkSite(url);

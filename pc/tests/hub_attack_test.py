@@ -152,6 +152,13 @@ s, b = req("GET", "/api/library/books", headers={"X-Key": TOKEN}); check("librar
 for bad in (b'{"query": 5}', b'{"query": "x", "limit": 500}', b'{"query": "x", "limit": true}', b"[]", b"not json",
             json.dumps({"query": "x" * 600}).encode()):
     s, b = req("POST", "/api/library/search", bad, headers={"X-Key": TOKEN}); check(f"bad library search refused: {bad[:24]!r}", s == 400, s)
+# ---- Search the web: only the laptop's window, only DuckDuckGo, only a short query (no real search is made here) ----
+s, b = req("POST", "/api/search", b'{"query": "x"}'); check("web search needs credentials", s == 401, s)
+s, plain, raw = phone("POST", "/api/search", b'{"query": "x"}'); check("phone can't search through the laptop", s == 403, s)
+for bad in (b'{"query": 5}', b'{"query": "   "}', b"[]", b"not json", json.dumps({"query": "x" * 301}).encode(),
+            json.dumps({"url": "http://127.0.0.1:11434/api/tags"}).encode()):
+    s, b = req("POST", "/api/search", bad, headers={"X-Key": TOKEN}); check(f"bad web search refused: {bad[:24]!r}", s == 400, s)
+s, b = req("GET", "/api/search?q=x", headers={"X-Key": TOKEN}); check("web search only answers POST", s == 404, s)
 odd = json.dumps({"query": '" OR * NEAR(rent) -x'}).encode()
 s, b = req("POST", "/api/library/search", odd, headers={"X-Key": TOKEN}); check("search syntax in a question is harmless", s == 200, s)
 s, b = req("POST", "/api/sync", b"{}", headers={"X-Key": TOKEN, "Origin": "http://evil.example"}); check("cross-site request refused", s == 403, s)

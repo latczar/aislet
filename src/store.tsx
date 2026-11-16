@@ -7,6 +7,7 @@ import {
   systemPrompt, tidyMessages, titleFrom, worthLearning,
 } from './brain';
 import { actionsSupported, mayWantAction } from './deviceActions';
+import { type WebHit, needsWeb, searchWeb, webQuery } from './webSearch';
 import { engine as localEngine } from './engine';
 import { createOllamaEngine } from './engine/ollama';
 import type { Engine, EngineStatus } from './engine/types';
@@ -25,7 +26,7 @@ import type { Backup, Chat, ChatSummary, Memory, MemoryCategory, Message, Note, 
 const DEFAULT_SETTINGS: Settings = {
   name: '', learn: true, modelId: 'qwen3.5-4b', instructions: '', length: 'balanced', appearance: 'light',
   hubUrl: '', hubKey: '', useLaptop: true, accel: 'cpu', performance: 'balanced', haptics: true, onboarded: false,
-  useLibraries: true, voiceLang: '',
+  useLibraries: true, voiceLang: '', webSearch: false,
 };
 const HISTORY = 20; // messages of the current chat the model sees
 const DELETED_KEY = 'deleted';
@@ -89,7 +90,7 @@ interface Store {
   error: string | null;
   clearError(): void;
   noted: Record<number, string[]>; // facts learnt, by message position in the current chat
-  send(text: string, attachments?: Attachments): Promise<void>;
+  send(text: string, attachments?: Attachments, web?: boolean): Promise<void>;
   regenerate(): Promise<void>;
   startInterview(): Promise<void>; // a "get to know me" chat
   stop(): void;
@@ -740,6 +741,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const active = engineRef.current;
 
     let answer = '';
+    let searched: Message['searched'];
+    // While it searches the web, and after, the reply says so.
+    const setReplyNote = (note: Message['searched']) => setChat((c) => {
+      if (!c) return c;
+      const messages = c.messages.slice();
+      messages[answerAt] = { ...messages[answerAt], role: 'assistant', searched: note };
+      return { ...c, messages };
+    });
     // Draw the growing reply at most ~15 times a second. Redrawing for every token costs battery and
     // warms the phone while the model is already working hard.
     let drawTimer: ReturnType<typeof setTimeout> | null = null;
@@ -749,7 +758,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setChat((c) => {
         if (!c) return c;
         const messages = c.messages.slice();
-        messages[answerAt] = { role: 'assistant', content: shown };
+        messages[answerAt] = { role: 'assistant', content: shown, searched };
         return { ...c, messages };
       });
     };
@@ -769,7 +778,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const memories = await pickMemories([...recentAsks, userMsg.content].join('\n'), queryVec, base.mode === 'interview' ? 80 : MEMORY_LIMIT)
         .catch(() => memRef.current.slice(-MEMORY_LIMIT));
       const actions = actionsSupported && mayWantAction([...recentAsks, userMsg.display ?? userMsg.content]);
-      const prompt = systemPrompt(s, memories, hits, active.where, library, actions);
+      // Search the web: when asked with the globe, or when the question needs current information. Not in a
+      // get-to-know-me chat, and not by itself for a message about an attached photo or file.
+      const asked = (userMsg.display ?? userMsg.content).trim();
+      let web: { query: string; hits: WebHit[] } | null = null;
+      if (s.webSearch && base.mode !== 'interview' && asked
+        && (userMsg.web || (!userMsg.images?.length && !userMsg.files?.length && needsWeb(asked)))) {
+        const query = webQuery(asked);
+        setReplyNote({ query, ok: true });
+        web = { query, hits: await searchWeb(query).catch(() => []) };
+        searched = { query, ok: web.hits.length > 0, sources: web.hits.map((h) => ({ title: h.title, url: h.url })) };
+        setReplyNote(searched);
+      }
+      const prompt = systemPrompt(s, memories, hits, active.where, library, actions, web);
       const sys: Message = { role: 'system', content: base.mode === 'interview' ? `${prompt}
 
 ${interviewPrompt(s.name)}` : prompt };
@@ -788,7 +809,7 @@ ${interviewPrompt(s.name)}` : prompt };
       ...base,
       pinned: chatsRef.current.find((c) => c.id === base.id)?.pinned, // pinned or unpinned while it answered
       updated: Date.now(),
-      messages: answer ? [...base.messages, userMsg, { role: 'assistant', content: answer }] : base.messages,
+      messages: answer ? [...base.messages, userMsg, { role: 'assistant', content: answer, searched }] : base.messages,
     };
     setChat(finalChat.messages.length ? finalChat : null);
     if (answer) await saveChat(finalChat);
@@ -821,14 +842,15 @@ ${interviewPrompt(s.name)}` : prompt };
     if (added.length) setNoted((n) => ({ ...n, [answerAt]: added }));
   }, [searchNotes, searchLibraries, pickMemories, saveChat, addMemory, refreshStatus]);
 
-  const send = useCallback(async (text: string, attachments?: Attachments) => {
+  const send = useCallback(async (text: string, attachments?: Attachments, web?: boolean) => {
     const t = text.trim();
     const hasAttachments = !!attachments && (attachments.images.length > 0 || attachments.files.length > 0);
     if (busyRef.current || (!t && !hasAttachments)) return;
     const now = Date.now();
     const title = titleFrom(t || attachments?.files[0]?.name || 'Photo');
     const base = chatRef.current ?? { id: newId(), title, created: now, updated: now, messages: [] };
-    await run(base, withAttachments(t, attachments));
+    const message = withAttachments(t, attachments);
+    await run(base, web ? { ...message, web: true } : message);
   }, [run]);
 
   const regenerate = useCallback(async () => {

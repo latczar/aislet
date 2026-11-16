@@ -794,13 +794,15 @@ function WidgetRow({ onToast }: { onToast: (message: string) => void }) {
 const PRIVACY = Platform.OS === 'web'
   ? [
     { icon: 'shield-lock-outline', title: 'What you say stays here', text: 'Chats, memory, notes and files stay on this computer and your paired phone. The AI runs on this computer.' },
-    { icon: 'download-outline', title: 'Online only for downloads', text: "The installer downloads the app, and Ollama downloads the AI models. The app itself doesn't use the internet." },
+    { icon: 'download-outline', title: 'Online only for downloads', text: 'The installer downloads the app, and Ollama downloads the AI models.' },
+    { icon: 'web', title: 'Web search only if you switch it on', text: 'With Search the web on (Settings → AI), this computer sends only the search words to DuckDuckGo. It is off until you turn it on.' },
     { icon: 'lan', title: 'Your phone talks to it directly', text: 'Over your home Wi-Fi, never through the internet, and encrypted with a key made from your pairing code.' },
     { icon: 'account-off-outline', title: 'No account, no tracking', text: 'No sign-in, no analytics and no ads.' },
   ]
   : [
     { icon: 'shield-lock-outline', title: 'What you say stays on your devices', text: 'Chats, memory, notes, photos and voice are handled on this phone, or on your laptop over your own Wi-Fi.' },
     { icon: 'download-outline', title: 'Online only for downloads', text: 'AI models download from Hugging Face when you tap Download or Get. Libraries are files you add yourself.' },
+    { icon: 'web', title: 'Web search only if you switch it on', text: 'With Search the web on (Settings → AI), this phone sends only the search words to DuckDuckGo. It is off until you turn it on.' },
     { icon: 'lan', title: 'Your laptop, directly', text: 'Phone and laptop talk over your home Wi-Fi, never through the internet, encrypted with a key made from your pairing code.' },
     { icon: 'account-off-outline', title: 'No account, no tracking', text: "No sign-in, no analytics, no ads. Android's cloud backup and phone-to-phone copying are off; backups go only to the folder you choose." },
   ];
@@ -920,6 +922,15 @@ export function SettingsView() {
               </Lead>
             )}
             right={(p) => <Button mode="contained-tonal" compact style={p.style} onPress={refreshStatus}>Check</Button>}
+          />
+          <Divider />
+          <Row
+            title="Search the web"
+            description={settings.webSearch
+              ? 'For questions that need current information, or when you tap the globe. Only the search words go to DuckDuckGo.'
+              : 'Off: answers come from the AI, your notes and your libraries only.'}
+            left={(p) => <List.Icon {...p} icon="web" />}
+            right={(p) => <Switch style={p.style} value={settings.webSearch} onValueChange={(v) => updateSettings({ webSearch: v })} />}
           />
           {engine.models && (
             <>

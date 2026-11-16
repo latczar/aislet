@@ -319,6 +319,11 @@ export function hubLibrary<T>(action: 'books' | 'index' | 'search' | 'open', bod
   return call<T>(localHub()!, `/api/library/${action}`, { method: 'POST', body }, timeoutMs);
 }
 
+/** PC only: the laptop fetches DuckDuckGo's results page for "Search the web" (the window itself can't read it). */
+export function hubSearch(query: string): Promise<{ html: string }> {
+  return call<{ html: string }>(localHub()!, '/api/search', { method: 'POST', body: { query } }, 20000);
+}
+
 /** On the PC the app is served by the hub itself, so it can always talk to it. */
 export function localHub(): HubTarget | null {
   return Platform.OS === 'web' ? { base: '', key: '', kind: 'pc' } : null;

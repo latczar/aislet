@@ -40,7 +40,9 @@ import time
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+import urllib.error
+import urllib.request
+from urllib.parse import unquote, urlencode, urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import library  # noqa: E402 (pc/library.py, next to this file)
@@ -104,6 +106,10 @@ MAX_BODY = 80_000_000      # a sealed body is base64, a third bigger than what i
 SMALL_BODY = 65_536        # a refused request's body is read and dropped only up to this
 LAUNCH_SECONDS = 120       # a launch code must be used within this
 OLD_PHONE = "Update Aislet on this phone to keep using it with your laptop."
+# "Search the web" in the PC window: the hub fetches DuckDuckGo's results page, since the window can't read
+# another site. Always this one address, with only the search words: the hub is never a general web proxy.
+SEARCH_URL = "https://html.duckduckgo.com/html/"
+SEARCH_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36"
 DAY_MS = 86_400_000
 TYPES = {
     ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -717,6 +723,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"text": text[:300_000]})
             if path.startswith("/api/library/"):
                 return self.library(role, path, method, body)
+            if path == "/api/search" and method == "POST":
+                return self.search(role, body)
             if path in ("/api/chat", "/api/embed") and method == "POST" or path == "/api/tags" and method == "GET":
                 return self.proxy(method, path, body if method == "POST" else None)
             return self.send_json({"error": "Not found."}, 404)
@@ -771,6 +779,25 @@ class Handler(BaseHTTPRequestHandler):
             open_folder(LIBRARY_DIR)
             return self.send_json({"ok": True})
         return self.send_json({"error": "Not found."}, 404)
+
+    def search(self, role: str, body: bytes) -> None:
+        """One DuckDuckGo search for the PC window. Phones search by themselves."""
+        if role != "pc":
+            return self.send_json({"error": "Only available on the laptop."}, 403)
+        data = parse_json(body)
+        query = data.get("query") if isinstance(data, dict) else None
+        if not isinstance(query, str) or not query.strip() or len(query) > 300:
+            raise ValueError("Bad request.")
+        request = urllib.request.Request(SEARCH_URL, data=urlencode({"q": query.strip()}).encode(), headers={
+            "User-Agent": SEARCH_AGENT, "Accept": "text/html", "Accept-Language": "en"})
+        try:
+            with urllib.request.urlopen(request, timeout=15) as reply:
+                html = reply.read(2_000_000).decode("utf-8", "replace")
+        except urllib.error.HTTPError as e:
+            return self.send_json({"error": f"DuckDuckGo replied with an error ({e.code})."}, 502)
+        except (urllib.error.URLError, OSError):
+            return self.send_json({"error": "Couldn't reach DuckDuckGo. Check the laptop is online."}, 502)
+        return self.send_json({"html": html})
 
     def hub_info(self, role: str | None):
         if role is None:  # anyone may ask whether a hub is here; they learn nothing else

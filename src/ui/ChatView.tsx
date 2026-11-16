@@ -14,7 +14,7 @@ import { copy, isSpeaking, speak, stopSpeaking, tap } from './actions';
 import { cameraSupported, pickDocument, pickPhoto, readBase64, readText } from './attach';
 import { formatSize } from './confirm';
 import { cancelDownload, startDownload, useDownload } from './downloads';
-import { Markdown, drafts } from './Markdown';
+import { Markdown, drafts, linkSite, openLink } from './Markdown';
 import { FONT, STATUS_COLOURS } from './theme';
 import type { Incoming } from './share';
 import { registerFocus } from './shortcuts';
@@ -214,13 +214,34 @@ function actionProblem(e: unknown): string {
   return reason || "Couldn't open it. Try again, or set it in the app yourself.";
 }
 
+/** The pages a web search found, one link per site, so it's always clear where an answer may have come from. */
+function Sources({ sources }: { sources: { title: string; url: string }[] }) {
+  const theme = useTheme();
+  const sites = sources.flatMap((s) => { const site = linkSite(s.url); return site ? [{ site: site.replace(/^www\./, ''), url: s.url }] : []; })
+    .filter((s, i, all) => all.findIndex((o) => o.site === s.site) === i);
+  if (!sites.length) return null;
+  return (
+    <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+      Sources:{' '}
+      {sites.map((s, i) => (
+        <React.Fragment key={s.url}>
+          {i > 0 && ' · '}
+          <Text style={{ color: theme.colors.tertiary, textDecorationLine: 'underline' }} accessibilityRole="link" onPress={() => openLink(s.url)}>
+            {s.site}
+          </Text>
+        </React.Fragment>
+      ))}
+    </Text>
+  );
+}
+
 type AssistantProps = {
   index: number; text: string; last: boolean; streaming: boolean; busy: boolean; noted?: string[]; saved: boolean;
-  onRetry: () => void; onSave: (index: number) => void;
+  searched?: Message['searched']; onRetry: () => void; onSave: (index: number) => void;
 };
 
 // Memoised, like UserMessage: while a reply streams, only the message that's changing redraws.
-const AssistantMessage = React.memo(function AssistantMessage({ index, text: reply, last, streaming, busy, noted, saved, onRetry, onSave }: AssistantProps) {
+const AssistantMessage = React.memo(function AssistantMessage({ index, text: reply, last, streaming, busy, noted, saved, searched, onRetry, onSave }: AssistantProps) {
   const theme = useTheme();
   const [speaking, setSpeaking] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -233,7 +254,18 @@ const AssistantMessage = React.memo(function AssistantMessage({ index, text: rep
     <View style={styles.aiRow}>
       <Image source={require('../../assets/icon.png')} style={styles.avatar} />
       <View style={styles.aiBody}>
+        {searched && (
+          <View style={styles.searched}>
+            <Icon source={searched.ok || (streaming && !text) ? 'web' : 'web-off'} size={15} color={theme.colors.onSurfaceVariant} />
+            <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant, flexShrink: 1 }} numberOfLines={2}>
+              {streaming && !text && searched.ok
+                ? `Searching the web for “${searched.query}”…`
+                : searched.ok ? `Searched the web for “${searched.query}”` : "Couldn't search the web, so this answer may be out of date"}
+            </Text>
+          </View>
+        )}
         {text ? <Markdown text={text} /> : streaming ? <ThinkingDots /> : null}
+        {!streaming && !!text && !!searched?.sources?.length && <Sources sources={searched.sources} />}
         {!streaming && actions.map((a, i) => <ActionCard key={i} action={a} />)}
         {!streaming && unreadable > 0 && (
           <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
@@ -331,6 +363,7 @@ function Composer({ ready, incoming, onIncomingTaken, talkRequest = 0 }: Compose
   const [images, setImages] = useState<string[]>([]);
   const [files, setFiles] = useState<{ name: string; text: string }[]>([]);
   const [pdfs, setPdfs] = useState<{ name: string; base64: string }[]>([]); // shared PDFs waiting for the laptop
+  const [web, setWeb] = useState(false); // the globe: search the web for the next message
   const [menu, setMenu] = useState(false);
   const closeMenu = useCallback(() => setMenu(false), []);
   useBackCloses(menu, closeMenu);
@@ -501,7 +534,8 @@ function Composer({ ready, incoming, onIncomingTaken, talkRequest = 0 }: Compose
     const t = text.trim();
     setText('');
     setHeight(24);
-    send(t, { images, files });
+    send(t, { images, files }, web && settings.webSearch);
+    setWeb(false);
     setImages([]);
     setFiles([]);
   };
@@ -615,6 +649,15 @@ function Composer({ ready, incoming, onIncomingTaken, talkRequest = 0 }: Compose
           {cameraSupported && <Menu.Item leadingIcon="camera-outline" title="Take a photo" onPress={() => addPhoto(true)} />}
           <Menu.Item leadingIcon="file-document-outline" title="PDF or text file" onPress={addFile} />
         </Menu>
+        {settings.webSearch && (
+          <IconButton
+            icon="web" size={22} disabled={!ready || busy} selected={web}
+            iconColor={web ? theme.colors.onPrimaryContainer : theme.colors.onSurfaceVariant}
+            style={[styles.composerIcon, web && { backgroundColor: theme.colors.primaryContainer }]}
+            accessibilityLabel={web ? "Search the web: on for this message" : 'Search the web for this message'}
+            onPress={() => { tap(); setWeb((w) => !w); }}
+          />
+        )}
         <TextInput
           ref={input}
           value={text}
@@ -724,7 +767,8 @@ export function ChatView({ onOpenSettings, incoming, onIncomingTaken, talkReques
             ) : (
               <AssistantMessage
                 key={i} index={i} text={m.content} last={i === lastAi} streaming={busy && i === messages.length - 1}
-                busy={busy} noted={noted[i]} saved={noteTexts.has(shownText(m.content).trim())} onRetry={regenerate} onSave={saveToNotes}
+                busy={busy} noted={noted[i]} saved={noteTexts.has(shownText(m.content).trim())} searched={m.searched}
+                onRetry={regenerate} onSave={saveToNotes}
               />
             ),
           )
@@ -784,6 +828,7 @@ const styles = StyleSheet.create({
   notedIcon: { margin: 0 },
   dots: { flexDirection: 'row', gap: 5, paddingVertical: 10 },
   thinkDot: { width: 7, height: 7, borderRadius: 4 },
+  searched: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   errorCard: { borderRadius: 14, padding: 14, gap: 8 },
   errorActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
   welcome: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 32 },
