@@ -1,0 +1,4 @@
+• Search the web, if you switch it on in Settings → AI. Answers list their sources.
+• A message written for you to send shows in its own card, and Copy takes just that.
+• Aislet knows its own name, and Get to know me stops asking when you've had enough.
+• Aislet no longer says an alarm or timer is running, since it can't see them.

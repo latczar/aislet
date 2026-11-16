@@ -1,9 +1,7 @@
-• Hands-free: speak, hear the answer and keep talking.
+• Hands-free: speak, hear the answer read aloud, and keep talking.
 • Save any answer to Notes with one tap.
-• Pin chats. Pins sync with your computer.
-• Ask for an alarm, timer or calendar event, then tap to keep it in Clock or Calendar.
-• A home-screen widget.
-• Libraries can answer from your own files.
-• A private, encrypted link between phone and computer.
-• Search the web, if you switch it on. Answers list their sources.
-• Drafts get their own Copy button.
+• Pin chats to the top of the list. Pins sync with your computer.
+• Ask for an alarm, a timer or a calendar event, then tap to check and keep it in your Clock or Calendar app.
+• A home-screen widget: ask, or start talking, in one tap.
+• Libraries can answer from your own files, not just Kiwix.
+• Your phone and computer now talk over a private, encrypted link.
