@@ -1024,8 +1024,9 @@ def check_haptics() -> str:
     return f"switched {'off and on' if original else 'on and off'}"
 
 
-# A neutral question: these words are the only thing the check sends to DuckDuckGo.
-WEB_PROMPT = "E2E check: what's the latest Expo SDK version?"
+# Neutral words: the only thing the check sends to DuckDuckGo. The test can't type "?", and "E2E check:" comes first,
+# so this wouldn't count as a question by itself (scripts/check-web.mjs checks that part): the globe asks for the search.
+WEB_PROMPT = 'E2E check: latest Expo SDK version'
 
 
 def web_switch() -> Node:
@@ -1039,8 +1040,8 @@ def web_switch() -> Node:
 
 
 def check_web_search() -> str:
-    """With Search the web on, a question about something current is searched: the reply says so and lists its
-    sources. The switch is put back as it was, and the test chat deleted."""
+    """With Search the web on, the globe by the message box searches the web for the message: the reply says so and
+    lists its sources. The switch is put back as it was, and the test chat deleted."""
     original = web_switch().checked
     try:
         if not original:
@@ -1049,7 +1050,7 @@ def check_web_search() -> str:
             if not web_switch().checked:
                 raise CheckFailed('the switch did not turn on')
         go_tab('Chat')
-        ask_and_wait(WEB_PROMPT)
+        ask_and_wait(WEB_PROMPT, web=True)
         nodes = screen()
         if find(nodes, contains="Couldn't search the web"):
             raise CheckFailed("the phone couldn't reach DuckDuckGo")
@@ -1551,10 +1552,15 @@ def check_resume() -> str:
 NOTE_PROMPT = 'E2E check: save note, reply with one word, ok'
 
 
-def ask_and_wait(prompt: str, timeout: float = 180) -> None:
-    """Send a message in a new chat and wait until the reply has finished."""
+def ask_and_wait(prompt: str, timeout: float = 180, web: bool = False) -> None:
+    """Send a message in a new chat and wait until the reply has finished. web: tap the globe first."""
     tap(open_new_chat())
     wait_keyboard(True)
+    if web:
+        tap(wait_for('the globe button', desc='Search the web for this message'))
+        wait_for('the globe switched on', timeout=3, desc='Search the web: on for this message')
+        tap(message_box())
+        wait_keyboard(True)
     type_text(prompt)
     time.sleep(0.5)
     tap(wait_for('the Send button', desc='Send'))
