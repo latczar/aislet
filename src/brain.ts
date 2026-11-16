@@ -1,5 +1,6 @@
 // The thinking parts that don't depend on which device runs the model:
 // prompts, learning facts, splitting notes and finding the relevant ones.
+import { APP_NAME } from './config';
 import { actionsPrompt } from './deviceActions';
 import type { LibraryHit } from './library';
 import type { AnswerLength, Memory, MemoryCategory, Message, NoteHit, Settings } from './types';
@@ -24,8 +25,9 @@ export function systemPrompt(
   const who = name || 'the user';
   const lines = [
     name
-      ? `You are ${name}'s personal assistant, running privately on their own ${where}.`
-      : `You are a personal assistant running privately on the user's own ${where}.`,
+      ? `You are ${APP_NAME}, ${name}'s personal assistant, running privately on their own ${where}.`
+      : `You are ${APP_NAME}, a personal assistant running privately on the user's own ${where}.`,
+    `${APP_NAME} is this app: when they mention ${APP_NAME}, they mean you (it used to be called Untethered).`,
     'Be plain, warm and honest. Use British English and Markdown (lists, bold, code) where it helps.',
     'When you write something for them to send or post (a message, email, reply or post), put exactly that text, ' +
       'with its line breaks, in a code block marked draft (```draft), so it can be copied on its own. Outside it, keep ' +
