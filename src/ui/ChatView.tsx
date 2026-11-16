@@ -14,7 +14,7 @@ import { copy, isSpeaking, speak, stopSpeaking, tap } from './actions';
 import { cameraSupported, pickDocument, pickPhoto, readBase64, readText } from './attach';
 import { formatSize } from './confirm';
 import { cancelDownload, startDownload, useDownload } from './downloads';
-import { Markdown } from './Markdown';
+import { Markdown, drafts } from './Markdown';
 import { FONT, STATUS_COLOURS } from './theme';
 import type { Incoming } from './share';
 import { registerFocus } from './shortcuts';
@@ -227,6 +227,8 @@ const AssistantMessage = React.memo(function AssistantMessage({ index, text: rep
   useEffect(() => () => stopSpeaking(), []);
   // Action lines like [[alarm 07:30 | Wake up]] become cards and never show as text.
   const { text, actions, unreadable } = useMemo(() => parseActions(reply, streaming), [reply, streaming]);
+  // With one draft (a message for them to send), Copy takes just that, not the AI's lines around it.
+  const draft = useMemo(() => { const d = drafts(text); return d.length === 1 ? d[0] : null; }, [text]);
   return (
     <View style={styles.aiRow}>
       <Image source={require('../../assets/icon.png')} style={styles.avatar} />
@@ -242,7 +244,8 @@ const AssistantMessage = React.memo(function AssistantMessage({ index, text: rep
           <View style={styles.actions}>
             <IconButton
               icon={copied ? 'check' : 'content-copy'} size={17} iconColor={theme.colors.onSurfaceVariant} style={styles.action}
-              accessibilityLabel="Copy" onPress={async () => { await copy(text); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+              accessibilityLabel={draft ? 'Copy draft' : 'Copy'}
+              onPress={async () => { await copy(draft ?? text); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
             />
             <IconButton
               icon={speaking ? 'stop-circle-outline' : 'volume-high'} size={17} iconColor={theme.colors.onSurfaceVariant} style={styles.action}

@@ -148,6 +148,35 @@ function Inline({ text, codeBg, link }: { text: string; codeBg: string; link: st
   );
 }
 
+// Blocks of words rather than code: what the AI wrote for them to send. The prompt asks for ```draft, but models
+// often pick one of the others.
+const DRAFT_LANGS = new Set(['draft', 'text', 'txt', 'plain', 'plaintext', 'markdown', 'md', 'email', 'message']);
+const isDraft = (lang: string) => DRAFT_LANGS.has(lang.toLowerCase());
+
+/** The texts of a reply's draft blocks: what the AI wrote for them to send, without its own comments. */
+export function drafts(src: string): string[] {
+  return parse(src).flatMap((b) => (b.kind === 'code' && isDraft(b.lang) && b.text.trim() ? [b.text.trim()] : []));
+}
+
+/** Something to send (a message, email or post): normal text in a card, with its own Copy. */
+function DraftBlock({ text }: { text: string }) {
+  const theme = useTheme();
+  const [copied, setCopied] = useState(false);
+  return (
+    <View style={[styles.codeBlock, { backgroundColor: theme.colors.elevation.level1, borderColor: theme.colors.outlineVariant }]}>
+      <View style={[styles.codeBar, { borderBottomColor: theme.colors.outlineVariant }]}>
+        <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>Draft</Text>
+        <IconButton
+          icon={copied ? 'check' : 'content-copy'} size={15} style={styles.codeCopy} iconColor={theme.colors.onSurfaceVariant}
+          accessibilityLabel={copied ? 'Copied' : 'Copy draft'}
+          onPress={async () => { await copy(text.trim()); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+        />
+      </View>
+      <Text variant="bodyLarge" style={[styles.draft, { color: theme.colors.onSurface }]} selectable>{text.trim()}</Text>
+    </View>
+  );
+}
+
 function CodeBlock({ text, lang }: { text: string; lang: string }) {
   const theme = useTheme();
   const [copied, setCopied] = useState(false);
@@ -222,7 +251,9 @@ export const Markdown = React.memo(function Markdown({ text }: { text: string })
               </Text>
             );
           case 'code':
-            return <CodeBlock key={i} text={b.text} lang={b.lang} />;
+            return isDraft(b.lang)
+              ? <DraftBlock key={i} text={b.text} />
+              : <CodeBlock key={i} text={b.text} lang={b.lang} />;
           case 'table':
             return <Table key={i} head={b.head} align={b.align} rows={b.rows} codeBg={codeBg} link={link} />;
           case 'divider':
@@ -259,6 +290,7 @@ const styles = StyleSheet.create({
   codeCopy: { margin: 0 },
   codeScroll: { padding: 12 },
   code: { fontFamily: MONO, fontSize: 13, lineHeight: 19 },
+  draft: { padding: 12, lineHeight: 24 },
   table: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, overflow: 'hidden' },
   tr: { flexDirection: 'row' },
   trBorder: { borderTopWidth: StyleSheet.hairlineWidth },

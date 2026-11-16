@@ -43,6 +43,8 @@ function browserCopy(text: string): boolean {
 /** Plain text for reading aloud: drop Markdown symbols and code blocks. */
 function speakable(markdown: string): string {
   return markdown
+    // A draft (a block of words, as in Markdown.tsx) is read as it is.
+    .replace(/(^|\n)[ \t]*```(?:draft|text|txt|plain|plaintext|markdown|md|email|message)[ \t]*\n([\s\S]*?)(?:\n[ \t]*```[^\n]*|(?![\s\S]))/gi, '$1$2\n')
     .replace(/```[\s\S]*?```/g, ' (code) ')
     .replace(/^\s*\|?\s*:?-{2,}.*$/gm, '') // table rules
     .replace(/\s*\|\s*/g, ', ')
