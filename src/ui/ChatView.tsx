@@ -366,7 +366,9 @@ function Composer({ ready, incoming, onIncomingTaken, talkRequest = 0 }: Compose
     said.current = '';
     setHeard('');
     setHandsFree('listening');
-    if (!(await voice.start()) && phase.current === 'listening') endHandsFree();
+    const started = await voice.start();
+    if (phase.current !== 'listening') { if (started) voice.abort(); return; } // ended while starting: keep the mic off
+    if (!started) endHandsFree();
   };
 
   function endHandsFree(note?: string) {

@@ -88,10 +88,12 @@ export function useVoice(onText: (text: string, final: boolean) => void, onEnd?:
   });
 
   /** Ask for the microphone if needed and check the phone can listen offline. False, with the reason in
-   * `error`, when it can't. (Android's permission prompt pauses the app, so callers that stop on a pause ask first.) */
+   * `error`, when it can't. Asking pauses the app on Android, even when it's already allowed, so it only asks
+   * when it isn't, and callers that stop on a pause ask first. */
   const prepare = async (): Promise<boolean> => {
     setError(null);
-    const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+    let permission = await ExpoSpeechRecognitionModule.getPermissionsAsync();
+    if (!permission.granted) permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
     if (!permission.granted) {
       setError('Allow microphone access to talk to your assistant.');
       return false;
