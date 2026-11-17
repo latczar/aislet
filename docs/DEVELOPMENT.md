@@ -100,6 +100,29 @@ TypeScript · React Native (Expo) · React Native Paper · Ollama on the compute
 - **Library tests:** after any change to `pc/library.py`, run `python pc/tests/library_test.py` (it makes its own made-up files in a temporary folder). On Linux it also checks that links aren't followed; Windows needs symlink rights for that part. Changes to `LibraryFiles.kt` should match, and are checked on the phone by the `library_files` check.
 - **Hub security tests:** after any change to `pc/hub.py`, run `pc/tests/hub_attack_test.py` against a test hub. Its first lines say how, on Windows and on Linux. Where Ollama isn't installed (for example WSL), `pc/tests/fake_ollama.py` stands in for it. All checks must pass.
 
+## Measuring answers and speed
+
+Before and after a change to prompts, memory, models or the engines, compare against the baseline numbers (v1.0.9: 65/87 on the laptop's `qwen3.5:9b`). Everything in `scripts/eval/` uses made-up data only.
+
+- **Answer quality:**
+
+  ```bash
+  node scripts/eval/run.mjs --runs 3 --out eval.json
+  ```
+
+  This sends 29 made-up prompts (`scripts/eval/cases.mjs`) to Ollama and checks each answer with pass/fail rules. The checks cover:
+  - knowing it is Aislet;
+  - never claiming an alarm is set;
+  - using memories only when relevant;
+  - not inventing sources;
+  - short answers with no filler;
+  - drafts in their own card;
+  - Get to know me.
+
+  It builds every prompt with the app's own `src/brain.ts` and sends it with `src/engine/ollama.ts`, loaded by plain Node 22.18+ (`scripts/eval/hooks.mjs` stands in for Expo, React Native and the hub), so it needs no packages. Use `--model qwen3.5:4b` for another model and `--only <case or group>` for a few cases. A few cases can flip between runs even with fixed seeds, so treat ±2 as noise.
+- **Prompt size and laptop speed:** `node scripts/eval/speed.mjs tokens` counts the system prompt's tokens. `node scripts/eval/speed.mjs speed` times the first word and words per second. To go through a hub as the laptop's window, add `--hub http://127.0.0.1:8767 --key <local_token>`, and only ever point it at a test hub.
+- **Phone:** `python scripts/eval/phone_speed.py cold|chat|memory|state` times cold starts, replies (from llama.rn's own log) and memory in the installed app. It follows the e2e etiquette: it reads the foreground app first, prints timings only and deletes its "E2E check" chats. To time the phone's own model, run `laptop-off` first and `laptop-on` afterwards. Set `ANDROID_SERIAL` when adb lists the phone twice.
+
 ## List rows
 
 Rows in cards use `Row` and `Lead` from `src/ui/rows.tsx`. Every row in a card shares the same columns:
