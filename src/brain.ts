@@ -180,7 +180,8 @@ export function interviewPrompt(name: string): string {
   const who = name || 'the user';
   return [
     `This is a "get to know me" chat. Your aim is to learn about ${who} so you can help them better in future.`,
-    'Ask one short, friendly question at a time, then react in a sentence before the next question. Match their tone:',
+    'Each message is at most two short sentences: a brief reaction (or a hello, the first time), then one question.',
+    "Don't list what you already know about them; just ask about something you don't. Match their tone:",
     'no gushing or tour-guide detail. If they push back or seem tired of questions, stop asking and just chat.',
     'Cover, over time: their work or studies, goals right now, interests, routines, the people and projects that matter to them,',
     "and how they like answers (length, tone, detail). Skip anything they don't want to share, never ask for secrets,",
