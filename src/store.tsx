@@ -3,8 +3,8 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { AppState, Platform } from 'react-native';
 import {
   CATEGORIES, type ChatIndex, type LearntFact, MAX_TOKENS, MEMORY_LIMIT, type PastRecall, SAME_THING, TIDY_BATCH, type TidyChange,
-  chunkText, cleanFact, conversationLearnMessages, indexChat, interviewPrompt, keywordScore, learnMessages, moreMemories, parseFacts, parseTidy,
-  pastFacts, recallsPast, relevantMemories, searchPast, similarity, stripThinking, systemPrompt, tidyMessages, titleFrom, turnContext, worthLearning,
+  chunkText, cleanFact, conversationLearnMessages, indexChat, interviewPrompt, keywordScore, learnMessages, moreMemories, parseFacts, parseTidy, stopsQuestions,
+  pastFacts, recallsPast, relevantMemories, searchPast, similarity, stripThinking, systemPrompt, tidyMessages, titleFrom, turnContext, withoutClosingQuestion, worthLearning,
 } from './brain';
 import { actionsSupported, mayWantAction } from './deviceActions';
 import { type WebHit, needsWeb, searchWeb, webQuery } from './webSearch';
@@ -860,6 +860,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   /** Ask the model to answer `userMsg`, given the earlier messages in `base`. */
   const run = useCallback(async (base: Chat, userMsg: Message, opts?: { library?: LibraryHit[] }) => {
+    // Asked to stop a "get to know me" chat: from this message on it's an ordinary chat.
+    const stopping = base.mode === 'interview' && stopsQuestions(userMsg.display ?? userMsg.content);
+    if (stopping) base = { ...base, mode: undefined };
     busyRef.current = true;
     setBusy(true);
     setError(null);
@@ -945,7 +948,7 @@ ${interviewPrompt(s.name)}` : prompt };
       // What the app found for this message (a look back, notes, libraries, the web, facts, how to set alarms) goes
       // with it, never in the chat that's saved. It's kept with the message while the chat stays open, so later
       // prompts begin exactly as this one did and only what's new is read.
-      const added = turnContext(s.name, { past, notes: hits, library, web, actions, memories: extra });
+      const added = turnContext(s.name, { past, notes: hits, library, web, actions, memories: extra, stopQuestions: stopping });
       const at = base.messages.length;
       for (const k of [...ps.added.keys()]) if (k >= at) ps.added.delete(k); // answered again: those messages are gone
       if (added) ps.added.set(at, { for: userMsg.content, text: added });
@@ -976,6 +979,7 @@ ${interviewPrompt(s.name)}` : prompt };
     if (drawTimer) clearTimeout(drawTimer);
 
     answer = stripThinking(answer).trim();
+    if (stopping && answer) answer = withoutClosingQuestion(answer);
     const finalChat: Chat = {
       ...base,
       pinned: chatsRef.current.find((c) => c.id === base.id)?.pinned, // pinned or unpinned while it answered

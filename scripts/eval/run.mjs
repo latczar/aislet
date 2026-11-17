@@ -131,6 +131,8 @@ async function main() {
         }, c.maxTokens ?? brain.MAX_TOKENS[c.settings?.length ?? SETTINGS.length]);
       }
       answer = brain.stripThinking(answer).trim();
+      // As the app does when asked to stop a "get to know me" chat.
+      if (!c.build && c.mode === 'interview' && brain.stopsQuestions(c.ask)) answer = brain.withoutClosingQuestion(answer);
       const verdict = judge(c, answer);
       runs.push({ seed, answer, ...verdict, firstTokenMs: first && Math.round(first), stats: timing.last });
     }

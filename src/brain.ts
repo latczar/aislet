@@ -91,6 +91,28 @@ export interface TurnFound {
   web?: { query: string; hits: WebHit[] } | null; // a web search made for this message (Search the web)
   actions?: boolean;   // explain alarms, timers and events (the message may ask for one)
   memories?: Memory[]; // facts not in the system message: learnt during this chat, or relevant to this message
+  stopQuestions?: boolean; // they asked to stop a "get to know me" chat: say that's fine, and ask nothing
+}
+
+/**
+ * Whether a message in a "get to know me" chat asks to stop the questions ("I'm tired of all these questions",
+ * "can we stop?", "no more questions"). Small models often keep asking anyway, so the app ends the interview itself.
+ */
+export function stopsQuestions(message: string): boolean {
+  const m = message.toLowerCase().replace(/[’‘]/g, "'").trim();
+  return /\b(tired of|sick of|fed up with|bored of|bored with|done with|enough of|enough with|no more|stop (the|these|with the|asking)|too many|so many|enough)\b[^.?!]*\bquestions?\b/.test(m)
+    || /\bstop asking\b/.test(m)
+    || /\b(can|could|shall) we (stop|finish|end|leave it|wrap (it )?up)\b/.test(m)
+    || /\b(let's|lets|i want to|i'd like to|i wanna) (stop|finish|end|leave it|wrap (it )?up)\b/.test(m)
+    || /^(ok(ay)?[, ]+)?(that's|thats) enough\b/.test(m)
+    || /^(ok(ay)?[, ]+)?(i'm|im) done( now| for (now|today))?[.!]*$/.test(m)
+    || /\b(don't|dont|do not) want to (answer|do this|keep going|carry on)\b/.test(m);
+}
+
+/** The reply to "stop the questions" without a question tacked on the end (the smallest models add one anyway). */
+export function withoutClosingQuestion(reply: string): string {
+  const trimmed = reply.replace(/(\s*[^.!?\n]*\?+["')\]]*)+\s*$/, '').trim();
+  return trimmed || reply;
 }
 
 /**
@@ -135,6 +157,12 @@ export function turnContext(name: string, found: TurnFound, now = new Date()): s
     ]);
   }
   if (found.actions) parts.push([actionsPrompt(now)]);
+  if (found.stopQuestions) {
+    parts.push([
+      `${who} asked to stop the "get to know me" questions, so that chat is over. In one or two short sentences, say ` +
+        "that's fine and thank them for what they shared. Don't ask anything, and don't suggest more questions.",
+    ]);
+  }
   return parts.length ? foundBlock(name, parts) : '';
 }
 

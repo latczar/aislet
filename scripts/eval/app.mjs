@@ -13,6 +13,9 @@ const HISTORY = 20; // messages of the current chat the model sees, as in src/st
  * app adds to it (notes, library passages, web results, how to set alarms).
  */
 export function buildMessages(c, memories = c.memories ?? MEMORIES) {
+  // Asked to stop a "get to know me" chat: it becomes an ordinary chat, and the app says so with the message.
+  const stopping = c.mode === 'interview' && brain.stopsQuestions(c.ask);
+  if (stopping) c = { ...c, mode: undefined };
   const history = c.history ?? [];
   const recentAsks = history.filter((m) => m.role === 'user').slice(-2).map((m) => m.content);
   const query = [...recentAsks, c.ask].join('\n');
@@ -26,6 +29,6 @@ export function buildMessages(c, memories = c.memories ?? MEMORIES) {
   const web = c.mode === 'interview' ? null : (c.web ?? null);
   const prompt = brain.systemPrompt(settings, picked, where, where === 'phone');
   const system = { role: 'system', content: c.mode === 'interview' ? `${prompt}\n\n${brain.interviewPrompt(settings.name)}` : prompt };
-  const added = brain.turnContext(settings.name, { notes: c.notes, library: c.library, web, actions: c.actions, memories: extra });
+  const added = brain.turnContext(settings.name, { notes: c.notes, library: c.library, web, actions: c.actions, memories: extra, stopQuestions: stopping });
   return [system, ...history.slice(-HISTORY), { role: 'user', content: added ? `${added}\n\n${c.ask}` : c.ask }];
 }

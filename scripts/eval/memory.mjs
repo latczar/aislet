@@ -102,5 +102,22 @@ check('says when nothing was found, so it does not guess', nothing.includes('fou
 const sys1 = brain.systemPrompt({ name: 'Sam', instructions: '', length: 'balanced' }, known, 'phone');
 check('the system message has no per-message look-back part', !sys1.includes('earlier chats with Sam'));
 
+// Get to know me: asking to stop ends it. Ordinary answers that happen to say "done" or "questions" don't.
+const stops = ["Honestly, I'm a bit tired of all these questions.", 'Can we stop?', 'no more questions pls', 'Stop asking me stuff',
+  "OK that's enough for today", "I'm done.", 'Enough questions!', "I don't want to answer any more", 'let’s wrap up', 'Too many questions mate',
+  "That's enough about me, what about you?"];
+const carriesOn = ["I'm done with my exams next week", 'I ask lots of questions at work', 'Walks, mostly. Sometimes I stop for coffee.',
+  'My job is answering customer questions', 'I never stop learning'];
+const missed = stops.filter((m) => !brain.stopsQuestions(m));
+const wrong = carriesOn.filter((m) => brain.stopsQuestions(m));
+check('notices asking to stop the questions', !missed.length, missed.join(' | '));
+check("doesn't stop on ordinary answers", !wrong.length, wrong.join(' | '));
+const stopNote = brain.turnContext('Sam', { stopQuestions: true });
+check('tells the model not to ask anything', stopNote.includes("Don't ask anything"));
+check('drops a question tacked on the end', brain.withoutClosingQuestion("That's fine. Thanks for sharing. How is Biscuit?") === "That's fine. Thanks for sharing.");
+check('drops a closing question after a paragraph break', brain.withoutClosingQuestion('Fair enough.\n\nWould you like to talk about running?') === 'Fair enough.');
+check('keeps a reply that is only a question', brain.withoutClosingQuestion('Shall we stop here?') === 'Shall we stop here?');
+check('keeps a reply with no question', brain.withoutClosingQuestion('No problem, thanks!') === 'No problem, thanks!');
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
