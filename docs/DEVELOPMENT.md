@@ -119,7 +119,7 @@ Before and after a change to prompts, memory, models or the engines, compare aga
   - drafts in their own card;
   - Get to know me.
 
-  It builds every prompt with the app's own `src/brain.ts` and sends it with `src/engine/ollama.ts`, loaded by plain Node 22.18+ (`scripts/eval/hooks.mjs` stands in for Expo, React Native and the hub), so it needs no packages. Use `--model qwen3.5:4b` for another model and `--only <case or group>` for a few cases. A few cases can flip between runs even with fixed seeds, so treat ±2 as noise.
+  It builds every prompt with the app's own `src/brain.ts` and sends it with `src/engine/ollama.ts`, loaded by plain Node 22.18+ (`scripts/eval/hooks.mjs` stands in for Expo, React Native and the hub), so it needs no packages. Use `--model qwen3.5:4b` for another model and `--only <case or group>` for a few cases. To add cases, put a `.mjs` file in `scripts/eval/cases/` (its README shows how); it's loaded by itself. A few cases can flip between runs even with fixed seeds, so treat ±2 as noise.
 - **Prompt size and laptop speed:** `node scripts/eval/speed.mjs tokens` counts the system prompt's tokens. `node scripts/eval/speed.mjs speed` times the first word and words per second. To go through a hub as the laptop's window, add `--hub http://127.0.0.1:8767 --key <local_token>`, and only ever point it at a test hub.
 - **Phone:** `python scripts/eval/phone_speed.py cold|chat|memory|state` times cold starts, replies (from llama.rn's own log) and memory in the installed app. It follows the e2e etiquette: it reads the foreground app first, prints timings only and deletes its "E2E check" chats. To time the phone's own model, run `laptop-off` first and `laptop-on` afterwards. Set `ANDROID_SERIAL` when adb lists the phone twice.
 

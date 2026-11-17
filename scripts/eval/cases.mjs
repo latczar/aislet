@@ -157,6 +157,12 @@ export const CASES = [
     checks: [questions(0, 0), maxWords(50)] },
 ];
 
+// For extra case files in scripts/eval/cases/: the same checks and made-up data.
+export {
+  has, lacks, maxWords, hasDraft, shortOutsideDraft, noDraft, questions, noUrls, noCitations, noClaim, noMemories,
+  claimsSet, fact, MEMORY_WORDS, LIBRARY, NOTES, WEB,
+};
+
 // No filler openers or closers, checked on every case except Get to know me (where "Of course" can be natural).
 export const FILLER_OPENER = /^\s*((great|good|excellent|lovely) question|certainly[!.,]|sure( thing)?[!.,]|of course[!.,]|absolutely[!.,]|i'?d be (happy|glad|delighted) to|happy to help|what a (great|lovely|good))/i;
 export const FILLER_CLOSER = /(let me know if|hope (this|that) helps|feel free to|is there anything else|any other questions|happy to help|don'?t hesitate|just ask[!.]?)[^\n]*$/i;

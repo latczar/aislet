@@ -6,13 +6,52 @@
 //   node scripts/eval/run.mjs --runs 3 --only identity-name,draft-text
 //
 // Options: --url (Ollama, default http://localhost:11434), --model, --runs (default 1), --seed (default 42),
-// --only (case ids or groups, comma-separated), --out (JSON file for the answers and timings), --quiet.
+// --only (case ids or groups, comma-separated), --cases (extra case files, comma-separated),
+// --out (JSON file for the answers and timings), --quiet.
 // Needs Node 22.18+ (it loads the app's TypeScript directly) and nothing else. Exit code 0 only if every case passes.
-import { writeFileSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { brain, buildMessages, createOllamaEngine } from './app.mjs';
+//
+// More cases: put a file in scripts/eval/cases/ (it's loaded by itself) or pass it with --cases. It exports CASES,
+// an array like the one in cases.mjs, and can import the check helpers and made-up data from '../cases.mjs'. A case
+// can also set:
+//   memories: [...]     its own memories instead of the shared made-up ones
+//   settings: {...}     settings to change (name, instructions, length, webSearch)
+//   history: [...]      earlier messages in the chat
+//   build: (app) => [...messages]   build the messages itself (app has brain and buildMessages), e.g. learnMessages
+//   json: true          ask as the app's learning and tidying do (engine.json); checks get x.data, the parsed JSON
+//   filler: false       skip the filler opener/closer checks (they're skipped for Get to know me and json cases)
+import { readdirSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import * as app from './app.mjs';
 import { CASES, FILLER_CLOSER, FILLER_OPENER, SETTINGS } from './cases.mjs';
 import { createSend } from './ollama-send.mjs';
+
+const { brain, buildMessages, createOllamaEngine } = app;
+
+/** The built-in cases, then every file in scripts/eval/cases/, then any given with --cases. Ids must be unique. */
+async function loadCases(extra) {
+  const dir = new URL('./cases/', import.meta.url);
+  let files = [];
+  try {
+    files = readdirSync(dir).filter((f) => f.endsWith('.mjs')).sort().map((f) => new URL(f, dir).href);
+  } catch {
+    // no extra case folder
+  }
+  files.push(...(extra ? extra.split(',').map((p) => pathToFileURL(resolve(p)).href) : []));
+  const all = [...CASES];
+  for (const file of files) {
+    const mod = await import(file);
+    if (!Array.isArray(mod.CASES)) throw new Error(`${file} doesn't export a CASES array`);
+    all.push(...mod.CASES);
+  }
+  const seen = new Set();
+  for (const c of all) {
+    if (!c.id || !c.group || !Array.isArray(c.checks)) throw new Error(`case ${c.id ?? '(no id)'} needs an id, a group and checks`);
+    if (seen.has(c.id)) throw new Error(`two cases are called ${c.id}`);
+    seen.add(c.id);
+  }
+  return all;
+}
 
 function args() {
   const out = { url: 'http://localhost:11434', runs: 1, seed: 42, quiet: false };
@@ -36,13 +75,25 @@ function analyse(answer) {
   const words = plain.split(/\s+/).filter((w) => /\w/.test(w)).length;
   const outsideWords = outside.replace(/[*_#>`|-]+/g, ' ').split(/\s+/).filter((w) => /\w/.test(w)).length;
   const questions = (outside.match(/\?/g) ?? []).length;
-  return { drafts, outside, withoutActions, words, outsideWords, questions };
+  let data = null;
+  try {
+    data = JSON.parse(answer);
+  } catch {
+    // not JSON: only json cases look at it
+  }
+  return { drafts, outside, withoutActions, words, outsideWords, questions, data };
 }
 
 function judge(c, answer) {
   const x = analyse(answer);
-  const checks = c.checks.map(([label, fn]) => ({ label, ok: !!fn(answer, x) }));
-  if (c.mode !== 'interview') {
+  const checks = c.checks.map(([label, fn]) => {
+    try {
+      return { label, ok: !!fn(answer, x) };
+    } catch (e) {
+      return { label: `${label} (check failed: ${e.message})`, ok: false };
+    }
+  });
+  if (c.mode !== 'interview' && !c.json && c.filler !== false) {
     checks.push({ label: 'no filler opener', ok: !FILLER_OPENER.test(answer) });
     checks.push({ label: 'no filler closer', ok: !FILLER_CLOSER.test(x.outside.trim()) });
   }
@@ -52,7 +103,8 @@ function judge(c, answer) {
 async function main() {
   const opt = args();
   const only = opt.only ? new Set(opt.only.split(',')) : null;
-  const cases = CASES.filter((c) => !only || only.has(c.id) || only.has(c.group));
+  const cases = (await loadCases(opt.cases)).filter((c) => !only || only.has(c.id) || only.has(c.group));
+  if (!cases.length) throw new Error('no cases match --only');
   let seed = opt.seed;
   const timing = { last: null };
   // --model swaps the model in each request; otherwise the engine's status() picks it, as the app does.
@@ -65,14 +117,19 @@ async function main() {
     const runs = [];
     for (let r = 0; r < opt.runs; r++) {
       seed = opt.seed + r;
-      const messages = buildMessages(c);
+      const messages = c.build ? c.build(app) : buildMessages(c);
       let answer = '';
       const started = performance.now();
       let first = null;
-      await engine.chat(messages, undefined, (token) => {
-        first ??= performance.now() - started;
-        answer += token;
-      }, brain.MAX_TOKENS[SETTINGS.length]);
+      if (c.json) {
+        timing.last = null; // engine.json doesn't stream, so there are no per-reply timings
+        answer = await engine.json(messages, undefined, c.maxTokens ?? 256);
+      } else {
+        await engine.chat(messages, undefined, (token) => {
+          first ??= performance.now() - started;
+          answer += token;
+        }, c.maxTokens ?? brain.MAX_TOKENS[c.settings?.length ?? SETTINGS.length]);
+      }
       answer = brain.stripThinking(answer).trim();
       const verdict = judge(c, answer);
       runs.push({ seed, answer, ...verdict, firstTokenMs: first && Math.round(first), stats: timing.last });
