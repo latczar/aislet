@@ -29,6 +29,7 @@ export interface Memory {
   fact: string;
   added: string; // YYYY-MM-DD
   category?: MemoryCategory;
+  until?: string; // YYYY-MM-DD: no longer true from then (a newer fact replaced it); kept as history
 }
 
 export interface Note {
@@ -58,6 +59,9 @@ export interface Settings {
   haptics: boolean;    // phone: a light buzz on taps
   onboarded: boolean;  // finished the first-run set-up
   useLibraries: boolean; // search offline libraries (Kiwix .zim files) when answering
+  libraryMode: 'ask' | 'auto'; // ask: answer first, then offer what a library found; auto: use matches straight away
+  libraryChoice: Record<string, 'always' | 'never'>; // per library (by name): overrides libraryMode
+  recallChats: boolean; // search earlier chats when a question looks back ("what did we say about…")
   voiceLang: string;   // phone: speech language for talking and reading aloud ('' = English)
   webSearch: boolean;  // search the web (DuckDuckGo) when a question needs current information
 }

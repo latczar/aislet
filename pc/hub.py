@@ -275,9 +275,11 @@ def merge(store: dict, incoming: dict) -> dict:
         by_id.setdefault(m["id"], m)
     for m in sorted(by_id.values(), key=lambda m: str(m.get("added", ""))):
         fact = str(m.get("fact", "")).strip()
-        if not fact or m["id"] in deleted or fact.lower() in seen:
+        # A fact that used to be true ("until" a date) and the same fact true again are both kept.
+        key = (fact.lower(), bool(m.get("until")))
+        if not fact or m["id"] in deleted or key in seen:
             continue
-        seen.add(fact.lower())
+        seen.add(key)
         memories.append(m)
 
     def newest(mine: list[dict], theirs: list[dict]) -> list[dict]:

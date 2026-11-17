@@ -79,7 +79,7 @@ export function MemoryView({ onStartInterview }: { onStartInterview: () => void 
       <Text variant="headlineSmall" style={styles.h1}>Memory</Text>
       <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
         What it knows about you. It learns from your chats, including feedback like "shorter please", and uses this in every
-        conversation. You're in control: remove anything, any time.
+        conversation. You're in control: undo anything it learns, or remove it here, any time.
       </Text>
 
       <Surface style={card} elevation={0}>
@@ -105,6 +105,13 @@ export function MemoryView({ onStartInterview }: { onStartInterview: () => void 
           description="Saves lasting facts and preferences as you talk"
           left={(p) => <List.Icon {...p} icon="lightbulb-on-outline" color={theme.colors.primary} />}
           right={(p) => <Switch style={p.style} value={settings.learn} onValueChange={(v) => updateSettings({ learn: v })} />}
+        />
+        <Divider />
+        <Row
+          title="Look back at earlier chats"
+          description={'When you ask "what did we say about…", it searches your earlier chats on this device'}
+          left={(p) => <List.Icon {...p} icon="history" color={theme.colors.primary} />}
+          right={(p) => <Switch style={p.style} value={settings.recallChats !== false} onValueChange={(v) => updateSettings({ recallChats: v })} />}
         />
         <Divider />
         <Row
@@ -139,14 +146,17 @@ export function MemoryView({ onStartInterview }: { onStartInterview: () => void 
           Nothing yet. Start "Get to know me", tell it about yourself in any chat, or add a fact above.
         </Text>
       ) : (
-        CATEGORIES.map((c) => {
-          const group = memories.filter((m) => (m.category ?? 'about') === c.id);
+        [
+          ...CATEGORIES.map((c) => ({ ...c, group: memories.filter((m) => !m.until && (m.category ?? 'about') === c.id) })),
+          // Facts a newer one replaced (an old job, an old address): kept so questions about the past can use them.
+          { id: 'earlier', title: 'No longer true', icon: 'history', group: memories.filter((m) => m.until) },
+        ].map(({ id, title, icon, group }) => {
           if (!group.length) return null;
           return (
-            <View key={c.id} style={styles.group}>
+            <View key={id} style={styles.group}>
               <View style={styles.groupHead}>
-                <Icon source={c.icon} size={18} color={theme.colors.onSurfaceVariant} />
-                <Text variant="labelLarge" style={{ color: theme.colors.onSurfaceVariant }}>{c.title} · {group.length}</Text>
+                <Icon source={icon} size={18} color={theme.colors.onSurfaceVariant} />
+                <Text variant="labelLarge" style={{ color: theme.colors.onSurfaceVariant }}>{title} · {group.length}</Text>
               </View>
               <Surface style={card} elevation={0}>
                 {group.map((m, i) => (
@@ -155,7 +165,7 @@ export function MemoryView({ onStartInterview }: { onStartInterview: () => void 
                     <List.Item
                       title={m.fact}
                       titleNumberOfLines={4}
-                      description={m.added}
+                      description={m.until ? `${m.added} to ${m.until}` : m.added}
                       right={(p) => (
                         <IconButton
                           icon="close"

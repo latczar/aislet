@@ -11,6 +11,7 @@ export const KEYS = {
   chat: (id: string) => `chat:${id}`,
   lastChat: 'last-chat', // the chat that was open, to come back to it
   lastView: 'last-view', // the screen that was open (Chat, Memory, Notes or Settings)
+  chatIndex: 'chat-index', // earlier chats as short text, so a question about the past can find what was said
   librariesSeen: 'libraries-seen', // libraries have been readable here, so losing access is worth saying
 };
 

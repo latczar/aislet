@@ -141,7 +141,7 @@ function Libraries({ onToast }: { onToast: (message: string) => void }) {
       <Row
         key="use"
         title="Use libraries in answers"
-        description={phone ? "Searched on this phone for every question, even when the laptop's AI answers" : 'Searched on this computer for every question'}
+        description={phone ? "Searched on this phone, even when the laptop's AI answers" : 'Searched on this computer'}
         left={(p) => <List.Icon {...p} icon="bookshelf" />}
         right={(p) => (
           <Switch
@@ -155,6 +155,48 @@ function Libraries({ onToast }: { onToast: (message: string) => void }) {
         )}
       />,
     );
+    if (settings.useLibraries) {
+      rows.push(
+        <View key="mode" style={styles.pad}>
+          <Text variant="labelLarge">When a library matches</Text>
+          <SegmentedButtons
+            value={settings.libraryMode ?? 'ask'}
+            onValueChange={(v) => updateSettings({ libraryMode: v as 'ask' | 'auto' })}
+            buttons={[
+              { value: 'ask', label: 'Ask first', icon: 'message-question-outline' },
+              { value: 'auto', label: 'Use it', icon: 'check-all' },
+            ]}
+          />
+          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+            {(settings.libraryMode ?? 'ask') === 'ask'
+              ? 'Answers straight away, then offers what a library found. Quicker, and only what you choose goes in.'
+              : 'Strong matches go into the answer straight away, with the source named.'}
+          </Text>
+        </View>,
+      );
+      for (const [book, choice] of Object.entries(settings.libraryChoice ?? {})) {
+        rows.push(
+          <Row
+            key={`choice-${book}`}
+            title={book}
+            description={choice === 'always' ? 'Always used' : 'Never suggested'}
+            left={(p) => <List.Icon {...p} icon={choice === 'always' ? 'check-all' : 'close'} />}
+            right={(p) => (
+              <Button
+                mode="contained-tonal" compact style={p.style}
+                onPress={() => {
+                  const next = { ...settings.libraryChoice };
+                  delete next[book];
+                  updateSettings({ libraryChoice: next });
+                }}
+              >
+                Reset
+              </Button>
+            )}
+          />,
+        );
+      }
+    }
   }
   if (openLibraryFolder && folder) {
     rows.push(
@@ -964,7 +1006,7 @@ export function SettingsView() {
         </Section>
 
         {libraries.supported && (
-          <Section title="Libraries" footer="Passages that match your question go to the AI, which says which file or article it used. Aislet only reads your own files: it never changes, moves or deletes them.">
+          <Section title="Libraries" footer="When a library is used, the answer says which file or article it came from. Aislet only reads your own files: it never changes, moves or deletes them.">
             <Libraries onToast={setToast} />
           </Section>
         )}

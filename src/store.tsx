@@ -2,9 +2,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
 import {
-  CATEGORIES, MAX_TOKENS, MEMORY_LIMIT, TIDY_BATCH, type TidyChange, chunkText, cleanFact, conversationLearnMessages,
-  interviewPrompt, keywordScore, learnMessages, parseFacts, parseTidy, relevantMemories, similarity, stripThinking,
-  systemPrompt, tidyMessages, titleFrom, worthLearning,
+  CATEGORIES, type ChatIndex, type LearntFact, MAX_TOKENS, MEMORY_LIMIT, type PastRecall, SAME_THING, TIDY_BATCH, type TidyChange,
+  chunkText, cleanFact, conversationLearnMessages, indexChat, interviewPrompt, keywordScore, learnMessages, parseFacts, parseTidy,
+  pastFacts, recallsPast, relevantMemories, searchPast, similarity, stripThinking, systemPrompt, tidyMessages, titleFrom, worthLearning,
 } from './brain';
 import { actionsSupported, mayWantAction } from './deviceActions';
 import { type WebHit, needsWeb, searchWeb, webQuery } from './webSearch';
@@ -26,7 +26,7 @@ import type { Backup, Chat, ChatSummary, Memory, MemoryCategory, Message, Note, 
 const DEFAULT_SETTINGS: Settings = {
   name: '', learn: true, modelId: 'qwen3.5-4b', instructions: '', length: 'balanced', appearance: 'light',
   hubUrl: '', hubKey: '', useLaptop: true, accel: 'cpu', performance: 'balanced', haptics: true, onboarded: false,
-  useLibraries: true, voiceLang: '', webSearch: false,
+  useLibraries: true, voiceLang: '', webSearch: false, libraryMode: 'ask', libraryChoice: {}, recallChats: true,
 };
 const HISTORY = 20; // messages of the current chat the model sees
 const DELETED_KEY = 'deleted';
@@ -89,7 +89,12 @@ interface Store {
   busy: boolean;
   error: string | null;
   clearError(): void;
-  noted: Record<number, string[]>; // facts learnt, by message position in the current chat
+  noted: Record<number, Learnt[]>; // facts learnt, by message position in the current chat
+  undoLearnt(at: number, item: Learnt): Promise<void>; // forget a fact just learnt (and bring back the one it replaced)
+  found: Record<number, LibraryHit[]>; // library passages offered after a reply ("Ask first"), by message position
+  answerFromLibrary(at: number): Promise<void>; // answer the last message again, using what the library found
+  dismissFound(at: number): void;
+  setLibraryChoice(book: string, choice: 'always' | 'never' | null): Promise<void>;
   send(text: string, attachments?: Attachments, web?: boolean): Promise<void>;
   regenerate(): Promise<void>;
   startInterview(): Promise<void>; // a "get to know me" chat
@@ -104,6 +109,14 @@ interface Store {
   openLibraryFolder: (() => Promise<void>) | null; // the PC shows the folder; null on a phone
   snapshot(): Backup;                    // memory, notes, name and instructions, for a backup
   restore(backup: Backup): Promise<string>; // adds anything new from a backup; returns a summary
+}
+
+/** A fact learnt from a message, shown under the reply with Undo. */
+export interface Learnt {
+  id: string;       // the new fact
+  fact: string;
+  was?: Memory;     // the fact it replaced
+  history?: string; // the id of the "used to be true" copy of `was`
 }
 
 const StoreContext = createContext<Store | null>(null);
@@ -140,7 +153,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [chat, setChat] = useState<Chat | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [noted, setNoted] = useState<Record<number, string[]>>({});
+  const [noted, setNoted] = useState<Record<number, Learnt[]>>({});
+  const [found, setFound] = useState<Record<number, LibraryHit[]>>({});
+  const foundRef = useRef(found);
+  foundRef.current = found;
   const [hub, setHub] = useState<HubState>({ connected: false, syncing: false });
 
   // Latest values for use inside long-running async work.
@@ -456,9 +472,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     await refreshLibraries();
   }, [refreshLibraries]);
 
-  /** Passages from this device's libraries (Kiwix and your own files) that may help answer `question`. */
-  const searchLibraries = useCallback(async (question: string, vec: number[] | null): Promise<LibraryHit[]> => {
-    const books = librariesRef.current.books.filter((b) => b.searchable && !b.problem);
+  /** How a library's matches are used: straight away ('always'), offered after the reply ('ask'), or not at all. */
+  const libraryUse = (book: string): 'always' | 'ask' | 'never' => {
+    const s = settingsRef.current;
+    return s.libraryChoice?.[book] ?? (s.libraryMode === 'auto' ? 'always' : 'ask');
+  };
+
+  /**
+   * Passages from this device's libraries (Kiwix and your own files) that may help answer `question`, from the
+   * libraries used that way: 'always' before the reply, 'ask' after it (so it doesn't delay the first word).
+   */
+  const searchLibraries = useCallback(async (question: string, vec: number[] | null, use: 'always' | 'ask'): Promise<LibraryHit[]> => {
+    const books = librariesRef.current.books.filter((b) => b.searchable && !b.problem && libraryUse(b.title) === use);
     if (!settingsRef.current.useLibraries || !books.length) return [];
     const query = searchQuery(question);
     if (!query) return [];
@@ -471,8 +496,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const overviews = await Promise.all(titled.map(async (t) => ({ ...t, rank: 0, html: await lib.read(t.book, t.path, 60000).catch(() => '') })));
       return [...overviews, ...(await lib.search(paths, query, 5, 60000).catch(() => []))];
     };
+    // Your own files are searched together, so keep only the ones used this way.
+    const mine = new Set(books.filter((b) => b.format !== 'zim').map((b) => b.title));
     const own = async (): Promise<LibraryPage[]> =>
-      fileLibrary && books.some((b) => b.format !== 'zim') ? fileLibrary.search(query, 6).catch(() => []) : [];
+      fileLibrary && mine.size
+        ? (await fileLibrary.search(query, mine.size === librariesRef.current.books.filter((b) => b.format !== 'zim').length ? 6 : 12)
+          .catch(() => [])).filter((p) => mine.has(p.bookTitle)).slice(0, 6)
+        : [];
     const [kiwixPages, ownPages] = await Promise.all([kiwix(), own()]);
     const candidates = libraryCandidates(question, [...kiwixPages, ...ownPages], 4);
     if (!candidates.length) return [];
@@ -526,10 +556,44 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const addMemory = useCallback(async (raw: string, category: MemoryCategory = 'about') => {
     const fact = cleanFact(raw);
-    if (!fact || memRef.current.some((m) => m.fact.toLowerCase() === fact.toLowerCase())) return false;
+    if (!fact || memRef.current.some((m) => !m.until && m.fact.toLowerCase() === fact.toLowerCase())) return false;
     await saveMemories([...memRef.current, { id: newId(), fact, added: today(), category }]);
     return true;
   }, [saveMemories]);
+
+  /**
+   * Save a fact the model picked out. When it updates a known fact (a new job, a move), the old one is kept as
+   * history ("used to be true"), except for preferences, where only the newest matters.
+   */
+  const learnFact = useCallback(async (f: LearntFact): Promise<Learnt | null> => {
+    const fact = cleanFact(f.fact);
+    if (!fact || memRef.current.some((m) => !m.until && m.fact.toLowerCase() === fact.toLowerCase())) return null;
+    let old = f.replaces;
+    if (!old && f.maybe) {
+      const vecs = await engineRef.current.embed([f.maybe.fact, fact], 'document').catch(() => null);
+      if (vecs?.[0] && vecs[1] && similarity(vecs[0], vecs[1]) >= SAME_THING) old = f.maybe;
+    }
+    // An update stays where the fact it replaces was filed, so Memory doesn't move it between groups.
+    const item: Memory = { id: newId(), fact, added: today(), category: old?.category ?? f.category };
+    if (!old || !memRef.current.some((m) => m.id === old.id)) {
+      await saveMemories([...memRef.current, item]);
+      return { id: item.id, fact };
+    }
+    // A new id for the history copy: the hub keeps the first copy of an id it sees, so an edit in place wouldn't sync.
+    const history: Memory | null = item.category === 'preferences' ? null : { ...old, id: newId(), until: today() };
+    await markDeleted([old.id]);
+    await saveMemories([...memRef.current.filter((m) => m.id !== old.id), ...(history ? [history] : []), item]);
+    return { id: item.id, fact, was: old, history: history?.id };
+  }, [saveMemories, markDeleted]);
+
+  const undoLearnt = useCallback(async (at: number, item: Learnt) => {
+    const gone = [item.id, ...(item.history ? [item.history] : [])];
+    await markDeleted(gone);
+    const kept = memRef.current.filter((m) => !gone.includes(m.id));
+    // The replaced fact comes back as it was (with a new id: the old one is marked deleted for sync).
+    await saveMemories(item.was ? [...kept, { ...item.was, id: newId() }] : kept);
+    setNoted((n) => ({ ...n, [at]: (n[at] ?? []).filter((l) => l.id !== item.id) }));
+  }, [saveMemories, markDeleted]);
 
   const removeMemory = useCallback(async (id: string) => {
     await markDeleted([id]);
@@ -556,7 +620,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   /** The facts that go in this prompt: all of them while memory is small, else the most relevant. */
   const pickMemories = useCallback(async (query: string, queryVec: number[] | null, limit: number) => {
-    const all = memRef.current;
+    const all = memRef.current.filter((m) => !m.until);
     if (all.length <= limit) return all;
     const facts = queryVec ? await memoryVectors().catch(() => ({})) : {};
     return relevantMemories(all, query, limit, queryVec ? { query: queryVec, facts } : undefined);
@@ -564,7 +628,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const proposeTidy = useCallback(async (): Promise<TidyChange[]> => {
     if (busyRef.current) throw new Error('Wait for the current reply to finish, then try again.');
-    const all = memRef.current;
+    const all = memRef.current.filter((m) => !m.until); // what used to be true is history, not something to tidy
     if (all.length < 2) return [];
     // A category at a time (small models mix up facts across a long mixed list), in batches it can read at once.
     const groups: Memory[][] = [];
@@ -679,6 +743,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (c) {
       setChat(c);
       setNoted({});
+      setFound({});
       setError(null);
     }
   }, []);
@@ -687,12 +752,59 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (busyRef.current) return;
     setChat(null);
     setNoted({});
+    setFound({});
     setError(null);
+  }, []);
+
+  /**
+   * The searchable text of earlier chats, brought up to date: only chats saved or synced since the last look are
+   * read again, so this costs nothing per message and little when a question looks back.
+   */
+  const chatIndex = useCallback(async (): Promise<ChatIndex> => {
+    const index = await load<ChatIndex>(KEYS.chatIndex, {});
+    const list = await load<ChatSummary[]>(KEYS.chats, []);
+    const live = new Set(list.map((c) => c.id));
+    let changed = false;
+    for (const id of Object.keys(index)) {
+      if (!live.has(id)) {
+        delete index[id];
+        changed = true;
+      }
+    }
+    for (const c of list) {
+      if (index[c.id]?.updated === c.updated) continue;
+      const full = await load<Chat | null>(KEYS.chat(c.id), null);
+      if (full) index[c.id] = indexChat(full, settingsRef.current.name);
+      changed = true;
+    }
+    if (changed) await save(KEYS.chatIndex, index);
+    return index;
+  }, []);
+
+  /** What earlier chats (and facts that used to be true) say about a question that looks back. */
+  const recallPast = useCallback(async (question: string, exclude: string, vec: number[] | null): Promise<PastRecall> => {
+    let items = searchPast(await chatIndex(), question, exclude, 8);
+    if (vec && items.length > 1 && items[0].score > 0) {
+      // Words found the candidates; meaning puts the best first.
+      const vecs = await engineRef.current.embed(items.map((i) => i.text), 'document').catch(() => null);
+      if (vecs) items = items.map((it, i) => ({ ...it, score: 0.3 * it.score + (vecs[i] ? similarity(vec, vecs[i]) : 0) })).sort((a, b) => b.score - a.score);
+    }
+    return { items: items.slice(0, 3), history: pastFacts(memRef.current, question) };
+  }, [chatIndex]);
+
+  /** Deleted chats leave the index straight away, not at the next search. */
+  const unindex = useCallback(async (ids: string[] | 'all') => {
+    if (ids === 'all') return remove(KEYS.chatIndex);
+    const index = await load<ChatIndex>(KEYS.chatIndex, {});
+    if (!ids.some((id) => id in index)) return;
+    for (const id of ids) delete index[id];
+    await save(KEYS.chatIndex, index);
   }, []);
 
   const deleteChat = useCallback(async (id: string) => {
     await markDeleted([id]);
     await remove(KEYS.chat(id));
+    await unindex([id]).catch(() => undefined);
     setChats((prev) => {
       const next = prev.filter((p) => p.id !== id);
       save(KEYS.chats, next);
@@ -700,7 +812,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     });
     setChat((current) => (current?.id === id ? null : current));
     scheduleSync();
-  }, [markDeleted, scheduleSync]);
+  }, [markDeleted, scheduleSync, unindex]);
 
   const pinChat = useCallback(async (id: string, pinned: boolean) => {
     const c = await load<Chat | null>(KEYS.chat(id), null);
@@ -724,15 +836,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const all = await load<ChatSummary[]>(KEYS.chats, []);
     await markDeleted(all.map((c) => c.id));
     for (const c of all) await remove(KEYS.chat(c.id));
+    await unindex('all').catch(() => undefined);
     await save(KEYS.chats, []);
     setChats([]);
     setChat(null);
     setNoted({});
+    setFound({});
     scheduleSync();
-  }, [markDeleted, scheduleSync]);
+  }, [markDeleted, scheduleSync, unindex]);
 
   /** Ask the model to answer `userMsg`, given the earlier messages in `base`. */
-  const run = useCallback(async (base: Chat, userMsg: Message) => {
+  const run = useCallback(async (base: Chat, userMsg: Message, opts?: { library?: LibraryHit[] }) => {
     busyRef.current = true;
     setBusy(true);
     setError(null);
@@ -742,6 +856,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
     let answer = '';
     let searched: Message['searched'];
+    let queryVec: number[] | null = null;
     // While it searches the web, and after, the reply says so.
     const setReplyNote = (note: Message['searched']) => setChat((c) => {
       if (!c) return c;
@@ -769,18 +884,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           ? 'To read photos offline, download "Photo understanding" in Settings (Qwen3.5 4B), or connect to your laptop.'
           : "This model can't read photos.");
       }
-      // One meaning vector for the question serves both the notes search and choosing memories.
-      const needVec = notesRef.current.length > 0 || memRef.current.length > MEMORY_LIMIT || librariesRef.current.books.length > 0;
-      const queryVec = needVec ? (await active.embed([userMsg.content], 'query').catch(() => null))?.[0] ?? null : null;
+      const asked = (userMsg.display ?? userMsg.content).trim();
+      // Earlier chats are searched only when the question looks back ("what did we say about…").
+      const recall = s.recallChats !== false && base.mode !== 'interview' && recallsPast(asked);
+      // One meaning vector for the question serves the notes search, choosing memories, libraries and earlier chats.
+      const needVec = notesRef.current.length > 0 || memRef.current.length > MEMORY_LIMIT || librariesRef.current.books.length > 0 || recall;
+      queryVec = needVec ? (await active.embed([userMsg.content], 'query').catch(() => null))?.[0] ?? null : null;
       const hits = await searchNotes(userMsg.content, queryVec).catch(() => []);
-      const library = await searchLibraries(userMsg.display ?? userMsg.content, queryVec).catch(() => []);
+      const library = opts?.library ?? await searchLibraries(asked, queryVec, 'always').catch(() => []);
+      const past = recall ? await recallPast(asked, base.id, queryVec).catch(() => ({ items: [], history: [] })) : null;
       const recentAsks = base.messages.filter((m) => m.role === 'user').slice(-2).map((m) => m.display ?? m.content);
       const memories = await pickMemories([...recentAsks, userMsg.content].join('\n'), queryVec, base.mode === 'interview' ? 80 : MEMORY_LIMIT)
         .catch(() => memRef.current.slice(-MEMORY_LIMIT));
       const actions = actionsSupported && mayWantAction([...recentAsks, userMsg.display ?? userMsg.content]);
       // Search the web: when asked with the globe, or when the question needs current information. Not in a
       // get-to-know-me chat, and not by itself for a message about an attached photo or file.
-      const asked = (userMsg.display ?? userMsg.content).trim();
       let web: { query: string; hits: WebHit[] } | null = null;
       if (s.webSearch && base.mode !== 'interview' && asked
         && (userMsg.web || (!userMsg.images?.length && !userMsg.files?.length && needsWeb(asked)))) {
@@ -790,7 +908,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         searched = { query, ok: web.hits.length > 0, sources: web.hits.map((h) => ({ title: h.title, url: h.url })) };
         setReplyNote(searched);
       }
-      const prompt = systemPrompt(s, memories, hits, active.where, library, actions, web);
+      const prompt = systemPrompt(s, memories, hits, active.where, library, actions, web, past);
       const sys: Message = { role: 'system', content: base.mode === 'interview' ? `${prompt}
 
 ${interviewPrompt(s.name)}` : prompt };
@@ -815,32 +933,82 @@ ${interviewPrompt(s.name)}` : prompt };
     if (answer) await saveChat(finalChat);
     busyRef.current = false;
     setBusy(false);
+    const text = userMsg.display ?? userMsg.content;
+    if (!answer) return;
+
+    // "Ask first" libraries are searched after the reply, so they never delay it; a match is offered under it.
+    if (!opts?.library && base.mode !== 'interview') {
+      const offer = await searchLibraries(text, queryVec, 'ask').catch(() => []);
+      if (offer.length) setFound((f) => ({ ...f, [answerAt]: offer }));
+    }
 
     // Learn about you after the reply (so it doesn't slow it down): from this message when it's about you
     // or is feedback, from everything in a "get to know me" chat, and from the whole conversation every few turns.
-    const text = userMsg.display ?? userMsg.content;
-    if (!answer || !settingsRef.current.learn) return;
+    if (!settingsRef.current.learn) return;
     const name = settingsRef.current.name;
     const userTurns = finalChat.messages.filter((m) => m.role === 'user').length;
-    const jobs: Message[][] = [];
+    const jobs: { messages: Message[]; known: Memory[] }[] = [];
     const recent = finalChat.messages.slice(-12);
+    // Feedback ("too long") is about the reply before this message: the model sees its start, to know what it means.
+    const before = base.messages[base.messages.length - 1];
+    const reactingTo = before?.role === 'assistant' ? before.content : '';
     // "Already known" lists only the related facts, so learning stays quick with a long memory.
-    if (base.mode === 'interview' || worthLearning(text)) jobs.push(learnMessages(name, relevantMemories(memRef.current, text, 40), text));
+    if (base.mode === 'interview' || worthLearning(text)) {
+      const known = relevantMemories(memRef.current, text, 40);
+      jobs.push({ messages: learnMessages(name, known, text, reactingTo), known });
+    }
     if (userTurns > 0 && userTurns % 6 === 0) {
       const said = recent.filter((m) => m.role === 'user').map((m) => m.display ?? m.content).join('\n');
-      jobs.push(conversationLearnMessages(name, relevantMemories(memRef.current, said, 40), recent));
+      const known = relevantMemories(memRef.current, said, 40);
+      jobs.push({ messages: conversationLearnMessages(name, known, recent), known });
     }
-    const added: string[] = [];
+    const added: Learnt[] = [];
     for (const job of jobs) {
       try {
-        const reply = await active.json(job, settingsRef.current.modelId);
-        for (const f of parseFacts(reply)) if (await addMemory(f.fact, f.category)) added.push(cleanFact(f.fact));
+        const reply = await active.json(job.messages, settingsRef.current.modelId);
+        for (const f of parseFacts(reply, job.known, name)) {
+          const item = await learnFact(f);
+          if (item) added.push(item);
+        }
       } catch {
         // learning is a bonus: never bother the user if it fails
       }
     }
     if (added.length) setNoted((n) => ({ ...n, [answerAt]: added }));
-  }, [searchNotes, searchLibraries, pickMemories, saveChat, addMemory, refreshStatus]);
+  }, [searchNotes, searchLibraries, recallPast, pickMemories, saveChat, learnFact, refreshStatus]);
+
+  /** Answer the reply at `at` again, using the library passages offered under it. */
+  const answerFromLibrary = useCallback(async (at: number) => {
+    const c = chatRef.current;
+    const hits = foundRef.current[at];
+    if (busyRef.current || !c || !hits?.length || c.messages[at - 1]?.role !== 'user') return;
+    setFound((f) => {
+      const copy = { ...f };
+      delete copy[at];
+      return copy;
+    });
+    setNoted((n) => {
+      const copy = { ...n };
+      delete copy[at];
+      return copy;
+    });
+    await run({ ...c, messages: c.messages.slice(0, at - 1) }, c.messages[at - 1], { library: hits });
+  }, [run]);
+
+  const dismissFound = useCallback((at: number) => {
+    setFound((f) => {
+      const copy = { ...f };
+      delete copy[at];
+      return copy;
+    });
+  }, []);
+
+  const setLibraryChoice = useCallback(async (book: string, choice: 'always' | 'never' | null) => {
+    const next = { ...(settingsRef.current.libraryChoice ?? {}) };
+    if (choice) next[book] = choice;
+    else delete next[book];
+    await updateSettings({ libraryChoice: next });
+  }, [updateSettings]);
 
   const send = useCallback(async (text: string, attachments?: Attachments, web?: boolean) => {
     const t = text.trim();
@@ -863,13 +1031,15 @@ ${interviewPrompt(s.name)}` : prompt };
       delete copy[lastUser + 1];
       return copy;
     });
+    dismissFound(lastUser + 1);
     await run({ ...c, messages: c.messages.slice(0, lastUser) }, c.messages[lastUser]);
-  }, [run]);
+  }, [run, dismissFound]);
 
   const startInterview = useCallback(async () => {
     if (busyRef.current) return;
     const now = Date.now();
     setNoted({});
+    setFound({});
     setError(null);
     await run({ id: newId(), title: 'Getting to know you', created: now, updated: now, messages: [], mode: 'interview' },
       { role: 'user', content: "Let's do the get-to-know-me chat. Ask me your first question.", display: 'Get to know me' });
@@ -897,7 +1067,16 @@ ${interviewPrompt(s.name)}` : prompt };
       throw new Error("That file isn't a backup from this app.");
     }
     let facts = 0;
-    for (const m of backup.memories) if (typeof m.fact === 'string' && (await addMemory(m.fact, m.category))) facts++;
+    const history: Memory[] = [];
+    for (const m of backup.memories) {
+      if (typeof m.fact !== 'string') continue;
+      if (typeof m.until === 'string') { // what used to be true stays history
+        const fact = cleanFact(m.fact);
+        const seen = [...memRef.current, ...history].some((x) => x.until && x.fact.toLowerCase() === fact.toLowerCase());
+        if (fact && !seen) history.push({ id: newId(), fact, added: typeof m.added === 'string' ? m.added : today(), category: m.category, until: m.until });
+      } else if (await addMemory(m.fact, m.category)) facts++;
+    }
+    if (history.length) await saveMemories([...memRef.current, ...history]);
     const byId = new Map(notesRef.current.map((n) => [n.id, n]));
     let added = 0;
     for (const n of backup.notes) {
@@ -910,7 +1089,7 @@ ${interviewPrompt(s.name)}` : prompt };
     await saveNotes([...byId.values()].sort((a, b) => b.updated - a.updated));
     if (!settingsRef.current.instructions && backup.instructions) await updateSettings({ instructions: backup.instructions });
     return `Added ${facts} ${facts === 1 ? 'fact' : 'facts'} and ${added} ${added === 1 ? 'note' : 'notes'}.`;
-  }, [addMemory, saveNotes, updateSettings]);
+  }, [addMemory, saveMemories, saveNotes, updateSettings]);
 
   const importData = useCallback(async () => {
     const text = await pickFile();
@@ -927,6 +1106,7 @@ ${interviewPrompt(s.name)}` : prompt };
   const value: Store = {
     loaded, startView, settings, updateSettings, status, refreshStatus, engine, hub, syncNow, memories, addMemory, removeMemory, proposeTidy, applyTidy,
     notes, saveNote, deleteNote, chats, chat, openChat, newChat, deleteChat, pinChat, clearChats, busy, error, clearError, noted,
+    undoLearnt, found, answerFromLibrary, dismissFound, setLibraryChoice,
     send, regenerate, startInterview, stop, exportData, importData, snapshot, restore,
     libraries, refreshLibraries, allowLibraries, moveLibraries, removeLibrary, openLibraryFolder: fileLibrary?.openFolder ?? null,
   };

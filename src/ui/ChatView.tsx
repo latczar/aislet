@@ -8,7 +8,8 @@ import { titleFrom } from '../brain';
 import { type DeviceAction, actionsSupported, describe, parseActions, runAction, shownText } from '../deviceActions';
 import { engine } from '../engine';
 import { hubExtract, localHub } from '../hub';
-import { useStore } from '../store';
+import type { LibraryHit } from '../library';
+import { type Learnt, useStore } from '../store';
 import type { Message } from '../types';
 import { copy, isSpeaking, speak, stopSpeaking, tap } from './actions';
 import { cameraSupported, pickDocument, pickPhoto, readBase64, readText } from './attach';
@@ -236,12 +237,54 @@ function Sources({ sources }: { sources: { title: string; url: string }[] }) {
 }
 
 type AssistantProps = {
-  index: number; text: string; last: boolean; streaming: boolean; busy: boolean; noted?: string[]; saved: boolean;
-  searched?: Message['searched']; onRetry: () => void; onSave: (index: number) => void;
+  index: number; text: string; last: boolean; streaming: boolean; busy: boolean; noted?: Learnt[]; saved: boolean;
+  searched?: Message['searched']; found?: LibraryHit[]; onRetry: () => void; onSave: (index: number) => void;
+  onUndo: (index: number, item: Learnt) => void; onAnswerFrom: (index: number) => void;
+  onLibraryChoice: (index: number, book: string, choice: 'always' | 'never') => void;
 };
 
+/** What a library found for this question, offered after the reply ("Ask first"): answer again using it, or not. */
+function LibraryOffer({ index, hits, busy, onAnswerFrom, onLibraryChoice }: {
+  index: number; hits: LibraryHit[]; busy: boolean;
+  onAnswerFrom: (index: number) => void; onLibraryChoice: (index: number, book: string, choice: 'always' | 'never') => void;
+}) {
+  const theme = useTheme();
+  const [menu, setMenu] = useState(false);
+  const first = hits[0];
+  const others = new Set(hits.map((h) => h.book).filter((b) => b !== first.book)).size;
+  return (
+    <View style={[styles.actionCard, { borderColor: theme.colors.outlineVariant }]}>
+      <View style={styles.actionCardRow}>
+        <Icon source="bookshelf" size={18} color={theme.colors.onSurfaceVariant} />
+        <Text variant="bodyMedium" style={styles.flex}>
+          Found in <Text style={{ fontFamily: FONT.medium }}>{first.book}</Text>
+          {first.title ? `: ${first.title}` : ''}{others ? ` and ${others} more` : ''}
+        </Text>
+      </View>
+      <View style={styles.offerActions}>
+        <Menu
+          visible={menu}
+          onDismiss={() => setMenu(false)}
+          anchor={(
+            <IconButton
+              icon="dots-horizontal" size={18} style={styles.action} iconColor={theme.colors.onSurfaceVariant}
+              accessibilityLabel="More choices for this library" onPress={() => setMenu(true)}
+            />
+          )}
+        >
+          <Menu.Item leadingIcon="check-all" title={`Always use ${first.book}`} onPress={() => { setMenu(false); onLibraryChoice(index, first.book, 'always'); }} />
+          <Menu.Item leadingIcon="close" title={`Never suggest ${first.book}`} onPress={() => { setMenu(false); onLibraryChoice(index, first.book, 'never'); }} />
+        </Menu>
+        <Button mode="contained-tonal" compact disabled={busy} onPress={() => { tap(); onAnswerFrom(index); }}>Answer from it</Button>
+      </View>
+    </View>
+  );
+}
+
 // Memoised, like UserMessage: while a reply streams, only the message that's changing redraws.
-const AssistantMessage = React.memo(function AssistantMessage({ index, text: reply, last, streaming, busy, noted, saved, searched, onRetry, onSave }: AssistantProps) {
+const AssistantMessage = React.memo(function AssistantMessage({
+  index, text: reply, last, streaming, busy, noted, saved, searched, found, onRetry, onSave, onUndo, onAnswerFrom, onLibraryChoice,
+}: AssistantProps) {
   const theme = useTheme();
   const [speaking, setSpeaking] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -300,14 +343,23 @@ const AssistantMessage = React.memo(function AssistantMessage({ index, text: rep
             )}
           </View>
         )}
-        {noted && (
-          <View style={[styles.noted, { backgroundColor: theme.colors.secondaryContainer }]}>
+        {last && !streaming && !!found?.length && (
+          <LibraryOffer index={index} hits={found} busy={busy} onAnswerFrom={onAnswerFrom} onLibraryChoice={onLibraryChoice} />
+        )}
+        {noted?.map((item) => (
+          <View key={item.id} style={[styles.noted, { backgroundColor: theme.colors.secondaryContainer }]}>
             <IconButton icon="brain" size={14} style={styles.notedIcon} iconColor={theme.colors.onSecondaryContainer} />
             <Text variant="labelMedium" style={{ color: theme.colors.onSecondaryContainer, flexShrink: 1 }}>
-              Remembered: {noted.join(' · ')}
+              {item.was ? `Updated: ${item.fact} (was: ${item.was.fact})` : `Remembered: ${item.fact}`}
             </Text>
+            <Button
+              compact mode="text" style={styles.undo} labelStyle={styles.undoLabel} textColor={theme.colors.onSecondaryContainer}
+              accessibilityLabel={`Undo: ${item.fact}`} onPress={() => { tap(); onUndo(index, item); }}
+            >
+              Undo
+            </Button>
           </View>
-        )}
+        ))}
       </View>
     </View>
   );
@@ -720,7 +772,10 @@ type ChatViewProps = { onOpenSettings: () => void; incoming?: Incoming | null; o
 
 export function ChatView({ onOpenSettings, incoming, onIncomingTaken, talkRequest }: ChatViewProps) {
   const theme = useTheme();
-  const { chat, busy, error, clearError, status, refreshStatus, noted, regenerate, notes, saveNote } = useStore();
+  const {
+    chat, busy, error, clearError, status, refreshStatus, noted, regenerate, notes, saveNote, undoLearnt, found, answerFromLibrary,
+    dismissFound, setLibraryChoice,
+  } = useStore();
   const scroll = useRef<ScrollViewInstance>(null);
   const [toast, setToast] = useState<string | null>(null);
   const showCopied = useCallback(() => setToast('Copied'), []);
@@ -744,6 +799,18 @@ export function ChatView({ onOpenSettings, incoming, onIncomingTaken, talkReques
       setToast("Couldn't save the note. Try again.");
     }
   }, [saveNote]);
+  const undo = useCallback((i: number, item: Learnt) => {
+    undoLearnt(i, item).then(() => setToast('Forgotten')).catch(() => setToast("Couldn't undo. Try again."));
+  }, [undoLearnt]);
+  const answerFrom = useCallback((i: number) => { answerFromLibrary(i).catch(() => undefined); }, [answerFromLibrary]);
+  const chooseLibrary = useCallback((i: number, book: string, choice: 'always' | 'never') => {
+    setLibraryChoice(book, choice).catch(() => undefined);
+    if (choice === 'always') answerFromLibrary(i).catch(() => undefined);
+    else {
+      dismissFound(i);
+      setToast(`${book} won't be suggested. Change it in Settings → Libraries.`);
+    }
+  }, [setLibraryChoice, answerFromLibrary, dismissFound]);
 
   useEffect(() => {
     scroll.current?.scrollToEnd({ animated: false });
@@ -768,7 +835,8 @@ export function ChatView({ onOpenSettings, incoming, onIncomingTaken, talkReques
               <AssistantMessage
                 key={i} index={i} text={m.content} last={i === lastAi} streaming={busy && i === messages.length - 1}
                 busy={busy} noted={noted[i]} saved={noteTexts.has(shownText(m.content).trim())} searched={m.searched}
-                onRetry={regenerate} onSave={saveToNotes}
+                found={found[i]} onRetry={regenerate} onSave={saveToNotes} onUndo={undo} onAnswerFrom={answerFrom}
+                onLibraryChoice={chooseLibrary}
               />
             ),
           )
@@ -826,6 +894,9 @@ const styles = StyleSheet.create({
   actionCard: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingVertical: 10, paddingLeft: 14, paddingRight: 10, gap: 6, maxWidth: 520, marginTop: 4 },
   actionCardRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   notedIcon: { margin: 0 },
+  undo: { marginVertical: 0, marginLeft: 4, minWidth: 0 },
+  undoLabel: { marginVertical: 4, marginHorizontal: 8 },
+  offerActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4 },
   dots: { flexDirection: 'row', gap: 5, paddingVertical: 10 },
   thinkDot: { width: 7, height: 7, borderRadius: 4 },
   searched: { flexDirection: 'row', alignItems: 'center', gap: 6 },

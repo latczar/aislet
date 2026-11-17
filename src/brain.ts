@@ -4,7 +4,7 @@ import { APP_NAME } from './config';
 import { actionsPrompt } from './deviceActions';
 import type { LibraryHit } from './library';
 import type { WebHit } from './webSearch';
-import type { AnswerLength, Memory, MemoryCategory, Message, NoteHit, Settings } from './types';
+import type { AnswerLength, Chat, Memory, MemoryCategory, Message, NoteHit, Settings } from './types';
 
 const LENGTH: Record<AnswerLength, string> = {
   short: 'Keep answers short: a few sentences or a brief list.',
@@ -22,6 +22,7 @@ export function systemPrompt(
   library: LibraryHit[] = [],
   actions = false, // explain alarms, timers and events: this phone can hand them to its Clock and Calendar apps
   web: { query: string; hits: WebHit[] } | null = null, // a web search made for this message (Search the web)
+  past: PastRecall | null = null, // they asked about an earlier chat: what a search of earlier chats found
 ): string {
   const name = settings.name;
   const who = name || 'the user';
@@ -58,10 +59,11 @@ export function systemPrompt(
   if (settings.instructions.trim()) {
     lines.push('', `How ${who} wants you to respond:`, settings.instructions.trim());
   }
-  if (memories.length) {
+  const current = memories.filter((m) => !m.until);
+  if (current.length) {
     lines.push('', `What you know about ${who} from earlier chats (use it naturally; don't recite it):`);
     for (const c of CATEGORIES) {
-      const group = memories.filter((m) => (m.category ?? 'about') === c.id);
+      const group = current.filter((m) => (m.category ?? 'about') === c.id);
       if (group.length) lines.push(`${c.title}:`, ...group.map((m) => `- ${m.fact}`));
     }
   }
@@ -92,6 +94,17 @@ export function systemPrompt(
       : `A web search for "${web.query}" was tried just now but didn't work. Say you couldn't check online, then ` +
         'answer from what you know and say it may be out of date.');
     lines.push(...web.hits.map((h, i) => `[${i + 1}] ${h.title} (${h.url})\n${h.snippet}`));
+  }
+  if (past) {
+    if (past.history.length) {
+      lines.push('', `What used to be true about ${who} (no longer current):`,
+        ...past.history.map((m) => `- ${m.fact} (until ${m.until})`));
+    }
+    lines.push('', past.items.length
+      ? `From earlier chats with ${who}, found by a search, with the date of each chat. They may not be relevant: ` +
+        "ignore any that don't help. When you use one, say roughly when it was:"
+      : `A search of earlier chats with ${who} found nothing about this. Say so rather than guess what was said.`);
+    lines.push(...past.items.map((p) => `[${p.date}, "${p.title}"]\n${p.text}`));
   }
   lines.push(
     '',
@@ -125,9 +138,8 @@ export function interviewPrompt(name: string): string {
   ].join(' ');
 }
 
-export function learnMessages(name: string, memories: Memory[], message: string): Message[] {
+export function learnMessages(name: string, memories: Memory[], message: string, reply = ''): Message[] {
   const who = name || 'The user';
-  const known = memories.map((m) => `- ${m.fact}`).join('\n') || '(nothing yet)';
   return [
     {
       role: 'system',
@@ -135,16 +147,29 @@ export function learnMessages(name: string, memories: Memory[], message: string)
         `You pick out lasting facts about ${who} from what they said, for their personal assistant's memory.`,
         'Save things that will still be true and useful in future chats: who they are, their work, goals, routines,',
         'interests, the people and projects they mention, and how they like answers. Feedback counts too:',
-        '"shorter please" means they prefer short answers; "call me Lat" means they want to be called Lat.',
+        '"shorter please" means they prefer short answers; "call me Lat" means they want to be called Lat. When they react',
+        'to the reply they just got ("too long", "no lists", "too formal"), save how they like answers, as a preference.',
         'Do not save questions, one-off requests (setting an alarm, timer, reminder or event is one), small talk, guesses,',
-        'anything already known,',
+        'anything already known, anything only the reply said,',
         'or secrets (passwords, card numbers, codes, health or money details they did not ask you to keep).',
         `Write each fact as one short sentence starting "${who}", with a category: ${CATEGORY_IDS}.`,
-        'Reply only with JSON: {"facts": [{"fact": "...", "category": "..."}]}. Reply {"facts": []} when there is nothing worth saving.',
+        'When a new fact updates or contradicts a known one (a new job, a move, a changed preference), give the known',
+        'fact\'s number as "replaces"; otherwise null.',
+        'Reply only with JSON: {"facts": [{"fact": "...", "category": "...", "replaces": null}]}. Reply {"facts": []} when there is nothing worth saving.',
       ].join('\n'),
     },
-    { role: 'user', content: `Already known:\n${known}\n\n${who}'s message:\n${message}` },
+    {
+      role: 'user',
+      content: `Already known:\n${knownList(memories)}\n\n` +
+        (reply ? `The reply they were reacting to began (context only):\n${shorten(reply, 300)}\n\n` : '') +
+        `${who}'s message:\n${message}`,
+    },
   ];
+}
+
+/** Known facts, numbered so a new fact can say which one it replaces. */
+function knownList(memories: Memory[]): string {
+  return memories.map((m, i) => `${i + 1}. ${m.fact}`).join('\n') || '(nothing yet)';
 }
 
 /** Look back over a stretch of conversation for anything lasting the single-message check missed. */
@@ -154,24 +179,28 @@ export function conversationLearnMessages(name: string, memories: Memory[], rece
     .filter((m) => m.role !== 'system')
     .map((m) => `${m.role === 'user' ? who : 'Assistant'}: ${(m.display ?? m.content).slice(0, 600)}`)
     .join('\n');
-  const known = memories.map((m) => `- ${m.fact}`).join('\n') || '(nothing yet)';
   const [system] = learnMessages(name, memories, '');
   return [
     {
       role: 'system',
       content: `${system.content}\nLook at the whole conversation: patterns like recurring interests or how they react to answers count.`,
     },
-    { role: 'user', content: `Already known:\n${known}\n\nConversation:\n${transcript}` },
+    { role: 'user', content: `Already known:\n${knownList(memories)}\n\nConversation:\n${transcript}` },
   ];
 }
 
 export interface LearntFact {
   fact: string;
   category: MemoryCategory;
+  replaces?: Memory; // the known fact it updates (only when they're about the same thing)
+  maybe?: Memory;    // the model said it updates this one, but they share no word: check by meaning first
 }
 
+/** Two facts this close in meaning are about the same thing (measured with nomic-embed: unrelated facts about one person score up to ~0.72). */
+export const SAME_THING = 0.76;
+
 /** Read the model's JSON reply, coping with stray text around it. */
-export function parseFacts(reply: string): LearntFact[] {
+export function parseFacts(reply: string, known: Memory[] = [], name?: string): LearntFact[] {
   let data: unknown;
   try {
     data = JSON.parse(reply);
@@ -187,13 +216,36 @@ export function parseFacts(reply: string): LearntFact[] {
   const facts = (data as { facts?: unknown })?.facts;
   if (!Array.isArray(facts)) return [];
   const valid = new Set(CATEGORIES.map((c) => c.id));
+  const replaced = new Set<string>();
   return facts
-    .map((f) => (typeof f === 'string' ? { fact: f, category: 'about' } : (f as { fact?: unknown; category?: unknown })))
-    .filter((f): f is { fact: string; category?: unknown } => typeof f?.fact === 'string' && f.fact.trim() !== '')
-    .map((f) => ({
-      fact: f.fact.trim(),
-      category: (valid.has(f.category as MemoryCategory) ? f.category : 'about') as MemoryCategory,
-    }));
+    .map((f) => (typeof f === 'string' ? { fact: f, category: 'about' } : (f as { fact?: unknown; category?: unknown; replaces?: unknown })))
+    .filter((f): f is { fact: string; category?: unknown; replaces?: unknown } => typeof f?.fact === 'string' && f.fact.trim() !== '')
+    // Facts are written "<name> …": small models sometimes return just the name, or a line from the reply.
+    .filter((f) => name === undefined || (aboutThem(f.fact, name) && f.fact.trim().split(/\s+/).length >= 3))
+    .map((f) => {
+      const category = (valid.has(f.category as MemoryCategory) ? f.category : 'about') as MemoryCategory;
+      const n = Number(f.replaces);
+      const old = f.replaces != null && Number.isInteger(n) && n >= 1 && n <= known.length ? known[n - 1] : undefined;
+      // Small models sometimes point at an unrelated fact: accept the same kind of fact sharing a word. Otherwise
+      // it's only a maybe, for the app to check by meaning ("lives in Lisbon" → "moved to Porto", or a new job
+      // filed under "about" when the old one was under "projects").
+      const same = old && !replaced.has(old.id) ? old : undefined;
+      const ok = !!same && (same.category ?? 'about') === category && sharesWords(same.fact, f.fact, name);
+      if (same) replaced.add(same.id);
+      return { fact: f.fact.trim(), category, replaces: ok ? same : undefined, maybe: ok ? undefined : same };
+    });
+}
+
+function aboutThem(fact: string, name: string): boolean {
+  const f = fact.trim().toLowerCase();
+  return [name, 'the user', 'user'].some((w) => !!w && f.startsWith(w.toLowerCase()));
+}
+
+/** Whether two facts share a meaningful word, other than the person's name. */
+export function sharesWords(a: string, b: string, name = ''): boolean {
+  const skip = words(name);
+  const theirs = words(b);
+  return [...words(a)].some((w) => !skip.has(w) && theirs.has(w));
 }
 
 // ---- Keeping long memories fast: only the facts that matter for this message go in the prompt ----
@@ -212,6 +264,7 @@ export function relevantMemories(
   limit = MEMORY_LIMIT,
   vectors?: { query: number[]; facts: Record<string, number[] | undefined> },
 ): Memory[] {
+  memories = memories.filter((m) => !m.until); // what used to be true only comes back when they ask about the past
   if (memories.length <= limit) return memories;
   const prefs = memories.filter((m) => m.category === 'preferences').slice(-Math.floor(limit / 3));
   const chosen = new Set(prefs.map((m) => m.id));
@@ -391,6 +444,89 @@ export function keywordScore(query: string, text: string): number {
     if (t.has(w)) hits++;
   });
   return hits / q.size;
+}
+
+// ---- Earlier chats: kept word for word, searched only when a question looks back ----
+
+/** One earlier exchange (their message and the start of the reply) that may answer a question about the past. */
+export interface PastItem {
+  chat: string;  // chat id
+  title: string;
+  date: string;  // YYYY-MM-DD, when the chat was last updated
+  text: string;
+  score: number;
+}
+
+export interface PastRecall {
+  items: PastItem[];
+  history: Memory[]; // facts that used to be true
+}
+
+/** Each chat's exchanges as short text, kept on this device so earlier chats can be searched without opening them all. */
+export type ChatIndex = Record<string, { updated: number; title: string; items: string[] }>;
+
+const PAST =
+  /\b(last time|the other day|earlier|previously|we (talked|spoke|discussed|chatted|said)|did i (tell|mention|say|ask)|i (told|mentioned|said|asked) you|you (told|said|suggested|recommended)|remember (when|what|that|the|my)|what did (i|we|you)|when did (i|we)|last (week|month|night|year)|yesterday|ago|used to)\b/i;
+
+/** Whether a message asks about something said before: only then are earlier chats searched (it costs time). */
+export function recallsPast(text: string): boolean {
+  return PAST.test(text);
+}
+
+/** Words that say "look back" rather than what to look for. */
+const RECALL_WORDS = new Set(
+  ('remember told tell said say talked talk spoke discussed mentioned asked suggested recommended last time earlier previously ' +
+    'yesterday week month night year ago did other day used chat chats about again thing things something anything stuff').split(' '),
+);
+
+function topicWords(text: string): Set<string> {
+  return new Set([...words(text)].filter((w) => !RECALL_WORDS.has(w)));
+}
+
+/** A chat's exchanges for the index: what they said, then the start of the reply. */
+export function indexChat(chat: Chat, name: string): ChatIndex[string] {
+  const who = name || 'User';
+  const items: string[] = [];
+  chat.messages.forEach((m, i) => {
+    if (m.role !== 'user') return;
+    const reply = chat.messages[i + 1]?.role === 'assistant' ? chat.messages[i + 1].content : '';
+    const said = shorten(m.display ?? m.content, 280);
+    if (said) items.push(reply ? `${who}: ${said}\n${APP_NAME}: ${shorten(reply, 320)}` : `${who}: ${said}`);
+  });
+  return { updated: chat.updated, title: chat.title, items };
+}
+
+/**
+ * The earlier exchanges that share most of the question's words, best first. With no words to go on
+ * ("what did we talk about yesterday?"), the start of the most recent chats.
+ */
+export function searchPast(index: ChatIndex, query: string, exclude: string, limit = 8): PastItem[] {
+  const q = topicWords(query);
+  const chats = Object.entries(index).filter(([id]) => id !== exclude).sort((a, b) => b[1].updated - a[1].updated);
+  const date = (t: number) => new Date(t).toISOString().slice(0, 10);
+  if (!q.size) {
+    return chats.slice(0, 3).filter(([, c]) => c.items.length)
+      .map(([id, c]) => ({ chat: id, title: c.title, date: date(c.updated), text: c.items[0], score: 0 }));
+  }
+  const found: PastItem[] = [];
+  for (const [id, c] of chats) {
+    for (const text of c.items) {
+      const t = words(text);
+      let hits = 0;
+      q.forEach((w) => { if (t.has(w)) hits++; });
+      const score = hits / q.size;
+      if (score >= 0.34 || (hits >= 2 && score >= 0.25)) found.push({ chat: id, title: c.title, date: date(c.updated), text, score });
+    }
+  }
+  return found.sort((a, b) => b.score - a.score || b.date.localeCompare(a.date)).slice(0, limit);
+}
+
+/** Facts that used to be true and share a word with the question (or the newest few when it names nothing). */
+export function pastFacts(memories: Memory[], query: string, limit = 5): Memory[] {
+  const old = memories.filter((m) => m.until);
+  const q = topicWords(query);
+  const matching = q.size ? old.filter((m) => [...words(m.fact)].some((w) => q.has(w))) : old;
+  return matching.slice(-limit);
 }
 
 /** Remove any "thinking" a model printed before its answer. */
