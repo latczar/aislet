@@ -32,11 +32,6 @@ python scripts/make-site-assets.py
 
 It rewrites the logo SVGs, icons, `og.png`, the WebP screenshots and `demo.mp4` (needs Pillow and ffmpeg).
 
-## Before it goes live
-
-- **Rename the GitHub repository first.** Every link on the page points to `github.com/latczar/aislet`, including the Windows install command and the APK download. Until `latczar/untethered` is renamed, those links show GitHub's 404 page.
-- **Release 1.0.7 before going live.** Both Android buttons download `releases/latest/download/Aislet.apk` directly. Releases up to 1.0.6 named the file `Untethered.apk`, so the buttons only work once a release with `Aislet.apk` is marked Latest.
-
 ## How it's hosted
 
 aislet.app is a Cloudflare Worker called `aislet` that serves the `site/` folder as static files (no server code). The settings are in `deploy/wrangler.jsonc`, including the custom domain aislet.app. It was first deployed on 16 Nov 2026.
