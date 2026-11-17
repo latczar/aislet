@@ -277,6 +277,11 @@ export const deviceEngine: Engine = {
 
   async json(messages, modelId, maxTokens = 256) {
     const ctx = await chatContext(modelId);
+    // Learning and tidying ask the chat's model something else, which would replace its reading of the chat (on a
+    // phone CPU, about a minute of work for a long chat). Save that reading to a file first and load it back after,
+    // so the next message only reads what's new. If either step fails, the next message just reads it all again.
+    const state = new File(Paths.cache, 'chat-state.bin');
+    const saved = await ctx.saveSession(state.uri).catch(() => 0);
     try {
       const result = await ctx.completion({
         messages: toLlama(messages.map(({ images: _i, ...m }) => m)), n_predict: maxTokens, temperature: 0, stop: STOP,
@@ -284,6 +289,12 @@ export const deviceEngine: Engine = {
       });
       return result.text ?? '';
     } finally {
+      if (saved > 0) await ctx.loadSession(state.uri).catch(() => undefined);
+      try {
+        if (state.exists) state.delete();
+      } catch {
+        // a leftover file in the cache folder is harmless; it's replaced next time
+      }
       touch();
     }
   },

@@ -58,7 +58,7 @@ check('no real line breaks lost', !learn[0].content.includes('\\n'));
 // ---- History stays out of the prompt ----
 const withHistory = [...known, fact('e', 'Sam lives in Berlin', 'about', { until: '2026-10-01' })];
 check('history is left out of the facts sent', !brain.relevantMemories(withHistory, 'where do I live').some((m) => m.until));
-const prompt = brain.systemPrompt({ name: 'Sam', instructions: '', length: 'balanced' }, withHistory, [], 'phone');
+const prompt = brain.systemPrompt({ name: 'Sam', instructions: '', length: 'balanced' }, withHistory, 'phone');
 check('history is not listed as current', !prompt.includes('Sam lives in Berlin'));
 
 // ---- Looking back at earlier chats ----
@@ -99,7 +99,7 @@ check('lists what used to be true', past.includes('Sam lives in Berlin (until 20
 check('marked as found by the app, not said by them', past.startsWith('[Found by the app'));
 const nothing = brain.pastContext('Sam', { items: [], history: [] });
 check('says when nothing was found, so it does not guess', nothing.includes('found nothing about this'));
-const sys1 = brain.systemPrompt({ name: 'Sam', instructions: '', length: 'balanced' }, known, [], 'phone');
+const sys1 = brain.systemPrompt({ name: 'Sam', instructions: '', length: 'balanced' }, known, 'phone');
 check('the system message has no per-message look-back part', !sys1.includes('earlier chats with Sam'));
 
 console.log(`${passed} passed, ${failed} failed`);

@@ -3,8 +3,8 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { AppState, Platform } from 'react-native';
 import {
   CATEGORIES, type ChatIndex, type LearntFact, MAX_TOKENS, MEMORY_LIMIT, type PastRecall, SAME_THING, TIDY_BATCH, type TidyChange,
-  chunkText, cleanFact, conversationLearnMessages, indexChat, interviewPrompt, keywordScore, learnMessages, parseFacts, parseTidy,
-  pastContext, pastFacts, recallsPast, relevantMemories, searchPast, similarity, stripThinking, systemPrompt, tidyMessages, titleFrom, worthLearning,
+  chunkText, cleanFact, conversationLearnMessages, indexChat, interviewPrompt, keywordScore, learnMessages, moreMemories, parseFacts, parseTidy,
+  pastFacts, recallsPast, relevantMemories, searchPast, similarity, stripThinking, systemPrompt, tidyMessages, titleFrom, turnContext, worthLearning,
 } from './brain';
 import { actionsSupported, mayWantAction } from './deviceActions';
 import { type WebHit, needsWeb, searchWeb, webQuery } from './webSearch';
@@ -28,7 +28,19 @@ const DEFAULT_SETTINGS: Settings = {
   hubUrl: '', hubKey: '', useLaptop: true, accel: 'cpu', performance: 'balanced', haptics: true, onboarded: false,
   useLibraries: true, voiceLang: '', webSearch: false, libraryMode: 'ask', libraryChoice: {}, recallChats: true,
 };
-const HISTORY = 20; // messages of the current chat the model sees
+const HISTORY = 20; // messages of the current chat the model sees, at most
+
+/**
+ * What keeps an open chat's prompt the same from one message to the next, so the phone and Ollama only read what's
+ * new: the facts in its system message (chosen at its first message), the facts known then, what the app added to
+ * each message, and where the messages the model sees start. Kept while the app runs; never saved or synced.
+ */
+interface ChatPrompt {
+  facts: string[];
+  known: Set<string>;
+  added: Map<number, { for: string; text: string }>; // by message position: the message it went with, and the text
+  start: number;
+}
 const DELETED_KEY = 'deleted';
 
 type NoteIndex = Record<string, { updated: number; chunks: { text: string; vec?: number[] }[] }>;
@@ -157,6 +169,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [found, setFound] = useState<Record<number, LibraryHit[]>>({});
   const foundRef = useRef(found);
   foundRef.current = found;
+  const prompts = useRef(new Map<string, ChatPrompt>()); // by chat id, the most recent few
   const [hub, setHub] = useState<HubState>({ connected: false, syncing: false });
 
   // Latest values for use inside long-running async work.
@@ -894,9 +907,26 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const library = opts?.library ?? await searchLibraries(asked, queryVec, 'always').catch(() => []);
       const past = recall ? await recallPast(asked, base.id, queryVec).catch(() => ({ items: [], history: [] })) : null;
       const recentAsks = base.messages.filter((m) => m.role === 'user').slice(-2).map((m) => m.display ?? m.content);
-      const memories = await pickMemories([...recentAsks, userMsg.content].join('\n'), queryVec, base.mode === 'interview' ? 80 : MEMORY_LIMIT)
-        .catch(() => memRef.current.slice(-MEMORY_LIMIT));
-      const actions = actionsSupported && mayWantAction([...recentAsks, userMsg.display ?? userMsg.content]);
+      const query = [...recentAsks, userMsg.content].join('\n');
+      // The facts in the system message are chosen at the chat's first message and then kept, so the system message
+      // stays the same. Facts learnt since, or left out but matching this message, go with this message instead.
+      const current = memRef.current.filter((m) => !m.until);
+      let ps = prompts.current.get(base.id);
+      if (!ps) {
+        const limit = base.mode === 'interview' ? 80 : MEMORY_LIMIT;
+        const chosen = await pickMemories(query, queryVec, limit).catch(() => current.slice(-limit));
+        ps = { facts: chosen.map((m) => m.id), known: new Set(current.map((m) => m.id)), added: new Map(), start: 0 };
+        prompts.current.set(base.id, ps);
+        if (prompts.current.size > 8) prompts.current.delete(prompts.current.keys().next().value!);
+      }
+      const inSystem = new Set(ps.facts);
+      const memories = current.filter((m) => inSystem.has(m.id)); // a fact forgotten since drops out (the system message changes once)
+      const rest = current.filter((m) => !inSystem.has(m.id));
+      const fresh = new Set(rest.filter((m) => !ps.known.has(m.id)).map((m) => m.id));
+      const facts = rest.length && queryVec ? await memoryVectors().catch(() => ({})) : null;
+      const extra = base.mode === 'interview' ? rest.filter((m) => fresh.has(m.id))
+        : moreMemories(rest, query, fresh, queryVec && facts ? { query: queryVec, facts } : undefined);
+      const actions = actionsSupported && mayWantAction(userMsg.display ?? userMsg.content, recentAsks);
       // Search the web: when asked with the globe, or when the question needs current information. Not in a
       // get-to-know-me chat, and not by itself for a message about an attached photo or file.
       let web: { query: string; hits: WebHit[] } | null = null;
@@ -908,15 +938,34 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         searched = { query, ok: web.hits.length > 0, sources: web.hits.map((h) => ({ title: h.title, url: h.url })) };
         setReplyNote(searched);
       }
-      const prompt = systemPrompt(s, memories, hits, active.where, library, actions, web);
-      // What a look back found goes with this message only (it is never saved in the chat), so the system message stays the same.
-      const latest: Message = past ? { ...userMsg, content: `${pastContext(s.name, past)}
-
-${userMsg.content}` } : userMsg;
+      const prompt = systemPrompt(s, memories, active.where, actionsSupported);
       const sys: Message = { role: 'system', content: base.mode === 'interview' ? `${prompt}
 
 ${interviewPrompt(s.name)}` : prompt };
-      await active.chat([sys, ...base.messages.slice(-HISTORY), latest], s.modelId, (token) => {
+      // What the app found for this message (a look back, notes, libraries, the web, facts, how to set alarms) goes
+      // with it, never in the chat that's saved. It's kept with the message while the chat stays open, so later
+      // prompts begin exactly as this one did and only what's new is read.
+      const added = turnContext(s.name, { past, notes: hits, library, web, actions, memories: extra });
+      const at = base.messages.length;
+      for (const k of [...ps.added.keys()]) if (k >= at) ps.added.delete(k); // answered again: those messages are gone
+      if (added) ps.added.set(at, { for: userMsg.content, text: added });
+      // The window of messages moves on in steps, not one message at a time, so most prompts only add to the last.
+      const cp = ps;
+      if (at - cp.start > HISTORY) {
+        cp.start = at - HISTORY / 2;
+        while (cp.start < at && base.messages[cp.start].role !== 'user') cp.start++;
+      }
+      // Kept additions must leave room in the model's context (8192 tokens): past about 3,500 tokens of them, the
+      // older ones go (the prompt is read afresh once).
+      let size = 0;
+      for (const [k, a] of cp.added) if (k >= cp.start) size += a.text.length;
+      for (const k of [...cp.added.keys()]) if (k < cp.start || (size > 12_000 && k < at)) cp.added.delete(k);
+      const withAdded = (m: Message, i: number): Message => {
+        const a = cp.added.get(i);
+        return a && a.for === m.content ? { ...m, content: `${a.text}\n\n${m.content}` } : m;
+      };
+      const history = base.messages.slice(cp.start).map((m, i) => withAdded(m, cp.start + i));
+      await active.chat([sys, ...history, withAdded(userMsg, at)], s.modelId, (token) => {
         answer += token;
         drawTimer ??= setTimeout(draw, 66);
       }, MAX_TOKENS[s.length] ?? 1024);
@@ -979,7 +1028,7 @@ ${interviewPrompt(s.name)}` : prompt };
       }
     }
     if (added.length) setNoted((n) => ({ ...n, [answerAt]: added }));
-  }, [searchNotes, searchLibraries, recallPast, pickMemories, saveChat, learnFact, refreshStatus]);
+  }, [searchNotes, searchLibraries, recallPast, pickMemories, memoryVectors, saveChat, learnFact, refreshStatus]);
 
   /** Answer the reply at `at` again, using the library passages offered under it. */
   const answerFromLibrary = useCallback(async (at: number) => {
