@@ -1,33 +1,12 @@
 // Learning eval: does the model, given the app's own learning prompt (src/brain.ts), save the right facts?
 // Corrections become preferences, a changed fact replaces the old one, unrelated facts don't, and one-off
 // requests or things only the reply said aren't saved. Made-up data only. Talks to Ollama on this computer.
-//   node scripts/check-learning.mjs                     qwen3.5:4b (the phone's default size)
-//   node scripts/check-learning.mjs --model qwen3.5:9b
+//   node scripts/eval/learning.mjs                     qwen3.5:4b (the phone's default size)
+//   node scripts/eval/learning.mjs --model qwen3.5:9b
 // Needs Node 22.18+ (it loads the app's TypeScript directly). Exit code 0 only if every case passes.
-import { registerHooks } from 'node:module';
+import './hooks.mjs'; // loads the app's own TypeScript, with stand-ins for Expo and React Native
 
-const EMPTY = 'data:text/javascript,export default {}; export const Platform = { OS: "web", select: (o) => o.web ?? o.default };'
-  + ' export function requireOptionalNativeModule() { return null; }';
-registerHooks({
-  resolve(specifier, context, next) {
-    if (/^(expo|react-native)/.test(specifier)) return { url: EMPTY, shortCircuit: true };
-    if (/^\.\.?\//.test(specifier) && !/\.[cm]?[jt]sx?$/.test(specifier) && context.parentURL?.includes('/src/')) {
-      for (const ext of ['.ts', '.tsx']) {
-        try {
-          return next(specifier + ext, context);
-        } catch {
-          // try the next extension
-        }
-      }
-    }
-    return next(specifier, context);
-  },
-  load(url, context, next) {
-    if (url.endsWith('.ts') && url.includes('/src/')) return next(url, { ...context, format: 'module-typescript' });
-    return next(url, context);
-  },
-});
-const brain = await import('../src/brain.ts');
+const brain = await import('../../src/brain.ts');
 
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);

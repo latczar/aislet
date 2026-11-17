@@ -1,32 +1,9 @@
 // Checks for the learning and memory logic in src/brain.ts: replacing facts, history, looking back at
 // earlier chats. Made-up data only. Needs Node 22.18+ (it loads the app's TypeScript directly).
-//   node scripts/check-memory.mjs
-import { registerHooks } from 'node:module';
+//   node scripts/eval/memory.mjs
+import './hooks.mjs'; // loads the app's own TypeScript, with stand-ins for Expo and React Native
 
-// brain.ts imports a few modules that need a phone; stand in for them with nothing.
-const EMPTY = 'data:text/javascript,export default {}; export const Platform = { OS: "web", select: (o) => o.web ?? o.default };'
-  + ' export function requireOptionalNativeModule() { return null; }';
-registerHooks({
-  resolve(specifier, context, next) {
-    if (/^(expo|react-native)/.test(specifier)) return { url: EMPTY, shortCircuit: true };
-    if (/^\.\.?\//.test(specifier) && !/\.[cm]?[jt]sx?$/.test(specifier) && context.parentURL?.includes('/src/')) {
-      for (const ext of ['.ts', '.tsx']) {
-        try {
-          return next(specifier + ext, context);
-        } catch {
-          // try the next extension
-        }
-      }
-    }
-    return next(specifier, context);
-  },
-  load(url, context, next) {
-    if (url.endsWith('.ts') && url.includes('/src/')) return next(url, { ...context, format: 'module-typescript' });
-    return next(url, context);
-  },
-});
-
-const brain = await import('../src/brain.ts');
+const brain = await import('../../src/brain.ts');
 let failed = 0;
 let passed = 0;
 function check(name, ok, detail = '') {
