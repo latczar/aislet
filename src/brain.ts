@@ -101,8 +101,9 @@ export function systemPrompt(
         ...past.history.map((m) => `- ${m.fact} (until ${m.until})`));
     }
     lines.push('', past.items.length
-      ? `From earlier chats with ${who}, found by a search, with the date of each chat. They may not be relevant: ` +
-        "ignore any that don't help. When you use one, say roughly when it was:"
+      ? `From earlier chats with ${who}, found by a search, with the date of each chat (today is ` +
+        `${new Date().toISOString().slice(0, 10)}). They may not be relevant: ignore any that don't help. When you use ` +
+        'one, say roughly when it was, like "a week ago":'
       : `A search of earlier chats with ${who} found nothing about this. Say so rather than guess what was said.`);
     lines.push(...past.items.map((p) => `[${p.date}, "${p.title}"]\n${p.text}`));
   }
