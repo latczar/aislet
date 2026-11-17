@@ -119,8 +119,8 @@ Before and after a change to prompts, memory, models or the engines, compare aga
   - drafts in their own card;
   - Get to know me.
 
-  It builds every prompt with the app's own `src/brain.ts` and sends it with `src/engine/ollama.ts`, loaded by plain Node 22.18+ (`scripts/eval/hooks.mjs` stands in for Expo, React Native and the hub), so it needs no packages. Use `--model qwen3.5:4b` for another model and `--only <case or group>` for a few cases. A few cases can flip between runs even with fixed seeds, so treat ±2 as noise.
-- **Learning:** `node scripts/eval/learning.mjs [--model qwen3.5:9b]` sends 8 made-up messages through the app's learning prompt and checks what it would save. It checks that:
+  It builds every prompt with the app's own `src/brain.ts` and sends it with `src/engine/ollama.ts`, loaded by plain Node 22.18+ (`scripts/eval/hooks.mjs` stands in for Expo, React Native and the hub), so it needs no packages. Use `--model qwen3.5:4b` for another model and `--only <case or group>` for a few cases. To add cases, put a `.mjs` file in `scripts/eval/cases/` (its README shows how); it's loaded by itself. A few cases can flip between runs even with fixed seeds, so treat ±2 as noise.
+- **Learning:** `node scripts/eval/run.mjs --only learning [--model qwen3.5:9b]` sends 8 made-up messages through the app's learning prompt (`scripts/eval/cases/learning.mjs`) and checks what it would save. It checks that:
   - a correction becomes a preference;
   - a new job or a move replaces the old fact;
   - a second pet doesn't replace the first;
