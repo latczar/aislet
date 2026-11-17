@@ -955,7 +955,7 @@ def check_layout() -> str:
     go_tab('Memory')
     scroll_to_top()
     nodes = screen()
-    lefts, rights = check_rows(nodes, {'Get to know me': 'Start', 'Learn from my chats': 'switch', 'Tidy up memory': 'Tidy up'}, 'Memory', dp)
+    lefts, rights = check_rows(nodes, {'Get to know me': 'Start', 'Learn from my chats': 'switch', 'Look back at earlier chats': 'switch', 'Tidy up memory': 'Tidy up'}, 'Memory', dp)
     add = button_box(nodes, 'Add')
     if add is None:
         raise CheckFailed('no Add button on Memory')
@@ -1216,8 +1216,34 @@ LIBRARY_FIXTURE = Path(__file__).resolve().parent / 'fixtures' / 'e2e-library.zi
 LIBRARY_PROMPT = 'E2E check: how long does the Lumen-7 lantern run on batteries'
 
 
+def wait_reply(timeout: float = 180) -> None:
+    """Until the reply has finished (Copy is there and Stop isn't)."""
+    end = time.time() + timeout
+    while True:
+        nodes = screen()
+        if find(nodes, desc='Copy') and not find(nodes, desc='Stop'):
+            return
+        if find(nodes, text='Dismiss'):
+            raise CheckFailed('the reply failed with an error card')
+        if time.time() > end:
+            raise CheckFailed(f'no reply within {timeout:.0f} s')
+        time.sleep(1.5)
+
+
+def answer_from_library(prompt: str) -> str:
+    """With "Ask first" (the default), the reply comes first, then an offer of what a library found: take it."""
+    offer = wait_for('the library offer under the reply ("Answer from it")', timeout=90, text='Answer from it')
+    tap(offer)
+    end = time.time() + 15  # the reply is answered again: wait for it to start
+    while find(screen(), desc='Copy') and time.time() < end:
+        time.sleep(0.5)
+    wait_reply()
+    return ' '.join(n.text for n in screen() if n.text and n.text != prompt)
+
+
 def check_library() -> str:
-    """A made-up library in the app's folder shows in Settings, and an answer uses its made-up fact."""
+    """A made-up library in the app's folder shows in Settings, is offered after the reply, and answering from it
+    uses its made-up fact."""
     try:
         shell(f'mkdir -p {LIBRARY_DIR}')
         adb('push', str(LIBRARY_FIXTURE), f'{LIBRARY_DIR}/e2e-library.zim')
@@ -1235,21 +1261,15 @@ def check_library() -> str:
         tap(send[0])
         wait_for('the sent message in the thread', timeout=10, text=LIBRARY_PROMPT)
         hide_keyboard()
-        started, end = time.time(), time.time() + 180
-        while True:
-            nodes = screen()
-            if find(nodes, desc='Copy') and not find(nodes, desc='Stop'):
-                break
-            if find(nodes, text='Dismiss'):
-                raise CheckFailed('the reply failed with an error card')
-            if time.time() > end:
-                raise CheckFailed('no reply within 180 s')
-            time.sleep(1.5)
-        reply = ' '.join(n.text for n in screen() if n.text and n.text != LIBRARY_PROMPT)
+        started = time.time()
+        wait_reply()
+        first = time.time() - started
+        reply = answer_from_library(LIBRARY_PROMPT)
         if '42' not in reply:
-            raise CheckFailed(f'the reply did not use the library (no "42 hours"): {reply[:160]!r}')
+            raise CheckFailed(f'the answer from the library did not use it (no "42 hours"): {reply[:160]!r}')
         cited = 'E2E Test Library' in reply
-        return f'listed in Settings; reply in {time.time() - started:.0f} s used the made-up fact' + (', and named the library' if cited else '')
+        return (f'listed in Settings; reply in {first:.0f} s, then offered; answering from it used the made-up fact'
+                + (', and named the library' if cited else ''))
     finally:
         if not delete_test_chat():
             print('  note: could not find the test chat to delete', file=sys.stderr)
@@ -1327,17 +1347,9 @@ def check_library_files() -> str:
         tap(send[0])
         wait_for('the sent message in the thread', timeout=10, text=FILES_PROMPT)
         hide_keyboard()
-        started, end = time.time(), time.time() + 180
-        while True:
-            nodes = screen()
-            if find(nodes, desc='Copy') and not find(nodes, desc='Stop'):
-                break
-            if find(nodes, text='Dismiss'):
-                raise CheckFailed('the reply failed with an error card')
-            if time.time() > end:
-                raise CheckFailed('no reply within 180 s')
-            time.sleep(1.5)
-        reply = ' '.join(n.text for n in screen() if n.text and n.text != FILES_PROMPT)
+        started = time.time()
+        wait_reply()
+        reply = answer_from_library(FILES_PROMPT)
         if '1.4' not in reply:
             raise CheckFailed(f'the reply did not use the note (no "1.4 bar"): {reply[:160]!r}')
         cited = 'e2e-boiler-notes' in reply
