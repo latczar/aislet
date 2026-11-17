@@ -69,6 +69,14 @@ TypeScript · React Native (Expo) · React Native Paper · Ollama on the compute
   ```
 
   Release builds are signed when the `UNTETHERED_*` properties are set in `~/.gradle/gradle.properties`.
+
+  **APK size.** Native libraries are about 140 MB, mostly llama.rn's builds for different phone chips.
+  - `useLegacyPackaging` (in `app.json`) compresses them in the APK, which roughly halves the download. Android unpacks them when the app is installed.
+  - `packagingOptions.exclude` leaves out two things:
+    - llama.rn's `v8_2_i8mm` build, which no phone picks: every chip with i8mm also has dotprod, which is tried first.
+    - BouncyCastle's post-quantum data, which PdfBox brings in but Aislet never uses.
+
+  If llama.rn adds or renames builds after an upgrade, check this list again.
 - **Install on a phone with adb:**
 
   ```bash

@@ -47,8 +47,14 @@
             "minSdkVersion": 26,
             "usesCleartextTraffic": true,
             "extraProguardRules": "-keep class org.kiwix.** { *; }\n-keep class com.tom_roush.** { *; }\n-dontwarn com.gemalto.jp2.**",
+            "useLegacyPackaging": true,
             "packagingOptions": {
-              "pickFirst": ["**/libc++_shared.so"]
+              "pickFirst": ["**/libc++_shared.so"],
+              "exclude": [
+                "**/librnllama_v8_2_i8mm.so",
+                "**/librnllama_jni_v8_2_i8mm.so",
+                "org/bouncycastle/pqc/**"
+              ]
             }
           }
         }
