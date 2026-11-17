@@ -2,7 +2,7 @@
 
     python scripts/eval/phone_speed.py state           which AI, performance mode and accelerator are set
     python scripts/eval/phone_speed.py cold [runs]     cold starts: first frame, message box and a ready AI
-    python scripts/eval/phone_speed.py chat [runs]     a made-up prompt and two follow-ups in a new chat, timed
+    python scripts/eval/phone_speed.py chat [runs]     a made-up prompt and two follow-ups, timed from llama.rn's log
     python scripts/eval/phone_speed.py memory          the app's memory use (PSS and RSS)
     python scripts/eval/phone_speed.py laptop-off      switch "Use the laptop's AI at home" off (laptop-on: back on)
 
@@ -114,16 +114,20 @@ def cold(runs: int) -> None:
     print('(the screen is read every ~2 s, so "seen by" times are upper bounds)')
 
 
-def answer_nodes(nodes, prompt_node):
-    composer = e2e.editable(nodes)[-1]
-    return [n for n in nodes if n.text and n.y1 > prompt_node.y2 and n.y2 < composer.y1
-            and n.text not in (PROMPT, FOLLOW_UP, WITH_NUMBER) and not n.cls.endswith('EditText')]
+def keyboard_shown() -> bool:
+    return 'mInputShown=true' in e2e.shell('dumpsys input_method')
+
+
+def close_keyboard() -> None:
+    """Back only while the keyboard shows: on a chat with no keyboard, Back opens the chat list."""
+    if keyboard_shown():
+        e2e.key(4)
+        time.sleep(1)
 
 
 def phone_log() -> list[tuple[float, str]]:
     """The app's log since it was last cleared, as (phone time, message). Only llama.rn and the app's own lines."""
-    pid = e2e.shell(f'pidof {PKG}').strip()
-    out = e2e.adb('logcat', '-d', '-v', 'epoch', f'--pid={pid}', 'RNLlama:*', 'ReactNativeJS:*', '*:S', timeout=30, check=False)
+    out = e2e.adb('logcat', '-d', '-v', 'epoch', 'RNLlama:*', 'ReactNativeJS:*', '*:S', timeout=30, check=False)
     rows = []
     for line in out.splitlines():
         m = re.match(r'\s*(\d+\.\d+)\s+\d+\s+\d+\s+\w\s+[^:]+:\s?(.*)', line)
@@ -133,38 +137,36 @@ def phone_log() -> list[tuple[float, str]]:
 
 
 def send_and_time(text: str) -> dict:
-    box = e2e.message_box()
-    e2e.tap(box)
-    e2e.wait_keyboard(True)
+    """Type and send with adb, then wait on llama.rn's log: the screen can't be read while a reply streams."""
+    close_keyboard()
+    box = e2e.editable(e2e.screen())[-1]
+    e2e.tap_xy(box.cx, box.cy)
+    time.sleep(1.2)
     e2e.type_text(text)
-    time.sleep(0.5)
+    time.sleep(0.6)
     send = e2e.find(e2e.screen(), desc='Send')
     if not send:
         raise e2e.CheckFailed('no Send button')
     e2e.adb('logcat', '-c', check=False)
     t0 = ms()
-    e2e.tap(send[0])
-    words = 0
-    # uiautomator waits for the screen to be still, so it can't see words arrive: only the finished reply.
+    e2e.tap_xy(send[0].cx, send[0].cy)
     while ms() - t0 < 300_000:
-        nodes = e2e.screen()
-        if e2e.find(nodes, desc='Copy') and not e2e.find(nodes, desc='Stop'):
-            sent = e2e.find(nodes, text=text)
-            if sent:
-                words = sum(len(re.findall(r"\w+", n.text)) for n in answer_nodes(nodes, sent[-1]))
-            break
-        if e2e.find(nodes, text='Dismiss'):
-            raise e2e.CheckFailed('the reply failed with an error card')
-    done = ms() - t0
-    log = phone_log()
-    # On the phone's own model, llama.rn logs the chat prompt (a Qwen prompt starts with token 248045) when it
-    # starts reading it, and the app logs its speed when the reply ends: the time between is the model's work.
-    start = next((t for t, m in log if 'prompt_tokens = 248045' in m), None)
-    end = next((t for t, m in log if 'tok/s on' in m), None)
-    tok = next((re.search(r'\] ([\d.]+) tok/s on (\w+)', m) for t, m in log if 'tok/s on' in m), None)
-    return {'done': done, 'words': words, 'model_s': round(end - start, 1) if start and end else None,
-            'full_reprocess': any('full cache clear' in m for _, m in log),
-            'tok_s': float(tok.group(1)) if tok else None, 'accel': tok.group(2) if tok else None}
+        time.sleep(1.5)
+        log = phone_log()
+        end = next((t for t, m in log if 'tok/s on' in m), None)
+        if end is None:
+            continue
+        # llama.rn logs the chat prompt (a Qwen prompt starts with token 248045) when it starts reading it, and the
+        # app logs its speed when the reply ends: the time between is the model's work.
+        start = next((t for t, m in log if 'prompt_tokens = 248045' in m), None)
+        tok = next(re.search(r'\] ([\d.]+) tok/s on (\w+)', m) for t, m in log if 'tok/s on' in m)
+        reused = next((re.search(r'reusing (\d+)/(\d+)', m) for _, m in log if 'reusing' in m), None)
+        return {'done': ms() - t0, 'model_s': round(end - start, 1) if start else None,
+                'tok_s': float(tok.group(1)), 'accel': tok.group(2),
+                'reused': f'{reused.group(1)}/{reused.group(2)} tokens' if reused else None,
+                'full_reprocess': any('full cache clear' in m for _, m in log),
+                'loaded': any('loadModel:660' in m for _, m in log)}
+    raise e2e.CheckFailed("no reply in the app's log within 300 s (on the laptop's AI there is none: time it there)")
 
 
 def delete_test_chats() -> int:
@@ -204,23 +206,25 @@ def delete_test_chats() -> int:
 
 
 def chat(runs: int) -> None:
+    """The phone's own model only: run laptop-off first."""
     in_front_ok()
     try:
         for i in range(runs):
-            e2e.open_new_chat()
+            e2e.go_tab('Chat')
+            e2e.tap(e2e.wait_for('the New chat button', desc='New chat'))
+            time.sleep(1)
             for label, text in (('new chat', PROMPT), ('follow-up', FOLLOW_UP), ('with a number', WITH_NUMBER)):
                 r = send_and_time(text)
-                e2e.hide_keyboard()
-                line = f"run {i + 1} {label:13} reply finished by {r['done']} ms, {r['words']} words"
-                if r['tok_s']:
-                    line += (f"; phone model busy {r['model_s']} s, writing at {r['tok_s']} tok/s on {r['accel']}"
-                             f"{', whole prompt read again' if r['full_reprocess'] else ''}")
-                print(line)
+                notes = [n for n, on in (('model loaded first', r['loaded']), ('whole prompt read again', r['full_reprocess']),
+                                         (f"reused {r['reused']}", r['reused'])) if on]
+                print(f"run {i + 1} {label:13} model busy {r['model_s']} s, writing at {r['tok_s']} tok/s on {r['accel']}"
+                      f"{''.join(', ' + n for n in notes)}", flush=True)
+                time.sleep(3)
+            close_keyboard()
             delete_test_chats()
     finally:
+        close_keyboard()
         print('test chats deleted:', delete_test_chats())
-    print('(the screen is read every ~2 s and only once the reply is still, so "finished by" is an upper bound; with the '
-          "laptop's AI, Ollama's log on the laptop has its prompt sizes and times)")
 
 
 def memory() -> None:
