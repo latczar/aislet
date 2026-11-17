@@ -1216,6 +1216,22 @@ LIBRARY_FIXTURE = Path(__file__).resolve().parent / 'fixtures' / 'e2e-library.zi
 LIBRARY_PROMPT = 'E2E check: how long does the Lumen-7 lantern run on batteries'
 
 
+def typed_send(prompt: str, timeout: float = 8) -> Node:
+    """The Send button, once the whole message is in the box: while the app is busy (reading library files, say),
+    a tap straight after typing can arrive before the text has, and the message is lost."""
+    end = time.time() + timeout
+    while True:
+        nodes = screen()
+        boxes, send = editable(nodes), find(nodes, desc='Send')
+        if send and boxes and boxes[-1].text.strip() == prompt:
+            # Close the keyboard now, not after sending: Back pressed once a quick reply has finished starts a new chat.
+            hide_keyboard()
+            return wait_for('the Send button', desc='Send')
+        if time.time() > end:
+            raise CheckFailed('no Send button with the whole message typed')
+        time.sleep(0.5)
+
+
 def wait_reply(timeout: float = 180) -> None:
     """Until the reply has finished (Copy is there and Stop isn't)."""
     end = time.time() + timeout
@@ -1254,13 +1270,8 @@ def check_library() -> str:
         tap(open_new_chat())
         wait_keyboard(True)
         type_text(LIBRARY_PROMPT)
-        time.sleep(0.5)
-        send = find(screen(), desc='Send')
-        if not send:
-            raise CheckFailed('no Send button')
-        tap(send[0])
-        wait_for('the sent message in the thread', timeout=10, text=LIBRARY_PROMPT)
-        hide_keyboard()
+        tap(typed_send(LIBRARY_PROMPT))
+        wait_for('the sent message (or the chat titled with it)', timeout=10, contains=LIBRARY_PROMPT[:30])  # a quick reply plus the library offer can scroll the message itself off the screen
         started = time.time()
         wait_reply()
         first = time.time() - started
@@ -1299,6 +1310,14 @@ def remote_fingerprints(names: list[str]) -> dict[str, str]:
     return {parts[0]: ' '.join(parts[1:]) for parts in (line.split() for line in out.splitlines()) if len(parts) == 3}
 
 
+def scroll_either(what: str, **match) -> Node:
+    """Scroll down to it, or back up: files that can't be read are listed first, above the ones already passed."""
+    try:
+        return scroll_to(what, **match)
+    except CheckFailed:
+        return scroll_to(what, up=True, **match)
+
+
 def check_library_files() -> str:
     """Your own files in the library folder are listed (or say why not), searched, cited, and never changed."""
     files = own_test_files()
@@ -1323,7 +1342,7 @@ def check_library_files() -> str:
         }
         seen = []
         for title, described in rows.items():
-            row = scroll_to(f'"{title}" in Settings, Libraries', text=title)
+            row = scroll_either(f'"{title}" in Settings, Libraries', text=title)
             end = time.time() + 90  # the first read happens in the background
             while True:
                 near = [n.text for n in screen() if n.text and 0 < n.cy - row.cy < 160]
@@ -1332,7 +1351,7 @@ def check_library_files() -> str:
                 if time.time() > end:
                     raise CheckFailed(f'"{title}" never showed "{described}" (showed {near[:2]})')
                 time.sleep(1.5)
-                row = scroll_to(f'"{title}" in Settings, Libraries', text=title)
+                row = scroll_either(f'"{title}" in Settings, Libraries', text=title)
             seen.append(title)
         if find(screen(), desc='Delete e2e-boiler-notes') or find(screen(), desc='Delete e2e-manual'):
             raise CheckFailed('your own files have a delete button')
@@ -1340,13 +1359,8 @@ def check_library_files() -> str:
         tap(open_new_chat())
         wait_keyboard(True)
         type_text(FILES_PROMPT)
-        time.sleep(0.5)
-        send = find(screen(), desc='Send')
-        if not send:
-            raise CheckFailed('no Send button')
-        tap(send[0])
-        wait_for('the sent message in the thread', timeout=10, text=FILES_PROMPT)
-        hide_keyboard()
+        tap(typed_send(FILES_PROMPT))
+        wait_for('the sent message (or the chat titled with it)', timeout=10, contains=FILES_PROMPT[:30])  # a quick reply plus the library offer can scroll the message itself off the screen
         started = time.time()
         wait_reply()
         reply = answer_from_library(FILES_PROMPT)
