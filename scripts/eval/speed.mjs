@@ -65,7 +65,7 @@ async function tokens() {
     ['20 memories + Get to know me', buildMessages({ ...ask, mode: 'interview' }, [...MEMORIES, ...MORE_MEMORIES])],
     ['No memories + 1 note and 1 library passage', buildMessages({ ...ask, notes: CASES.find((c) => c.notes).notes, library: CASES.find((c) => c.library).library }, [])],
   ];
-  console.log(`System prompt sizes for ${model} (the user's message and chat template take ${empty} tokens on their own):`);
+  console.log(`Prompt sizes for ${model}, with what the app adds to the message (the message and chat template alone take ${empty} tokens):`);
   for (const [label, messages] of rows) {
     const total = await promptTokens(model, messages);
     console.log(`  ${label.padEnd(48)} ${String(total - empty).padStart(5)} tokens  (${messages[0].content.length} characters)`);

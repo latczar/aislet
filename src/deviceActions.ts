@@ -177,13 +177,19 @@ export async function runAction(a: DeviceAction): Promise<void> {
   return native.addEvent(a.title, a.begin, a.end, a.allDay);
 }
 
-// Words that suggest an alarm, timer or event. Any number counts too ("um 7", "15:00"), so most languages are
-// covered. Only then does the prompt explain actions: it's long, and a shorter prompt is quicker on the phone.
+// Words that suggest an alarm, timer or event. A time or a small number counts too ("um 7", "15:00", "10m"), so
+// most languages are covered; years, prices, percentages and decimals don't. Only then does the message explain
+// actions: it's about 300 tokens, and a shorter prompt is quicker on the phone.
 const ACTION_WORDS = /\b(alarms?|wake|waking|timers?|countdown|remind|reminders?|calendar|events?|appointments?|meetings?|schedule|diary|book|tomorrow|tonight|morning|evening|noon|midnight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|weekend|week)\b/i;
+const TIME_OR_SMALL_NUMBER = /(^|[\s(@~])\d{1,2}([:.h]\d{2})?(?![\d%,.]?\d)(?!\s?%)/;
 
-/** Whether the latest messages may be asking for an alarm, timer or calendar event. */
-export function mayWantAction(texts: string[]): boolean {
-  return texts.some((t) => /\d/.test(t) || ACTION_WORDS.test(t));
+/**
+ * Whether the latest message may ask for an alarm, timer or calendar event. The words count in the two messages
+ * before it too, so a reply to "what time?" ("seven, please") still gets the explanation; a number counts only in
+ * the latest message.
+ */
+export function mayWantAction(latest: string, earlier: string[] = []): boolean {
+  return ACTION_WORDS.test(latest) || TIME_OR_SMALL_NUMBER.test(latest) || earlier.some((t) => ACTION_WORDS.test(t));
 }
 
 /** What the AI is told about actions, with today's date and time so it can work out "tomorrow at 7". */
