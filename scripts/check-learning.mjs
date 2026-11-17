@@ -43,7 +43,7 @@ async function post(path, body) {
 }
 // The same request the app's Ollama engine makes for learning (src/engine/ollama.ts, json()).
 const json = async (messages) => (await post('/api/chat', {
-  model: MODEL, messages, stream: false, think: false, format: 'json', options: { num_ctx: 4096, temperature: 0, num_predict: 256 },
+  model: MODEL, messages, stream: false, think: false, format: 'json', options: { num_ctx: 8192, temperature: 0, num_predict: 256 },
 })).message.content;
 const embed = async (texts) => (await post('/api/embed', { model: 'nomic-embed-text', input: texts.map((t) => `search_document: ${t}`) }))
   .embeddings.map(brain.normalise);

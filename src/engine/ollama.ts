@@ -131,7 +131,9 @@ export function createOllamaEngine({ send, where, label }: Options): Engine {
     async json(messages, _modelId, maxTokens = 256) {
       const res = await post('/api/chat', {
         model, messages: toOllama(messages), stream: false, think: false, format: 'json', keep_alive: keepAlive,
-        options: { num_ctx: maxTokens > 256 ? 8192 : 4096, temperature: 0, num_predict: maxTokens },
+        // The same context size as chat: a different one makes Ollama reload the model (8–11 s with the 9B),
+        // once for learning and again for the next reply.
+        options: { num_ctx: 8192, temperature: 0, num_predict: maxTokens },
       });
       return JSON.parse(await res.text()).message?.content ?? '';
     },

@@ -22,7 +22,6 @@ export function systemPrompt(
   library: LibraryHit[] = [],
   actions = false, // explain alarms, timers and events: this phone can hand them to its Clock and Calendar apps
   web: { query: string; hits: WebHit[] } | null = null, // a web search made for this message (Search the web)
-  past: PastRecall | null = null, // they asked about an earlier chat: what a search of earlier chats found
 ): string {
   const name = settings.name;
   const who = name || 'the user';
@@ -94,18 +93,6 @@ export function systemPrompt(
       : `A web search for "${web.query}" was tried just now but didn't work. Say you couldn't check online, then ` +
         'answer from what you know and say it may be out of date.');
     lines.push(...web.hits.map((h, i) => `[${i + 1}] ${h.title} (${h.url})\n${h.snippet}`));
-  }
-  if (past) {
-    if (past.history.length) {
-      lines.push('', `What used to be true about ${who} (no longer current):`,
-        ...past.history.map((m) => `- ${m.fact} (until ${m.until})`));
-    }
-    lines.push('', past.items.length
-      ? `From earlier chats with ${who}, found by a search, with the date of each chat (today is ` +
-        `${new Date().toISOString().slice(0, 10)}). They may not be relevant: ignore any that don't help. When you use ` +
-        'one, say roughly when it was, like "a week ago":'
-      : `A search of earlier chats with ${who} found nothing about this. Say so rather than guess what was said.`);
-    lines.push(...past.items.map((p) => `[${p.date}, "${p.title}"]\n${p.text}`));
   }
   lines.push(
     '',
@@ -520,6 +507,24 @@ export function searchPast(index: ChatIndex, query: string, exclude: string, lim
     }
   }
   return found.sort((a, b) => b.score - a.score || b.date.localeCompare(a.date)).slice(0, limit);
+}
+
+/**
+ * What a look back found, to go with the latest message rather than in the system message: the system message
+ * stays the same from one message to the next, so the phone and Ollama can reuse the work of reading it.
+ */
+export function pastContext(name: string, past: PastRecall, today = new Date()): string {
+  const who = name || 'the user';
+  const lines: string[] = [];
+  if (past.history.length) {
+    lines.push(`What used to be true about ${who} (no longer current):`, ...past.history.map((m) => `- ${m.fact} (until ${m.until})`), '');
+  }
+  lines.push(past.items.length
+    ? `From earlier chats with ${who}, found by a search, with the date of each chat (today is ${today.toISOString().slice(0, 10)}). ` +
+      "They may not be relevant: ignore any that don't help. When you use one, say roughly when it was, like \"a week ago\":"
+    : `A search of earlier chats with ${who} found nothing about this. Say so rather than guess what was said.`);
+  lines.push(...past.items.map((p) => `[${p.date}, "${p.title}"]\n${p.text}`));
+  return `[Found by the app, not written by ${who}]\n${lines.join('\n')}\n[End of what the app found]`;
 }
 
 /** Facts that used to be true and share a word with the question (or the newest few when it names nothing). */

@@ -115,12 +115,15 @@ check('nothing unrelated', found.length === 0, JSON.stringify(found));
 check('past facts by topic', brain.pastFacts(withHistory, 'where did I live before, in Berlin?').map((m) => m.id).join() === 'e');
 check('no past facts for another topic', brain.pastFacts(withHistory, 'what did I say about cats?').length === 0);
 
-const pastPrompt = brain.systemPrompt({ name: 'Sam', instructions: '', length: 'balanced' }, known, [], 'phone', [], false, null,
-  { items: brain.searchPast(index, 'boiler pressure', 'n'), history: [withHistory[4]] });
-check('prompt dates earlier chats', pastPrompt.includes('[2026-11-10, "Boiler"]'));
-check('prompt lists what used to be true', pastPrompt.includes('Sam lives in Berlin (until 2026-10-01)'));
-const nothing = brain.systemPrompt({ name: 'Sam', instructions: '', length: 'balanced' }, known, [], 'phone', [], false, null, { items: [], history: [] });
+const past = brain.pastContext('Sam', { items: brain.searchPast(index, 'boiler pressure', 'n'), history: [withHistory[4]] }, new Date(day(18)));
+check('dates earlier chats', past.includes('[2026-11-10, "Boiler"]'));
+check("gives today's date, so it can say how long ago", past.includes('today is 2026-11-18'));
+check('lists what used to be true', past.includes('Sam lives in Berlin (until 2026-10-01)'));
+check('marked as found by the app, not said by them', past.startsWith('[Found by the app'));
+const nothing = brain.pastContext('Sam', { items: [], history: [] });
 check('says when nothing was found, so it does not guess', nothing.includes('found nothing about this'));
+const sys1 = brain.systemPrompt({ name: 'Sam', instructions: '', length: 'balanced' }, known, [], 'phone');
+check('the system message has no per-message look-back part', !sys1.includes('earlier chats with Sam'));
 
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

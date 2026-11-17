@@ -4,7 +4,7 @@ import { AppState, Platform } from 'react-native';
 import {
   CATEGORIES, type ChatIndex, type LearntFact, MAX_TOKENS, MEMORY_LIMIT, type PastRecall, SAME_THING, TIDY_BATCH, type TidyChange,
   chunkText, cleanFact, conversationLearnMessages, indexChat, interviewPrompt, keywordScore, learnMessages, parseFacts, parseTidy,
-  pastFacts, recallsPast, relevantMemories, searchPast, similarity, stripThinking, systemPrompt, tidyMessages, titleFrom, worthLearning,
+  pastContext, pastFacts, recallsPast, relevantMemories, searchPast, similarity, stripThinking, systemPrompt, tidyMessages, titleFrom, worthLearning,
 } from './brain';
 import { actionsSupported, mayWantAction } from './deviceActions';
 import { type WebHit, needsWeb, searchWeb, webQuery } from './webSearch';
@@ -908,11 +908,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         searched = { query, ok: web.hits.length > 0, sources: web.hits.map((h) => ({ title: h.title, url: h.url })) };
         setReplyNote(searched);
       }
-      const prompt = systemPrompt(s, memories, hits, active.where, library, actions, web, past);
+      const prompt = systemPrompt(s, memories, hits, active.where, library, actions, web);
+      // What a look back found goes with this message only (it is never saved in the chat), so the system message stays the same.
+      const latest: Message = past ? { ...userMsg, content: `${pastContext(s.name, past)}
+
+${userMsg.content}` } : userMsg;
       const sys: Message = { role: 'system', content: base.mode === 'interview' ? `${prompt}
 
 ${interviewPrompt(s.name)}` : prompt };
-      await active.chat([sys, ...base.messages.slice(-HISTORY), userMsg], s.modelId, (token) => {
+      await active.chat([sys, ...base.messages.slice(-HISTORY), latest], s.modelId, (token) => {
         answer += token;
         drawTimer ??= setTimeout(draw, 66);
       }, MAX_TOKENS[s.length] ?? 1024);
