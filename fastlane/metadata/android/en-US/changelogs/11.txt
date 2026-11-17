@@ -1,4 +1,4 @@
-• Replies on the phone start much sooner, especially later in a chat.
+• Replies on the phone come sooner, especially later in a chat.
 • Aislet learns from your corrections ("shorter, please") and shows what it learnt, with Undo.
 • When something changes, like a new job, the old fact is kept as no longer true.
 • Ask "what did we say about…" and it looks back at earlier chats.
