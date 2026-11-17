@@ -48,12 +48,13 @@ To link them, open Settings → Home on both, tap **Scan the laptop's code** on 
 - Picks up where you left off: the chat and screen you had open come back. Pin the chats you use most to the top of the list.
 
 **Knows you, and you stay in charge**
-- Learns lasting facts about you as you talk. See them, edit them or forget them in Memory.
+- Learns lasting facts about you as you talk, including corrections like "shorter, please". Each one shows under the reply with Undo. When something changes, like a new job, the old fact is kept as no longer true. See, edit or forget them all in Memory.
+- Ask "what did we say about…" and it looks back at your earlier chats on that device.
 - "Get to know me" asks a few questions so it starts off knowing you, and "Tidy up" finds duplicate or out-of-date facts for you to approve.
 - Searches your notes when it answers, and follows your own instructions and preferred answer length. Save any answer to Notes with one tap.
 
 **Answers from offline libraries**
-- Put your own PDFs, ebooks (EPUB), text, Markdown or saved web pages in the library folder: `Aislet/Libraries` on your phone, or `Documents/Aislet/Libraries` on your computer. Aislet searches them for each question, gives the best passages to the AI, and names the file and page or chapter it used.
+- Put your own PDFs, ebooks (EPUB), text, Markdown or saved web pages in the library folder: `Aislet/Libraries` on your phone, or `Documents/Aislet/Libraries` on your computer. By default Aislet answers straight away, then offers what your files found ("Found in Car manual · Answer from it"); answering from it names the file and page or chapter. In Settings → Libraries you can have strong matches used straight away instead, or choose per library.
 - Aislet only reads your files. It never changes, moves or deletes them, and it reads each one once, again only when it changes.
 - On Android, it also searches Kiwix libraries (.zim files) such as Wikipedia, and moves the ones you already have in Kiwix into Aislet, without copying them.
 
