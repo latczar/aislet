@@ -4,7 +4,7 @@ import {
   type ScrollViewInstance, StyleSheet, TextInput,
   type TextInputInstance, View, useWindowDimensions,
 } from 'react-native';
-import { ActivityIndicator, Button, Icon, IconButton, Menu, ProgressBar, Snackbar, Surface, Text, useTheme } from 'react-native-paper';
+import { ActivityIndicator, Button, Chip, Icon, IconButton, Menu, ProgressBar, Snackbar, Surface, Text, useTheme } from 'react-native-paper';
 import { personalStarters, titleFrom, worthKeeping } from '../brain';
 import { type DeviceAction, actionsSupported, describe, parseActions, runAction, shownText } from '../deviceActions';
 import { engine } from '../engine';
@@ -116,26 +116,54 @@ function SetupCard({ onOpenSettings }: { onOpenSettings: () => void }) {
 
 const INTERVIEW = { icon: 'account-heart-outline', title: 'Get to know me', sub: 'A quick chat so it learns about you', prompt: '' };
 
+/** When a chat was last used, briefly: a time today, else the day. */
+function when(ts: number): string {
+  const d = new Date(ts);
+  const today = new Date().setHours(0, 0, 0, 0);
+  if (ts >= today) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (ts >= today - 86_400_000) return 'Yesterday';
+  return d.toLocaleDateString([], { day: 'numeric', month: 'short' });
+}
+
+/**
+ * A new chat's page: things to start from rather than an empty screen. Next steps on your own goal and project,
+ * the chats you were in (on the phone; the PC lists them beside it), and a few ideas. All from what's on the device:
+ * no model time is spent on it.
+ */
 function Welcome({ onOpenSettings }: { onOpenSettings: () => void }) {
   const theme = useTheme();
   const { width } = useWindowDimensions();
-  const { settings, status, send, memories, startInterview, libraries } = useStore();
-  // While it knows little about you, offer the get-to-know-me chat first; after that, next steps on your own goal
-  // and project come first.
-  const cards = useMemo(() => (memories.length < 5
-    ? [INTERVIEW, ...SUGGESTIONS.slice(0, 3)]
-    : [...personalStarters(settings.name, memories), ...SUGGESTIONS].slice(0, 4)), [memories, settings.name]);
-  const cardWidth = width >= 700 ? '48.8%' : '48%';
+  const { settings, status, send, memories, startInterview, libraries, chats, openChat } = useStore();
+  const ready = !!status?.ready;
+  const knowsLittle = memories.length < 5;
+  const forYou = useMemo(() => (knowsLittle ? [] : personalStarters(settings.name, memories)), [knowsLittle, memories, settings.name]);
+  const recent = useMemo(() => (width >= 900 ? [] : [...chats].sort((a, b) => b.updated - a.updated).slice(0, 3)), [chats, width]);
+  const muted = { color: theme.colors.onSurfaceVariant };
+  const card = { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant };
+  const row = (key: string, icon: string, title: string, sub: string, onPress: () => void, disabled = false) => (
+    <Pressable
+      key={key} disabled={disabled} onPress={() => { tap(); onPress(); }}
+      style={({ pressed }) => [styles.homeRow, card, pressed && { backgroundColor: theme.colors.surfaceVariant }, disabled && styles.dim]}
+    >
+      <Icon source={icon} size={20} color={theme.colors.primary} />
+      <View style={styles.flex}>
+        <Text variant="titleSmall" numberOfLines={1} style={{ fontFamily: FONT.semibold }}>{title}</Text>
+        <Text variant="bodySmall" numberOfLines={1} style={muted}>{sub}</Text>
+      </View>
+    </Pressable>
+  );
   return (
-    <View style={styles.welcome}>
-      <Image source={require('../../assets/icon.png')} style={styles.logo} />
-      <Text variant="headlineMedium" style={styles.greeting}>{greeting(settings.name)}</Text>
-      <Text variant="bodyLarge" style={{ color: theme.colors.onSurfaceVariant, textAlign: 'center' }}>
-        How can I help? Everything stays on this device.
-      </Text>
+    <View style={styles.home}>
+      <View style={styles.homeHead}>
+        <Image source={require('../../assets/icon.png')} style={styles.homeLogo} />
+        <View style={styles.flex}>
+          <Text variant="titleLarge" style={styles.homeGreeting}>{greeting(settings.name)}</Text>
+          <Text variant="bodyMedium" style={muted}>Everything stays on this device.</Text>
+        </View>
+      </View>
       {libraries.lostAccess && settings.useLibraries && (
-        <Surface style={[styles.notice, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]} elevation={0}>
-          <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, flex: 1 }}>
+        <Surface style={[styles.notice, card]} elevation={0}>
+          <Text variant="bodyMedium" style={[muted, styles.flex]}>
             Your libraries aren't being searched: All files access is off.
           </Text>
           <Button compact mode="contained-tonal" onPress={onOpenSettings}>Settings</Button>
@@ -144,23 +172,36 @@ function Welcome({ onOpenSettings }: { onOpenSettings: () => void }) {
       {status?.needsModel ? (
         <SetupCard onOpenSettings={onOpenSettings} />
       ) : (
-        <View style={styles.cards}>
-          {cards.map((s) => (
-            <Pressable
-              key={s.title}
-              disabled={!status?.ready}
-              onPress={() => { tap(); if (s === INTERVIEW) startInterview(); else send(s.prompt); }}
-              style={({ pressed }) => [styles.card, {
-                width: cardWidth, backgroundColor: pressed ? theme.colors.surfaceVariant : theme.colors.surface,
-                borderColor: theme.colors.outlineVariant, opacity: status?.ready ? 1 : 0.5,
-              }]}
-            >
-              <IconButton icon={s.icon} size={18} style={styles.cardIcon} iconColor={theme.colors.primary} />
-              <Text variant="titleSmall" style={{ fontFamily: FONT.semibold }}>{s.title}</Text>
-              <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>{s.sub}</Text>
-            </Pressable>
-          ))}
-        </View>
+        <>
+          {knowsLittle && (
+            <View style={styles.homeGroup}>
+              {row('interview', INTERVIEW.icon, INTERVIEW.title, 'A short chat so it can suggest things for you', startInterview, !ready)}
+            </View>
+          )}
+          {forYou.length > 0 && (
+            <View style={styles.homeGroup}>
+              <Text variant="labelLarge" style={muted}>For you</Text>
+              {forYou.map((s) => row(s.title, s.icon, s.title, s.sub, () => send(s.prompt), !ready))}
+            </View>
+          )}
+          {recent.length > 0 && (
+            <View style={styles.homeGroup}>
+              <Text variant="labelLarge" style={muted}>Pick up where you left off</Text>
+              {recent.map((c) => row(c.id, c.pinned ? 'pin-outline' : 'message-text-outline', c.title, when(c.updated), () => { openChat(c.id).catch(() => undefined); }))}
+            </View>
+          )}
+          <View style={styles.homeGroup}>
+            <Text variant="labelLarge" style={muted}>Ideas</Text>
+            <View style={styles.chips}>
+              {SUGGESTIONS.map((s) => (
+                <Chip key={s.title} icon={s.icon} compact mode="outlined" disabled={!ready} onPress={() => { tap(); send(s.prompt); }}
+                  style={{ backgroundColor: theme.colors.surface }}>
+                  {s.title}
+                </Chip>
+              ))}
+            </View>
+          </View>
+        </>
       )}
     </View>
   );
@@ -938,6 +979,14 @@ const styles = StyleSheet.create({
   errorCard: { borderRadius: 14, padding: 14, gap: 8 },
   errorActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
   welcome: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 32 },
+  home: { width: '100%', maxWidth: 620, alignSelf: 'center', gap: 18, paddingTop: 12, paddingBottom: 16 },
+  homeHead: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  homeLogo: { width: 44, height: 44, borderRadius: 13 },
+  homeGreeting: { fontFamily: FONT.semibold },
+  homeGroup: { gap: 8 },
+  homeRow: { flexDirection: 'row', alignItems: 'center', gap: 14, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, paddingVertical: 10 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  dim: { opacity: 0.5 },
   logo: { width: 56, height: 56, borderRadius: 16, marginBottom: 8 },
   greeting: { fontFamily: FONT.semibold, textAlign: 'center' },
   cards: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10, marginTop: 20, width: '100%', maxWidth: 620 },

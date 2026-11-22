@@ -1,7 +1,7 @@
 // Layout: a sidebar on the PC; on the phone, a menu (☰) that slides in with chats, Memory, Notes and Settings.
 import React, { useCallback, useEffect, useState } from 'react';
 import { AppState, Image, Modal, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
-import { Button, Divider, Drawer, IconButton, Text, useTheme } from 'react-native-paper';
+import { Button, Divider, Drawer, Icon, IconButton, Text, useTheme } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { APP_NAME } from '../config';
 import { useStore } from '../store';
@@ -32,7 +32,7 @@ export function Shell() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { newChat, busy, stop, snapshot, startView } = useStore();
+  const { newChat, busy, stop, snapshot, startView, memories, notes } = useStore();
   const [view, setView] = useState<ViewKey>(() => (ROUTES.some((r) => r.key === startView) ? (startView as ViewKey) : 'chat'));
   const [chatsOpen, setChatsOpen] = useState(false);
   const [shared, setShared] = useState<Incoming | null>(null);     // arrived from another app
@@ -182,24 +182,33 @@ export function Shell() {
               <Image source={require('../../assets/icon.png')} style={styles.brandIcon} />
               <Text variant="titleLarge" style={[styles.flex, styles.brandText]}>{APP_NAME}</Text>
             </View>
+            {/* The four places as tiles, with what's in them, above the chats: quicker to reach than a list at the bottom. */}
+            <View style={styles.tiles}>
+              {ROUTES.map((r) => {
+                const on = view === r.key;
+                const count = r.key === 'memory' ? `${memories.filter((m) => !m.until).length} facts`
+                  : r.key === 'notes' ? `${notes.length} ${notes.length === 1 ? 'note' : 'notes'}` : '';
+                return (
+                  <Pressable
+                    key={r.key} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => go(r.key)}
+                    style={({ pressed }) => [styles.tile, {
+                      backgroundColor: on ? theme.colors.secondaryContainer : pressed ? theme.colors.surfaceVariant : theme.colors.surface,
+                      borderColor: theme.colors.outlineVariant,
+                    }]}
+                  >
+                    <Icon source={on ? r.focusedIcon : r.unfocusedIcon} size={22} color={on ? theme.colors.onSecondaryContainer : theme.colors.primary} />
+                    <Text variant="labelMedium" numberOfLines={1} style={styles.tileText}>{r.title}</Text>
+                    {!!count && <Text variant="labelSmall" numberOfLines={1} style={{ color: theme.colors.onSurfaceVariant }}>{count}</Text>}
+                  </Pressable>
+                );
+              })}
+            </View>
             <Button mode="contained" icon="plus" onPress={() => { startChat(); setChatsOpen(false); }} disabled={busy} style={styles.newChat} contentStyle={styles.newChatInner}>
               New chat
             </Button>
             <View style={styles.flex}>
               <ChatList onPicked={() => { setView('chat'); setChatsOpen(false); }} />
             </View>
-            <Divider />
-            <Drawer.Section showDivider={false} style={styles.nav}>
-              {ROUTES.map((r) => (
-                <Drawer.Item
-                  key={r.key}
-                  label={r.title}
-                  icon={view === r.key ? r.focusedIcon : r.unfocusedIcon}
-                  active={view === r.key}
-                  onPress={() => go(r.key)}
-                />
-              ))}
-            </Drawer.Section>
           </View>
           <Pressable style={styles.scrim} onPress={() => setChatsOpen(false)} accessibilityLabel="Close menu" />
         </View>
@@ -221,5 +230,8 @@ const styles = StyleSheet.create({
   sheetRow: { flex: 1, flexDirection: 'row' },
   sheet: { width: '84%', maxWidth: 360 },
   sheetHead: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingBottom: 14 },
+  tiles: { flexDirection: 'row', gap: 6, paddingHorizontal: 12, paddingBottom: 12 },
+  tile: { flex: 1, minWidth: 0, alignItems: 'center', gap: 2, paddingVertical: 10, paddingHorizontal: 2, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth },
+  tileText: { fontFamily: FONT.medium },
   scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
 });

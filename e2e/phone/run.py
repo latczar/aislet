@@ -267,14 +267,14 @@ def scroll_to_top() -> None:
 
 
 def go_tab(name: str) -> None:
-    """Open Chat, Memory, Notes or Settings from the menu (☰). The menu's items sit below the chat list, so a chat
-    with the same title can't be mistaken for one."""
+    """Open Chat, Memory, Notes or Settings from the menu (☰). Its tiles sit above the chat list, so a chat with the
+    same title can't be mistaken for one."""
     hide_keyboard()
     if not find(screen(), desc='Close menu'):
         tap(wait_for('the Menu button', desc='Menu'))
         time.sleep(0.8)
     wait_for(f'{name} in the menu', text=name)
-    item = max(find(screen(), text=name), key=lambda n: n.cy)
+    item = min(find(screen(), text=name), key=lambda n: n.cy)
     tap(item)
     time.sleep(1)
     if name == 'Settings':
