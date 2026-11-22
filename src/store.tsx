@@ -950,7 +950,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         && (userMsg.web || (!userMsg.images?.length && !userMsg.files?.length && needsWeb(asked)))) {
         const query = webQuery(asked);
         setReplyNote({ query, ok: true });
-        web = { query, hits: await searchWeb(query).catch(() => []) };
+        const hits = await searchWeb(query).catch(() => []);
+        // A phone reads about 35 words a second: the top three results, a little shorter, are plenty to answer from.
+        web = { query, hits: active.where === 'phone' ? hits.slice(0, 3).map((h) => ({ ...h, snippet: h.snippet.slice(0, 300) })) : hits };
         searched = { query, ok: web.hits.length > 0, sources: web.hits.map((h) => ({ title: h.title, url: h.url })) };
         setReplyNote(searched);
       }
