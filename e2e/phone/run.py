@@ -285,7 +285,9 @@ def open_more_settings() -> None:
         more = [n for n in find(nodes, text='More settings') if 150 < n.cy < h - 300]
         if more:
             tap(more[0])
-            wait_for('Fewer settings', timeout=5, text='Fewer settings')
+            time.sleep(1)
+            # Opening it adds rows above it too (your own instructions, other models), so it moves down the page.
+            scroll_to('the Fewer settings row', timeout_swipes=8, text='Fewer settings')
             break
         shell(f'input swipe 540 {int(h * 0.7)} 540 {int(h * 0.35)} 300')
         time.sleep(0.6)

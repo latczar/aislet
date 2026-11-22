@@ -45,7 +45,8 @@ export interface Engine {
   vision(modelId: string): boolean;
   stop(): void;
   /** Load the model ahead of time so the first reply is quick. */
-  warm?(modelId: string): Promise<void>;
+  /** Load the model; with a system message, also read it ahead (the phone), so the next new chat starts sooner. */
+  warm?(modelId: string, system?: string): Promise<void>;
   /** Choose the chip (phone) and how hard to work: cool, balanced or max. */
   configure?(opts: { accel: Accel; performance: Performance }): void;
   /** Phone: speed of the last reply, in tokens per second. */

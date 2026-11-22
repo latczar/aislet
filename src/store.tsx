@@ -324,6 +324,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [syncNow]);
 
   /** Find out whether the AI is ready. `auto` is a re-check while it starts; anything else starts the count again. */
+  /** The system message a new chat starts with on the phone: the same for every chat until settings or memories change. */
+  const newChatSystem = useCallback((where: 'phone' | 'laptop') => systemPrompt(
+    settingsRef.current, relevantMemories(memRef.current.filter((m) => !m.until), '', MEMORY_LIMIT), where, actionsSupported,
+  ), []);
+
   const checkStatus = useCallback(async (auto: boolean) => {
     if (recheck.current.timer) clearTimeout(recheck.current.timer);
     recheck.current.timer = null;
@@ -373,7 +378,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
     setStatus(s);
     if (connected) syncNow();
-    if (s.ready && active === localEngine && localEngine.warm) localEngine.warm(settingsRef.current.modelId).catch(() => undefined);
+    if (s.ready && active === localEngine && localEngine.warm) {
+      localEngine.warm(settingsRef.current.modelId, newChatSystem('phone')).catch(() => undefined);
+    }
   }, [hubTarget, pickEngine, syncNow]);
   checkRef.current = checkStatus;
   const refreshStatus = useCallback(() => checkStatus(false), [checkStatus]);
@@ -917,7 +924,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       let ps = prompts.current.get(base.id);
       if (!ps) {
         const limit = base.mode === 'interview' ? 80 : MEMORY_LIMIT;
-        const chosen = await pickMemories(query, queryVec, limit).catch(() => current.slice(-limit));
+        // On the phone the facts don't depend on the first message, so every new chat has the same system message
+        // and reuses the phone's reading of it (see newChatSystem). Facts that match a message still go with it.
+        const chosen = active.where === 'phone' && base.mode !== 'interview'
+          ? relevantMemories(current, '', limit)
+          : await pickMemories(query, queryVec, limit).catch(() => current.slice(-limit));
         ps = { facts: chosen.map((m) => m.id), known: new Set(current.map((m) => m.id)), added: new Map(), start: 0 };
         prompts.current.set(base.id, ps);
         if (prompts.current.size > 8) prompts.current.delete(prompts.current.keys().next().value!);

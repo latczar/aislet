@@ -120,7 +120,7 @@ check('keeps a reply that is only a question', brain.withoutClosingQuestion('Sha
 check('keeps a reply with no question', brain.withoutClosingQuestion('No problem, thanks!') === 'No problem, thanks!');
 
 // The phone's chat format: each prompt starts with the whole of the one before plus the reply, so only new text is read.
-const { chatmlPrompt, NO_THINKING } = await import('../../src/engine/chatml.ts');
+const { chatmlPrompt, chatmlSystem, NO_THINKING } = await import('../../src/engine/chatml.ts');
 const sys = { role: 'system', content: 'You are Aislet.' };
 const first = chatmlPrompt([sys, { role: 'user', content: 'Hi' }]);
 const reply = 'Hello! How can I help?';
@@ -140,6 +140,11 @@ const starters = brain.personalStarters('Sam', [fact('s1', 'Sam is training for 
 check('starters: one for the goal, one for the project', starters.length === 2 && starters[0].sub === 'Training for a half marathon in March');
 check('starters: the prompt carries the fact', starters[1].prompt.includes('building a shed'));
 check('starters: none without goals or projects', brain.personalStarters('Sam', [fact('s3', 'Sam likes jazz', 'about')]).length === 0);
+
+check('the system message read ahead is where a new chat starts', first.startsWith(chatmlSystem('You are Aislet.')));
+const sysA = brain.systemPrompt({ name: 'Sam', instructions: '', length: 'balanced' }, brain.relevantMemories(known, '', 15), 'phone');
+const sysB = brain.systemPrompt({ name: 'Sam', instructions: '', length: 'balanced' }, brain.relevantMemories(known, '', 15), 'phone');
+check('a new chat on the phone always starts with the same system message', sysA === sysB);
 
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

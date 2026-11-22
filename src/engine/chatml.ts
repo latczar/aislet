@@ -6,6 +6,11 @@
 /** What follows "assistant" when thinking is off: the reply comes straight after it. */
 export const NO_THINKING = '<think>\n\n</think>\n\n';
 
+/** The system message alone, up to where the first message starts: read ahead so a new chat only reads what's typed. */
+export function chatmlSystem(system: string): string {
+  return `<|im_start|>system\n${system.trim()}<|im_end|>\n<|im_start|>user\n`;
+}
+
 export function chatmlPrompt(messages: { role: string; content: string }[]): string {
   let prompt = '';
   for (const m of messages) {

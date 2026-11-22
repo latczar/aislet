@@ -6,7 +6,7 @@ import { AppState } from 'react-native';
 import { initLlama, type LlamaContext, type RNLlamaOAICompatibleMessage } from 'llama.rn';
 import { normalise } from '../brain';
 import type { Accel, Message, Performance } from '../types';
-import { chatmlPrompt } from './chatml';
+import { chatmlPrompt, chatmlSystem } from './chatml';
 import { nativeLibrary } from '../libraryNative';
 import type { Engine, ModelInfo, ModelManager } from './types';
 
@@ -85,6 +85,7 @@ let accel: Accel = 'cpu';
 let performance: Performance = 'balanced';
 let chatCtx: LlamaContext | null = null;
 let chatKey = ''; // model + accel the context was made with
+let prefilling: Promise<void> | null = null; // reading the system message ahead (warm)
 let visionOn = false;
 let embedCtx: LlamaContext | null = null;
 let loading: Promise<LlamaContext> | null = null;
@@ -261,16 +262,26 @@ export const deviceEngine: Engine = {
     return { ready: true, label: "This phone's AI", model: s.name };
   },
 
-  async warm(modelId) {
+  async warm(modelId, system) {
     const s = spec(modelId);
     if (performance !== 'cool' && s && isDownloaded(s)) { // Cool mode only loads the model when you send
-      await chatContext(modelId);
+      const ctx = await chatContext(modelId);
+      if (system && !prefilling) {
+        // Read the system message now, while they look at the screen or type. llama.rn keeps a save point after it,
+        // so the first message only reads what's typed (about 25 s less on a phone CPU). One token is written and
+        // dropped. A message sent meanwhile waits for this rather than reading it all again.
+        prefilling = ctx.completion({ prompt: chatmlSystem(system), n_predict: 1, temperature: 0 })
+          .then(() => undefined, () => undefined)
+          .finally(() => { prefilling = null; });
+        await prefilling;
+      }
       touch();
     }
   },
 
   async chat(messages, modelId, onToken, maxTokens = 1024) {
     const ctx = await chatContext(modelId);
+    if (prefilling) await prefilling;
     if (messages.some((m) => m.images?.length)) await ensureVision(ctx);
     try {
       // Photos need llama.rn's own template; everything else is written as the model generated it (see chatml.ts),
@@ -297,6 +308,7 @@ export const deviceEngine: Engine = {
 
   async json(messages, modelId, maxTokens = 256) {
     const ctx = await chatContext(modelId);
+    if (prefilling) await prefilling;
     // Learning and tidying ask the chat's model something else, which would replace its reading of the chat (on a
     // phone CPU, about a minute of work for a long chat). Save that reading to a file first and load it back after,
     // so the next message only reads what's new. If either step fails, the next message just reads it all again.
