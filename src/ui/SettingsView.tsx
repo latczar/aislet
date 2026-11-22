@@ -897,7 +897,7 @@ export function SettingsView() {
   const theme = useTheme();
   const { settings, updateSettings, status, refreshStatus, exportData, importData, clearChats, chats, memories, notes, hub, libraries } = useStore();
   const [allModels, setAllModels] = useState(false);
-  const [advanced, setAdvanced] = useState(false);
+  const [more, setMore] = useState(false); // everyday settings first; the rest behind "More settings"
   const [name, setName] = useState(settings.name);
   const [instructions, setInstructions] = useState(settings.instructions);
   const [toast, setToast] = useState<string | null>(null);
@@ -927,55 +927,6 @@ export function SettingsView() {
               dense
             />
           </View>
-        </Section>
-
-        <Section title="How it answers" footer="Instructions apply to every chat, on top of what it remembers about you.">
-          <View style={styles.pad}>
-            <Text variant="labelLarge" style={styles.label}>Answer length</Text>
-            <SegmentedButtons
-              value={settings.length}
-              onValueChange={(v) => updateSettings({ length: v as AnswerLength })}
-              buttons={[
-                { value: 'short', label: 'Short' },
-                { value: 'balanced', label: 'Balanced' },
-                { value: 'detailed', label: 'Detailed' },
-              ]}
-            />
-            <Field
-              mode="outlined"
-              label="Custom instructions"
-              placeholder="e.g. Be direct. Explain code step by step. Use metric units."
-              value={instructions}
-              onChangeText={setInstructions}
-              onBlur={() => updateSettings({ instructions: instructions.trim() })}
-              multiline
-              style={styles.instructions}
-            />
-          </View>
-        </Section>
-
-        {voiceSupported && (
-          <Section
-            title="Voice"
-            footer="Talking uses your phone's offline speech recognition, so it works without the internet. To add a language, download its offline pack in the phone's voice input settings."
-          >
-            <VoiceLanguage />
-          </Section>
-        )}
-
-        {widgetSupported && (
-          <Section title="Widget">
-            <WidgetRow onToast={setToast} />
-          </Section>
-        )}
-
-        <Section
-          title="Home"
-          footer={Platform.OS === 'web'
-            ? 'Your phone syncs chats, memory and notes with this laptop over home Wi-Fi, and can use its bigger AI.'
-            : 'At home, chats, memory and notes sync with your laptop, and the phone can use its bigger AI. Photos stay on the phone.'}
-        >
-          {Platform.OS === 'web' ? <PairPhone /> : <ConnectLaptop />}
         </Section>
 
         <Section title="AI">
@@ -1015,7 +966,7 @@ export function SettingsView() {
                     />
                   ))}
               </RadioButton.Group>
-              {!allModels && shownModels(engine.models, settings.modelId, true).length > shownModels(engine.models, settings.modelId, false).length && (
+              {more && !allModels && shownModels(engine.models, settings.modelId, true).length > shownModels(engine.models, settings.modelId, false).length && (
                 <>
                   <Divider />
                   <Row
@@ -1027,12 +978,52 @@ export function SettingsView() {
                   />
                 </>
               )}
-              <Divider />
-              <ModelRow model={engine.models.searchModel()} onChanged={changed} />
-              <Divider />
-              <ModelRow model={engine.models.visionModel()} onChanged={changed} icon="image-search-outline" />
+              {more && (
+                <>
+                  <Divider />
+                  <ModelRow model={engine.models.searchModel()} onChanged={changed} />
+                  <Divider />
+                  <ModelRow model={engine.models.visionModel()} onChanged={changed} icon="image-search-outline" />
+                </>
+              )}
             </>
           )}
+        </Section>
+
+        <Section title="How it answers" footer={more ? 'Instructions apply to every chat, on top of what it remembers about you.' : undefined}>
+          <View style={styles.pad}>
+            <Text variant="labelLarge" style={styles.label}>Answer length</Text>
+            <SegmentedButtons
+              value={settings.length}
+              onValueChange={(v) => updateSettings({ length: v as AnswerLength })}
+              buttons={[
+                { value: 'short', label: 'Short' },
+                { value: 'balanced', label: 'Balanced' },
+                { value: 'detailed', label: 'Detailed' },
+              ]}
+            />
+            {more && (
+            <Field
+              mode="outlined"
+              label="Custom instructions"
+              placeholder="e.g. Be direct. Explain code step by step. Use metric units."
+              value={instructions}
+              onChangeText={setInstructions}
+              onBlur={() => updateSettings({ instructions: instructions.trim() })}
+              multiline
+              style={styles.instructions}
+            />
+            )}
+          </View>
+        </Section>
+
+        <Section
+          title="Home"
+          footer={Platform.OS === 'web'
+            ? 'Your phone syncs chats, memory and notes with this laptop over home Wi-Fi, and can use its bigger AI.'
+            : 'At home, chats, memory and notes sync with your laptop, and the phone can use its bigger AI. Photos stay on the phone.'}
+        >
+          {Platform.OS === 'web' ? <PairPhone /> : <ConnectLaptop />}
         </Section>
 
         {libraries.supported && (
@@ -1040,31 +1031,6 @@ export function SettingsView() {
             <Libraries onToast={setToast} />
           </Section>
         )}
-
-        <Section
-          title="Speed and heat"
-          footer={[
-            settings.performance === 'cool'
-              ? 'Cool: slower replies, least heat and battery. The model loads only when you send.'
-              : settings.performance === 'max'
-                ? 'Max: quickest with long questions and files. Uses more cores and keeps the model ready, so it runs warmer.'
-                : 'Balanced: quick replies without working the device too hard.',
-            engine.lastSpeed?.() ? `Last reply: ${engine.lastSpeed()!.toFixed(1)} tokens a second.` : '',
-          ].filter(Boolean).join(' ')}
-        >
-          <View style={styles.pad}>
-            <Text variant="labelLarge">Performance</Text>
-            <SegmentedButtons
-              value={settings.performance}
-              onValueChange={(v) => updateSettings({ performance: v as Performance })}
-              buttons={[
-                { value: 'cool', label: 'Cool', icon: 'snowflake' },
-                { value: 'balanced', label: 'Balanced', icon: 'scale-balance' },
-                { value: 'max', label: 'Max', icon: 'lightning-bolt' },
-              ]}
-            />
-          </View>
-        </Section>
 
         <Section title="Appearance">
           <View style={styles.pad}>
@@ -1078,7 +1044,7 @@ export function SettingsView() {
               ]}
             />
           </View>
-          {Platform.OS !== 'web' && (
+          {more && Platform.OS !== 'web' && (
             <>
               <Divider />
               <Row
@@ -1091,105 +1057,170 @@ export function SettingsView() {
           )}
         </Section>
 
-        {Platform.OS === 'web' && (
-          <Section title="Keyboard shortcuts">
-            {SHORTCUTS.map((s, i) => (
-              <View key={s.label}>
-                {i > 0 && <Divider />}
-                <Row
-                  title={s.label}
-                  right={(p) => <Text variant="labelLarge" style={[p.style, styles.keys, { color: theme.colors.onSurfaceVariant }]}>{s.keys}</Text>}
-                />
-              </View>
-            ))}
+        <Surface style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]} elevation={0}>
+          <Row
+            title={more ? 'Fewer settings' : 'More settings'}
+            description={more ? undefined : Platform.OS === 'web'
+              ? 'Your own instructions, speed, keyboard shortcuts, export and privacy'
+              : 'Your own instructions, voice, speed and heat, backups, privacy and other models'}
+            left={(p) => <List.Icon {...p} icon="tune-variant" />}
+            right={(p) => <List.Icon {...p} icon={more ? 'chevron-up' : 'chevron-down'} />}
+            onPress={() => setMore((m) => !m)}
+          />
+        </Surface>
+
+        {more && (
+          <>
+            <Section title="Memory">
+              <Row
+                title="Learn from my chats"
+                description="Saves lasting facts and preferences as you talk"
+                left={(p) => <List.Icon {...p} icon="lightbulb-on-outline" />}
+                right={(p) => <Switch style={p.style} value={settings.learn} onValueChange={(v) => updateSettings({ learn: v })} />}
+              />
+              <Divider />
+              <Row
+                title="Look back at earlier chats"
+                description={'When you ask "what did we say about…", it searches your earlier chats on this device'}
+                left={(p) => <List.Icon {...p} icon="history" />}
+                right={(p) => <Switch style={p.style} value={settings.recallChats !== false} onValueChange={(v) => updateSettings({ recallChats: v })} />}
+              />
+            </Section>
+
+          {voiceSupported && (
+            <Section
+              title="Voice"
+              footer="Talking uses your phone's offline speech recognition, so it works without the internet. To add a language, download its offline pack in the phone's voice input settings."
+            >
+              <VoiceLanguage />
+            </Section>
+          )}
+
+          {widgetSupported && (
+            <Section title="Widget">
+              <WidgetRow onToast={setToast} />
+            </Section>
+          )}
+
+          <Section
+            title="Speed and heat"
+            footer={[
+              settings.performance === 'cool'
+                ? 'Cool: slower replies, least heat and battery. The model loads only when you send.'
+                : settings.performance === 'max'
+                  ? 'Max: quickest with long questions and files. Uses more cores and keeps the model ready, so it runs warmer.'
+                  : 'Balanced: quick replies without working the device too hard.',
+              engine.lastSpeed?.() ? `Last reply: ${engine.lastSpeed()!.toFixed(1)} tokens a second.` : '',
+            ].filter(Boolean).join(' ')}
+          >
+            <View style={styles.pad}>
+              <Text variant="labelLarge">Performance</Text>
+              <SegmentedButtons
+                value={settings.performance}
+                onValueChange={(v) => updateSettings({ performance: v as Performance })}
+                buttons={[
+                  { value: 'cool', label: 'Cool', icon: 'snowflake' },
+                  { value: 'balanced', label: 'Balanced', icon: 'scale-balance' },
+                  { value: 'max', label: 'Max', icon: 'lightning-bolt' },
+                ]}
+              />
+            </View>
           </Section>
-        )}
 
-        <Section
-          title="Your data"
-          footer={backupSupported
-            ? 'Backups and exports hold your memory and notes; chats stay where they are. Export makes a plain file to bring them to your other device.'
-            : 'Export makes a file with your memory and notes. Import it on your other device to bring them over. Chats stay where they are.'}
-        >
-          {backupSupported && <Backups onToast={setToast} />}
-          <Row
-            title="Export memory and notes"
-            description={`${memories.length} facts · ${notes.length} notes`}
-            left={(p) => <List.Icon {...p} icon="export-variant" />}
-            onPress={() => exportData().catch((e) => setToast((e as Error).message))}
-          />
-          <Divider />
-          <Row
-            title="Import from a backup"
-            description="Adds anything new; nothing is overwritten"
-            left={(p) => <List.Icon {...p} icon="import" />}
-            onPress={async () => {
-              try {
-                const summary = await importData();
-                if (summary) setToast(summary);
-              } catch (e) {
-                setToast((e as Error).message);
-              }
-            }}
-          />
-          <Divider />
-          <Row
-            title="Delete all chats"
-            titleStyle={{ color: theme.colors.error }}
-            description={`${chats.length} ${chats.length === 1 ? 'chat' : 'chats'}. Memory and notes are kept.`}
-            left={(p) => <List.Icon {...p} icon="trash-can-outline" color={theme.colors.error} />}
-            disabled={!chats.length}
-            onPress={async () => {
-              if (await confirm('Delete all chats?', "This can't be undone. Your memory and notes stay.")) clearChats();
-            }}
-          />
-        </Section>
-
-        <Section
-          title="Privacy"
-          footer={Platform.OS === 'web'
-            ? 'Try it with this computer offline: everything except downloads still works.'
-            : 'Try it with Wi-Fi and mobile data off: everything except downloads still works.'}
-        >
-          <Privacy />
-        </Section>
-
-        {engine.models && (
-          <Section title="Advanced">
-            <Row
-              title={advanced ? 'Hide advanced settings' : 'Show advanced settings'}
-              description="Which chip runs the AI, and your laptop's address"
-              left={(p) => <List.Icon {...p} icon="tune-variant" />}
-              right={(p) => <List.Icon {...p} icon={advanced ? 'chevron-up' : 'chevron-down'} />}
-              onPress={() => setAdvanced((a) => !a)}
-            />
-            {advanced && (
-              <>
-                <Divider />
-                <View style={styles.pad}>
-                  <Text variant="labelLarge">Runs on</Text>
-                  <SegmentedButtons
-                    value={settings.accel}
-                    onValueChange={(v) => updateSettings({ accel: v as Accel })}
-                    buttons={[
-                      { value: 'cpu', label: 'CPU' },
-                      { value: 'gpu', label: 'GPU' },
-                      { value: 'npu', label: 'AI chip' },
-                    ]}
+          {Platform.OS === 'web' && (
+            <Section title="Keyboard shortcuts">
+              {SHORTCUTS.map((s, i) => (
+                <View key={s.label}>
+                  {i > 0 && <Divider />}
+                  <Row
+                    title={s.label}
+                    right={(p) => <Text variant="labelLarge" style={[p.style, styles.keys, { color: theme.colors.onSurfaceVariant }]}>{s.keys}</Text>}
                   />
-                  <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                    CPU works on every phone. The others can be quicker or cooler on some phones; if one doesn't work, the phone uses the CPU instead.
-                  </Text>
                 </View>
-                {!!settings.hubUrl && !!settings.hubKey && hub.connected && (
-                  <>
-                    <Divider />
-                    <LaptopAddress />
-                  </>
-                )}
-              </>
-            )}
+              ))}
+            </Section>
+          )}
+
+          <Section
+            title="Your data"
+            footer={backupSupported
+              ? 'Backups and exports hold your memory and notes; chats stay where they are. Export makes a plain file to bring them to your other device.'
+              : 'Export makes a file with your memory and notes. Import it on your other device to bring them over. Chats stay where they are.'}
+          >
+            {backupSupported && <Backups onToast={setToast} />}
+            <Row
+              title="Export memory and notes"
+              description={`${memories.length} facts · ${notes.length} notes`}
+              left={(p) => <List.Icon {...p} icon="export-variant" />}
+              onPress={() => exportData().catch((e) => setToast((e as Error).message))}
+            />
+            <Divider />
+            <Row
+              title="Import from a backup"
+              description="Adds anything new; nothing is overwritten"
+              left={(p) => <List.Icon {...p} icon="import" />}
+              onPress={async () => {
+                try {
+                  const summary = await importData();
+                  if (summary) setToast(summary);
+                } catch (e) {
+                  setToast((e as Error).message);
+                }
+              }}
+            />
+            <Divider />
+            <Row
+              title="Delete all chats"
+              titleStyle={{ color: theme.colors.error }}
+              description={`${chats.length} ${chats.length === 1 ? 'chat' : 'chats'}. Memory and notes are kept.`}
+              left={(p) => <List.Icon {...p} icon="trash-can-outline" color={theme.colors.error} />}
+              disabled={!chats.length}
+              onPress={async () => {
+                if (await confirm('Delete all chats?', "This can't be undone. Your memory and notes stay.")) clearChats();
+              }}
+            />
           </Section>
+
+          <Section
+            title="Privacy"
+            footer={Platform.OS === 'web'
+              ? 'Try it with this computer offline: everything except downloads still works.'
+              : 'Try it with Wi-Fi and mobile data off: everything except downloads still works.'}
+          >
+            <Privacy />
+          </Section>
+
+          {engine.models && (
+            <Section title="Advanced">
+              {(
+                <>
+                  <View style={styles.pad}>
+                    <Text variant="labelLarge">Runs on</Text>
+                    <SegmentedButtons
+                      value={settings.accel}
+                      onValueChange={(v) => updateSettings({ accel: v as Accel })}
+                      buttons={[
+                        { value: 'cpu', label: 'CPU' },
+                        { value: 'gpu', label: 'GPU' },
+                        { value: 'npu', label: 'AI chip' },
+                      ]}
+                    />
+                    <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                      CPU works on every phone. The others can be quicker or cooler on some phones; if one doesn't work, the phone uses the CPU instead.
+                    </Text>
+                  </View>
+                  {!!settings.hubUrl && !!settings.hubKey && hub.connected && (
+                    <>
+                      <Divider />
+                      <LaptopAddress />
+                    </>
+                  )}
+                </>
+              )}
+            </Section>
+          )}
+
+          </>
         )}
 
         <Text variant="bodySmall" style={[styles.about, { color: theme.colors.onSurfaceVariant }]}>

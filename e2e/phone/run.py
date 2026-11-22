@@ -271,6 +271,27 @@ def go_tab(name: str) -> None:
     tab = wait_for(f'the {name} tab', text=name)
     tap(tab)
     time.sleep(1)
+    if name == 'Settings':
+        open_more_settings()
+
+
+def open_more_settings() -> None:
+    """Settings shows everyday settings first and the rest behind "More settings": open it, so checks see every row."""
+    h = screen_height()
+    for _ in range(14):
+        nodes = screen()
+        if find(nodes, text='Fewer settings'):
+            break
+        more = [n for n in find(nodes, text='More settings') if 150 < n.cy < h - 300]
+        if more:
+            tap(more[0])
+            wait_for('Fewer settings', timeout=5, text='Fewer settings')
+            break
+        shell(f'input swipe 540 {int(h * 0.7)} 540 {int(h * 0.35)} 300')
+        time.sleep(0.6)
+    else:
+        raise CheckFailed('no "More settings" row in Settings')
+    scroll_to_top()
 
 
 def editable(nodes: list[Node]) -> list[Node]:
@@ -955,7 +976,7 @@ def check_layout() -> str:
     go_tab('Memory')
     scroll_to_top()
     nodes = screen()
-    lefts, rights = check_rows(nodes, {'Get to know me': 'Start', 'Learn from my chats': 'switch', 'Look back at earlier chats': 'switch', 'Tidy up memory': 'Tidy up'}, 'Memory', dp)
+    lefts, rights = check_rows(nodes, {'Get to know me': 'Start', 'Tidy up memory': 'Tidy up'}, 'Memory', dp)
     add = button_box(nodes, 'Add')
     if add is None:
         raise CheckFailed('no Add button on Memory')

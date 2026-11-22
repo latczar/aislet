@@ -78,8 +78,8 @@ export function MemoryView({ onStartInterview }: { onStartInterview: () => void 
     <ScrollView contentContainerStyle={styles.page}>
       <Text variant="headlineSmall" style={styles.h1}>Memory</Text>
       <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
-        What it knows about you. It learns from your chats, including feedback like "shorter please", and uses this in every
-        conversation. You're in control: undo anything it learns, or remove it here, any time.
+        What it knows about you, learnt from your chats and feedback like "shorter, please". Undo anything it learns, or
+        remove it here. {settings.learn ? '' : 'Learning is off (Settings → More settings → Memory).'}
       </Text>
 
       <Surface style={card} elevation={0}>
@@ -98,20 +98,6 @@ export function MemoryView({ onStartInterview }: { onStartInterview: () => void 
               Start
             </Button>
           )}
-        />
-        <Divider />
-        <Row
-          title="Learn from my chats"
-          description="Saves lasting facts and preferences as you talk"
-          left={(p) => <List.Icon {...p} icon="lightbulb-on-outline" color={theme.colors.primary} />}
-          right={(p) => <Switch style={p.style} value={settings.learn} onValueChange={(v) => updateSettings({ learn: v })} />}
-        />
-        <Divider />
-        <Row
-          title="Look back at earlier chats"
-          description={'When you ask "what did we say about…", it searches your earlier chats on this device'}
-          left={(p) => <List.Icon {...p} icon="history" color={theme.colors.primary} />}
-          right={(p) => <Switch style={p.style} value={settings.recallChats !== false} onValueChange={(v) => updateSettings({ recallChats: v })} />}
         />
         <Divider />
         <Row

@@ -5,7 +5,7 @@ import {
   type TextInputInstance, View, useWindowDimensions,
 } from 'react-native';
 import { ActivityIndicator, Button, Icon, IconButton, Menu, ProgressBar, Snackbar, Surface, Text, useTheme } from 'react-native-paper';
-import { titleFrom } from '../brain';
+import { personalStarters, titleFrom } from '../brain';
 import { type DeviceAction, actionsSupported, describe, parseActions, runAction, shownText } from '../deviceActions';
 import { engine } from '../engine';
 import { hubExtract, localHub } from '../hub';
@@ -120,8 +120,11 @@ function Welcome({ onOpenSettings }: { onOpenSettings: () => void }) {
   const theme = useTheme();
   const { width } = useWindowDimensions();
   const { settings, status, send, memories, startInterview, libraries } = useStore();
-  // While it knows little about you, offer the get-to-know-me chat first.
-  const cards = memories.length < 5 ? [INTERVIEW, ...SUGGESTIONS.slice(0, 3)] : SUGGESTIONS;
+  // While it knows little about you, offer the get-to-know-me chat first; after that, next steps on your own goal
+  // and project come first.
+  const cards = useMemo(() => (memories.length < 5
+    ? [INTERVIEW, ...SUGGESTIONS.slice(0, 3)]
+    : [...personalStarters(settings.name, memories), ...SUGGESTIONS].slice(0, 4)), [memories, settings.name]);
   const cardWidth = width >= 700 ? '48.8%' : '48%';
   return (
     <View style={styles.welcome}>

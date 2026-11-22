@@ -134,5 +134,12 @@ Hi<|im_end|>
 <|im_start|>assistant
 ${NO_THINKING}`);
 
+// New-chat starters come from memory: the newest goal and project, without the name or a leading verb.
+const starters = brain.personalStarters('Sam', [fact('s1', 'Sam is training for a half marathon in March.', 'goals'),
+  fact('s2', 'Sam is building a shed on the allotment', 'projects'), fact('s3', 'Sam likes jazz', 'about')]);
+check('starters: one for the goal, one for the project', starters.length === 2 && starters[0].sub === 'Training for a half marathon in March');
+check('starters: the prompt carries the fact', starters[1].prompt.includes('building a shed'));
+check('starters: none without goals or projects', brain.personalStarters('Sam', [fact('s3', 'Sam likes jazz', 'about')]).length === 0);
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

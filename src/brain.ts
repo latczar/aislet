@@ -208,6 +208,36 @@ export const CATEGORIES: { id: MemoryCategory; title: string; icon: string }[] =
 ];
 const CATEGORY_IDS = CATEGORIES.map((c) => c.id).join('|');
 
+export interface Starter { icon: string; title: string; sub: string; prompt: string }
+
+/**
+ * Starters for a new chat from what it knows: the newest goal and project, each as a concrete next step. They come
+ * from memory, not the model, so they cost nothing on a phone and never make anything up.
+ */
+export function personalStarters(name: string, memories: Memory[]): Starter[] {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const lead = new RegExp(`^(?:${name ? `${escaped}|` : ''}the user)(?:'s)?\\s+`, 'i');
+  const shown = (fact: string) => {
+    const f = fact.trim().replace(/[.!]+$/, '').replace(lead, '')
+      .replace(/^(?:is trying to|wants to|would like to|plans to|hopes to|is|are|has)\s+/i, ''); // "is training…" → "Training…"
+    const s = f.charAt(0).toUpperCase() + f.slice(1);
+    return s.length > 60 ? `${s.slice(0, 57).replace(/\s+\S*$/, '')}…` : s;
+  };
+  const newest = (c: MemoryCategory) => memories.filter((m) => !m.until && m.category === c).slice(-1)[0];
+  const starters: Starter[] = [];
+  const goal = newest('goals');
+  if (goal) {
+    starters.push({ icon: 'flag-outline', title: 'Next step on your goal', sub: shown(goal.fact),
+      prompt: `What should I do this week to move this goal on? ${goal.fact.trim().replace(/[.!]+$/, '')}.` });
+  }
+  const project = newest('projects');
+  if (project) {
+    starters.push({ icon: 'briefcase-outline', title: 'Move a project on', sub: shown(project.fact),
+      prompt: `Help me plan the next step on this, as a short list: ${project.fact.trim().replace(/[.!]+$/, '')}.` });
+  }
+  return starters;
+}
+
 /** Extra instructions for a "Get to know me" chat. */
 export function interviewPrompt(name: string): string {
   const who = name || 'the user';
