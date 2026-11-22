@@ -1016,6 +1016,7 @@ def check_layout() -> str:
         lined_up({**l2, 'Memory titles': title_x}, 'Settings → Home row titles')
         lined_up({**r2, 'Memory buttons': button_x}, "Settings → Home buttons' right edges")
         checked += ', Settings → Home'
+    scroll_to_top()  # the AI section (with Photo understanding) now comes before Home
     scroll_to('Photo understanding', text='Photo understanding')
     nodes = screen()
     l3, _ = check_rows(nodes, {'Notes search': '', 'Photo understanding': ''}, 'Settings → AI', dp)

@@ -472,6 +472,16 @@ function Composer({ ready, incoming, onIncomingTaken, talkRequest = 0 }: Compose
   const [pdfs, setPdfs] = useState<{ name: string; base64: string }[]>([]); // shared PDFs waiting for the laptop
   const [web, setWeb] = useState(false); // the globe: search the web for the next message
   const [menu, setMenu] = useState(false);
+  // Paper places a menu by the window's full height, which on a phone puts its last item under Android's own
+  // navigation bar. Open it just above the paperclip instead: measure the button, and anchor the menu that far up.
+  const attachRef = useRef<React.ComponentRef<typeof View>>(null);
+  const [attachAt, setAttachAt] = useState({ x: 0, y: 0 });
+  const openAttach = () => {
+    tap();
+    const height = (cameraSupported ? 3 : 2) * 48 + 16; // Paper's menu items are 48 high, plus padding
+    if (!attachRef.current) { setMenu(true); return; }
+    attachRef.current.measureInWindow((x: number, y: number) => { setAttachAt({ x, y: Math.max(8, y - height - 4) }); setMenu(true); });
+  };
   const closeMenu = useCallback(() => setMenu(false), []);
   useBackCloses(menu, closeMenu);
   const [reading, setReading] = useState(false);
@@ -742,16 +752,13 @@ function Composer({ ready, incoming, onIncomingTaken, talkRequest = 0 }: Compose
         </View>
         ) : (
         <View style={styles.composer}>
-        <Menu
-          visible={menu}
-          onDismiss={closeMenu}
-          anchor={
-            <IconButton
-              icon="paperclip" size={22} iconColor={theme.colors.onSurfaceVariant} disabled={!ready || busy}
-              accessibilityLabel="Attach a photo or file" onPress={() => { tap(); setMenu(true); }} style={styles.composerIcon}
-            />
-          }
-        >
+        <View ref={attachRef} collapsable={false}>
+          <IconButton
+            icon="paperclip" size={22} iconColor={theme.colors.onSurfaceVariant} disabled={!ready || busy}
+            accessibilityLabel="Attach a photo or file" onPress={openAttach} style={styles.composerIcon}
+          />
+        </View>
+        <Menu visible={menu} onDismiss={closeMenu} anchor={attachAt}>
           <Menu.Item leadingIcon="image-outline" title="Photo" onPress={() => addPhoto(false)} />
           {cameraSupported && <Menu.Item leadingIcon="camera-outline" title="Take a photo" onPress={() => addPhoto(true)} />}
           <Menu.Item leadingIcon="file-document-outline" title="PDF or text file" onPress={addFile} />

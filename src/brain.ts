@@ -240,7 +240,8 @@ export function personalStarters(name: string, memories: Memory[]): Starter[] {
   };
   // A fact filed under goals or projects isn't always one ("breaks routine when travelling", "not in Lisbon now"), so
   // only a fact that reads like something being worked towards gets a starter. Otherwise there's none, not a vague one.
-  const GOAL = /\b(wants? to|would like to|plans? to|aims? to|hopes? to|trying to|is (?:learning|training|saving|studying|working towards?|preparing)|goal)\b/i;
+  // "Wants to be woken at 6:45" is a routine, not a goal: only wanting to learn, train, save, build and so on counts.
+  const GOAL = /\b(is (?:learning|training|saving|studying|preparing)|is working towards?|goal is|(?:wants?|plans?|hopes?|aims?|would like|is trying) to (?:learn|run|train|finish|build|start|save|get fit|become|lose|move|write|pass|launch|grow|speak))\b/i;
   const PROJECT = /\b(is (?:building|making|writing|developing|working on|planning|renovating|setting up|creating|organising|organizing)|working on|project)\b/i;
   const newest = (c: MemoryCategory, reads: RegExp) => memories
     .filter((m) => !m.until && m.category === c && reads.test(m.fact) && !/\b(not|no longer|never)\b/i.test(m.fact))
