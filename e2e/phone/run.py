@@ -267,9 +267,15 @@ def scroll_to_top() -> None:
 
 
 def go_tab(name: str) -> None:
+    """Open Chat, Memory, Notes or Settings from the menu (☰). The menu's items sit below the chat list, so a chat
+    with the same title can't be mistaken for one."""
     hide_keyboard()
-    tab = wait_for(f'the {name} tab', text=name)
-    tap(tab)
+    if not find(screen(), desc='Close menu'):
+        tap(wait_for('the Menu button', desc='Menu'))
+        time.sleep(0.8)
+    wait_for(f'{name} in the menu', text=name)
+    item = max(find(screen(), text=name), key=lambda n: n.cy)
+    tap(item)
     time.sleep(1)
     if name == 'Settings':
         open_more_settings()
@@ -277,8 +283,9 @@ def go_tab(name: str) -> None:
 
 def open_more_settings() -> None:
     """Settings shows everyday settings first and the rest behind "More settings": open it, so checks see every row."""
+    scroll_to_top()  # the row may be above where Settings was left
     h = screen_height()
-    for _ in range(14):
+    for _ in range(20):
         nodes = screen()
         if find(nodes, text='Fewer settings'):
             break
@@ -366,7 +373,7 @@ def check_launch() -> str:
     shell(f'am force-stop {PKG}')
     # A fresh task (NEW_TASK | CLEAR_TASK), so a browser tab the app opened earlier can't stay on top.
     shell(f'am start -W -n {PKG}/.MainActivity -f 0x10008000')
-    wait_for('the Chat tab', timeout=20, text='Chat')
+    wait_for('the Menu button', timeout=20, desc='Menu')
     go_tab('Chat')  # the app reopens on the screen that was open last time
     status = wait_for('a ready AI (status ending "private")', timeout=90, contains='· private')
     if foreground() != PKG:
@@ -446,7 +453,7 @@ def check_chat_typing() -> str:
 def delete_test_chat() -> bool:
     hide_keyboard()
     go_tab('Chat')
-    tap(wait_for('the Chats button', desc='Chats'))
+    tap(wait_for('the Menu button', desc='Menu'))
     time.sleep(1)
     deleted = False
     for _ in range(3):
@@ -584,8 +591,7 @@ def check_find_laptop() -> str:
         laptop_ai = [n for n in nodes if n.cls.endswith('Switch')]
         ai = f"; laptop's AI {'on' if laptop_ai[-1].checked else 'off'}" if laptop_ai else ''
         # While connected, Find again lives under Advanced.
-        tap(scroll_to('Show advanced settings', text='Show advanced settings'))
-        tap(scroll_to('Find again', text='Find again'))
+        tap(scroll_to('Find again', timeout_swipes=16, text='Find again'))  # under More settings → Advanced
         found = wait_for('"Found it at …"', timeout=60, contains='Found it at')
         where = re.search(r'Found it at (\S+)', found.label)
         scroll_to_top()
@@ -1696,7 +1702,7 @@ def check_pin_chat() -> str:
     """Pin chat moves a chat under Pinned at the top of the chat list; it stays pinned after the app restarts; Unpin puts it back."""
     try:
         ask_and_wait(PIN_PROMPT)
-        tap(wait_for('the Chats button', desc='Chats'))
+        tap(wait_for('the Menu button', desc='Menu'))
         wait_for('the test chat in the chat list', timeout=5, contains=PIN_PROMPT)
         if in_pinned_section(PIN_PROMPT):
             raise CheckFailed('a new chat is already pinned')
@@ -1713,7 +1719,7 @@ def check_pin_chat() -> str:
         time.sleep(0.8)
         relaunch()
         go_tab('Chat')
-        tap(wait_for('the Chats button', desc='Chats'))
+        tap(wait_for('the Menu button', desc='Menu'))
         wait_for('the test chat after restarting', timeout=5, contains=PIN_PROMPT)
         if not in_pinned_section(PIN_PROMPT):
             raise CheckFailed('the pin was lost when the app restarted')
@@ -1919,7 +1925,7 @@ def mic_allowed() -> bool:
 
 def delete_open_chat() -> None:
     """Delete the chat that's open, found by the title in the chat header (for a chat the test started)."""
-    menu = wait_for('the Chats button', desc='Chats')
+    menu = wait_for('the Menu button', desc='Menu')
     titles = [n for n in screen() if n.text and '·' not in n.text and n.y1 >= menu.y1 - 20 and n.y2 <= menu.y2 + 20
               and n.x1 > menu.x2 and n.text != 'New chat']
     if not titles:

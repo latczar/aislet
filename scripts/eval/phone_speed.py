@@ -37,7 +37,7 @@ def in_front_ok() -> None:
         sys.exit('The notification panel is open: stopping.')
     if front != PKG:
         e2e.shell(f'am start -W -n {PKG}/.MainActivity')
-        e2e.wait_for('the Chat tab', timeout=20, contains='Chat')
+        e2e.wait_for('the Menu button', timeout=20, desc='Menu')
 
 
 def switch_state(label: str) -> bool | None:
@@ -173,12 +173,8 @@ def delete_test_chats() -> int:
     """Delete every "E2E check" chat. Uses the list's own Close button, not Back (Back on a chat opens the list)."""
     in_front_ok()
     nodes = e2e.screen()
-    if not e2e.find(nodes, desc='Close chats'):
-        tab = e2e.find(nodes, text='Chat')
-        if tab:
-            e2e.tap_xy(tab[0].cx, tab[0].cy)
-            time.sleep(1.5)
-        e2e.tap(e2e.wait_for('the Chats button', desc='Chats'))
+    if not e2e.find(nodes, desc='Close menu'):
+        e2e.tap(e2e.wait_for('the Menu button', desc='Menu'))
         time.sleep(2)
     deleted = 0
     for _ in range(10):
@@ -198,7 +194,7 @@ def delete_test_chats() -> int:
             time.sleep(0.5)
         else:
             raise e2e.CheckFailed('no Delete prompt for a test chat: check the chat list by hand')
-    close = e2e.find(e2e.screen(), desc='Close chats')
+    close = e2e.find(e2e.screen(), desc='Close menu')
     if close:
         e2e.tap_xy(close[0].cx, close[0].cy)
         time.sleep(1)

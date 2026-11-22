@@ -1,11 +1,12 @@
-// Layout: a sidebar on the PC, a header and bottom tabs on the phone.
+// Layout: a sidebar on the PC; on the phone, a menu (☰) that slides in with chats, Memory, Notes and Settings.
 import React, { useCallback, useEffect, useState } from 'react';
 import { AppState, Image, Modal, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
-import { BottomNavigation, Button, Divider, Drawer, IconButton, Text, useTheme } from 'react-native-paper';
+import { Button, Divider, Drawer, IconButton, Text, useTheme } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { APP_NAME } from '../config';
 import { useStore } from '../store';
 import { tap } from './actions';
+import { useBackCloses } from './back';
 import { ChatList } from './ChatList';
 import { ChatHeader, ChatView } from './ChatView';
 import { MemoryView } from './MemoryView';
@@ -38,6 +39,12 @@ export function Shell() {
   const [incoming, setIncoming] = useState<Incoming | null>(null); // handed to the message box
   const keyboard = useKeyboardInset();
   const wide = width >= 900;
+  // On the phone, Back from Memory, Notes or Settings goes to the chat instead of leaving the app.
+  const toChat = useCallback(() => setView('chat'), []);
+  useBackCloses(!wide && view !== 'chat' && !chatsOpen, toChat);
+  const menu = wide ? undefined : (
+    <IconButton icon="menu" onPress={() => { tap(); setChatsOpen(true); }} accessibilityLabel="Menu" />
+  );
 
   // "Share to Aislet" from another app opens a new chat with it in the message box. A reply that's
   // still being written is stopped first, since a new chat can't start until it ends.
@@ -90,9 +97,9 @@ export function Shell() {
 
   const content =
     view === 'chat' ? <ChatView onOpenSettings={() => setView('settings')} incoming={incoming} onIncomingTaken={takeIncoming} talkRequest={talkRequest} />
-      : view === 'memory' ? <MemoryView onStartInterview={() => setView('chat')} />
-        : view === 'notes' ? <NotesView />
-          : <SettingsView />;
+      : view === 'memory' ? <MemoryView onStartInterview={() => setView('chat')} menu={menu} />
+        : view === 'notes' ? <NotesView menu={menu} />
+          : <SettingsView menu={menu} />;
 
   const startChat = () => {
     tap();
@@ -153,9 +160,7 @@ export function Shell() {
     );
   }
 
-  const index = ROUTES.findIndex((r) => r.key === view);
-  // While typing, the tabs hide and everything sits just above the keyboard.
-  const typing = keyboard.open && keyboard.inset > 0;
+  const go = (key: ViewKey) => { tap(); setView(key); setChatsOpen(false); };
   return (
     <View
       ref={keyboard.ref}
@@ -164,34 +169,39 @@ export function Shell() {
     >
       {view === 'chat' && (
         <ChatHeader
-          left={<IconButton icon="menu" onPress={() => { tap(); setChatsOpen(true); }} accessibilityLabel="Chats" />}
+          left={menu}
           right={<IconButton icon="square-edit-outline" onPress={startChat} disabled={busy} accessibilityLabel="New chat" />}
         />
       )}
-      <View style={styles.flex}>{content}</View>
-      {!typing && (
-        <BottomNavigation.Bar
-          navigationState={{ index, routes: ROUTES as unknown as { key: string; title: string }[] }}
-          onTabPress={({ route }) => { tap(); setView(route.key as ViewKey); }}
-          safeAreaInsets={{ bottom: insets.bottom }}
-          style={{ backgroundColor: theme.colors.background, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.colors.outlineVariant }}
-          activeIndicatorStyle={{ backgroundColor: theme.colors.secondaryContainer }}
-        />
-      )}
+      <View style={[styles.flex, { paddingBottom: keyboard.open && keyboard.inset > 0 ? 0 : insets.bottom }]}>{content}</View>
 
       <Modal visible={chatsOpen} transparent animationType="fade" onRequestClose={() => setChatsOpen(false)} statusBarTranslucent>
         <View style={styles.sheetRow}>
           <View style={[styles.sheet, { backgroundColor: theme.colors.background, paddingTop: insets.top + 12, paddingBottom: insets.bottom }]}>
             <View style={styles.sheetHead}>
               <Image source={require('../../assets/icon.png')} style={styles.brandIcon} />
-              <Text variant="titleLarge" style={[styles.flex, styles.brandText]}>Chats</Text>
+              <Text variant="titleLarge" style={[styles.flex, styles.brandText]}>{APP_NAME}</Text>
             </View>
             <Button mode="contained" icon="plus" onPress={() => { startChat(); setChatsOpen(false); }} disabled={busy} style={styles.newChat} contentStyle={styles.newChatInner}>
               New chat
             </Button>
-            <ChatList onPicked={() => setChatsOpen(false)} />
+            <View style={styles.flex}>
+              <ChatList onPicked={() => { setView('chat'); setChatsOpen(false); }} />
+            </View>
+            <Divider />
+            <Drawer.Section showDivider={false} style={styles.nav}>
+              {ROUTES.map((r) => (
+                <Drawer.Item
+                  key={r.key}
+                  label={r.title}
+                  icon={view === r.key ? r.focusedIcon : r.unfocusedIcon}
+                  active={view === r.key}
+                  onPress={() => go(r.key)}
+                />
+              ))}
+            </Drawer.Section>
           </View>
-          <Pressable style={styles.scrim} onPress={() => setChatsOpen(false)} accessibilityLabel="Close chats" />
+          <Pressable style={styles.scrim} onPress={() => setChatsOpen(false)} accessibilityLabel="Close menu" />
         </View>
       </Modal>
     </View>

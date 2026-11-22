@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { Button, Divider, List, Surface, Text, useTheme } from 'react-native-paper';
+import { PageTitle } from './PageTitle';
 import { useStore } from '../store';
 import type { Note } from '../types';
 import { Field } from './Field';
@@ -61,7 +62,7 @@ function Editor({ note, onDone }: { note: Partial<Note>; onDone: () => void }) {
   );
 }
 
-export function NotesView() {
+export function NotesView({ menu }: { menu?: React.ReactNode }) {
   const theme = useTheme();
   const { notes } = useStore();
   const [editing, setEditing] = useState<Partial<Note> | null>(null);
@@ -72,7 +73,7 @@ export function NotesView() {
     <ScrollView contentContainerStyle={styles.page}>
       <View style={styles.header}>
         <View style={styles.flex}>
-          <Text variant="headlineSmall" style={styles.h1}>Notes</Text>
+          <PageTitle menu={menu}>Notes</PageTitle>
           <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
             Your assistant searches these when they help answer you.
           </Text>

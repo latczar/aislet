@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import {
   ActivityIndicator, Button, Checkbox, Dialog, Divider, Icon, IconButton, List, Portal, Snackbar, Surface, Switch, Text, useTheme,
 } from 'react-native-paper';
+import { PageTitle } from './PageTitle';
 import { CATEGORIES, type TidyChange } from '../brain';
 import { useStore } from '../store';
 import type { Memory } from '../types';
@@ -33,7 +34,7 @@ function TidyItem({ change, memories, checked, onToggle }: { change: TidyChange;
   );
 }
 
-export function MemoryView({ onStartInterview }: { onStartInterview: () => void }) {
+export function MemoryView({ onStartInterview, menu }: { onStartInterview: () => void; menu?: React.ReactNode }) {
   const theme = useTheme();
   const {
     memories, addMemory, removeMemory, proposeTidy, applyTidy, settings, updateSettings, startInterview, status, busy,
@@ -76,7 +77,7 @@ export function MemoryView({ onStartInterview }: { onStartInterview: () => void 
   return (
     <View style={styles.flex}>
     <ScrollView contentContainerStyle={styles.page}>
-      <Text variant="headlineSmall" style={styles.h1}>Memory</Text>
+      <PageTitle menu={menu}>Memory</PageTitle>
       <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
         What it knows about you, learnt from your chats and feedback like "shorter, please". Undo anything it learns, or
         remove it here. {settings.learn ? '' : 'Learning is off (Settings → More settings → Memory).'}

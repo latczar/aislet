@@ -3,6 +3,7 @@ import { Linking, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import {
   Avatar, Button, Chip, Divider, IconButton, List, Menu, ProgressBar, RadioButton, SegmentedButtons, Snackbar, Surface, Switch, Text, useTheme,
 } from 'react-native-paper';
+import { PageTitle } from './PageTitle';
 import { type BackupStatus, backUp, backupStatus, backupSupported, openBackup, pickBackupFile, setUpBackups, turnOffBackups } from '../backup';
 import { APP_NAME } from '../config';
 import { findLaptops } from '../discover';
@@ -893,7 +894,7 @@ function Privacy() {
   );
 }
 
-export function SettingsView() {
+export function SettingsView({ menu }: { menu?: React.ReactNode }) {
   const theme = useTheme();
   const { settings, updateSettings, status, refreshStatus, exportData, importData, clearChats, chats, memories, notes, hub, libraries } = useStore();
   const [allModels, setAllModels] = useState(false);
@@ -911,7 +912,7 @@ export function SettingsView() {
   return (
     <View style={styles.flex}>
       <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
-        <Text variant="headlineSmall" style={styles.h1}>Settings</Text>
+        <PageTitle menu={menu}>Settings</PageTitle>
 
         <Section title="You">
           <View style={styles.profile}>
