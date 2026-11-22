@@ -162,9 +162,11 @@ def send_and_time(text: str) -> dict:
     start = next((t for t, m in log if 'prompt_tokens = 248045' in m), None)
     end = next((t for t, m in log if 'tok/s on' in m), None)
     tok = next((re.search(r'\] ([\d.]+) tok/s on (\w+)', m) for t, m in log if 'tok/s on' in m), None)
+    split = next((re.search(r'read (\d+) new tokens in ([\d.]+) s, wrote (\d+)', m) for t, m in log if 'new tokens' in m), None)
     return {'done': done, 'words': words, 'model_s': round(end - start, 1) if start and end else None,
             'full_reprocess': any('full cache clear' in m for _, m in log),
-            'tok_s': float(tok.group(1)) if tok else None, 'accel': tok.group(2) if tok else None}
+            'tok_s': float(tok.group(1)) if tok else None, 'accel': tok.group(2) if tok else None,
+            'read': f'read {split.group(1)} new tokens in {split.group(2)} s, wrote {split.group(3)}' if split else None}
 
 
 def delete_test_chats() -> int:
@@ -215,6 +217,8 @@ def chat(runs: int) -> None:
                 if r['tok_s']:
                     line += (f"; phone model busy {r['model_s']} s, writing at {r['tok_s']} tok/s on {r['accel']}"
                              f"{', whole prompt read again' if r['full_reprocess'] else ''}")
+                if r['read']:
+                    line += f"; {r['read']}"
                 print(line)
             delete_test_chats()
     finally:

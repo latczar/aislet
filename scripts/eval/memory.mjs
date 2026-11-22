@@ -119,5 +119,20 @@ check('drops a closing question after a paragraph break', brain.withoutClosingQu
 check('keeps a reply that is only a question', brain.withoutClosingQuestion('Shall we stop here?') === 'Shall we stop here?');
 check('keeps a reply with no question', brain.withoutClosingQuestion('No problem, thanks!') === 'No problem, thanks!');
 
+// The phone's chat format: each prompt starts with the whole of the one before plus the reply, so only new text is read.
+const { chatmlPrompt, NO_THINKING } = await import('../../src/engine/chatml.ts');
+const sys = { role: 'system', content: 'You are Aislet.' };
+const first = chatmlPrompt([sys, { role: 'user', content: 'Hi' }]);
+const reply = 'Hello! How can I help?';
+const second = chatmlPrompt([sys, { role: 'user', content: 'Hi' }, { role: 'assistant', content: reply }, { role: 'user', content: 'Thanks' }]);
+check('a follow-up starts with the last prompt and its reply', second.startsWith(first + reply));
+check("matches Qwen's own template for a first message",
+  first === `<|im_start|>system
+You are Aislet.<|im_end|>
+<|im_start|>user
+Hi<|im_end|>
+<|im_start|>assistant
+${NO_THINKING}`);
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

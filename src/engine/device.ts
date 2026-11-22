@@ -6,21 +6,28 @@ import { AppState } from 'react-native';
 import { initLlama, type LlamaContext, type RNLlamaOAICompatibleMessage } from 'llama.rn';
 import { normalise } from '../brain';
 import type { Accel, Message, Performance } from '../types';
+import { chatmlPrompt } from './chatml';
+import { nativeLibrary } from '../libraryNative';
 import type { Engine, ModelInfo, ModelManager } from './types';
 
 type Spec = Omit<ModelInfo, 'downloaded'>; // size is the exact byte count of the pinned file
 
 const CHAT_MODELS: Spec[] = [
   {
-    id: 'qwen3.5-4b', name: 'Qwen3.5 4B', note: 'Best answers. Same family as the laptop model.', size: 2740937888,
+    id: 'qwen3.5-4b', name: 'Qwen3.5 4B', note: 'Best answers. For phones with 8 GB of memory or more.', size: 2740937888,
     url: 'https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/e87f176479d0855a907a41277aca2f8ee7a09523/Qwen3.5-4B-Q4_K_M.gguf', file: 'Qwen3.5-4B-Q4_K_M.gguf',
   },
   {
-    id: 'qwen3-4b', name: 'Qwen3 4B', note: 'Well-tested alternative.', size: 2497280256,
+    id: 'qwen3.5-2b', name: 'Qwen3.5 2B', note: 'Lighter and quicker, for phones with less memory. A little less clever.', size: 2012012800,
+    url: 'https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/f6d5376be1edb4d416d56da11e5397a961aca8ae/Qwen3.5-2B-Q8_0.gguf', file: 'Qwen3.5-2B-Q8_0.gguf',
+  },
+  // Offered before 1.1.2; still listed and usable for anyone who has one.
+  {
+    id: 'qwen3-4b', name: 'Qwen3 4B', note: 'Older model.', size: 2497280256, legacy: true,
     url: 'https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/bc640142c66e1fdd12af0bd68f40445458f3869b/Qwen3-4B-Q4_K_M.gguf', file: 'Qwen3-4B-Q4_K_M.gguf',
   },
   {
-    id: 'qwen3-1.7b', name: 'Qwen3 1.7B', note: 'Faster, lighter and cooler, less clever.', size: 1834426016,
+    id: 'qwen3-1.7b', name: 'Qwen3 1.7B', note: 'Older model.', size: 1834426016, legacy: true,
     url: 'https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/90862c4b9d2787eaed51d12237eafdfe7c5f6077/Qwen3-1.7B-Q8_0.gguf', file: 'Qwen3-1.7B-Q8_0.gguf',
   },
 ];
@@ -167,7 +174,12 @@ function toLlama(messages: Message[]): RNLlamaOAICompatibleMessage[] {
 const models: ModelManager = {
   chatModels: () => CHAT_MODELS.map((s) => ({ ...s, downloaded: isDownloaded(s) })),
   searchModel: () => ({ ...SEARCH_MODEL, downloaded: isDownloaded(SEARCH_MODEL) }),
-  visionModel: () => ({ ...VISION_MODEL, downloaded: isDownloaded(VISION_MODEL) }),
+  visionModel: () => ({ ...VISION_MODEL, downloaded: isDownloaded(VISION_MODEL), forModel: VISION_FOR }),
+  // The 4B needs about 4.5 GB while it answers. Phones sold with 8 GB report about 7.3-7.6 GB; below that, the 2B.
+  recommended: () => {
+    const total = nativeLibrary?.totalMemory?.() ?? 0;
+    return total > 0 && total < 7e9 ? 'qwen3.5-2b' : 'qwen3.5-4b';
+  },
 
   async download(id, onProgress, signal) {
     const s = spec(id);
@@ -261,14 +273,22 @@ export const deviceEngine: Engine = {
     const ctx = await chatContext(modelId);
     if (messages.some((m) => m.images?.length)) await ensureVision(ctx);
     try {
+      // Photos need llama.rn's own template; everything else is written as the model generated it (see chatml.ts),
+      // so a follow-up only reads the new message.
+      const sampling = { n_predict: maxTokens, temperature: 0.6, top_p: 0.9, stop: STOP };
       const result = await ctx.completion(
-        { messages: toLlama(messages), n_predict: maxTokens, temperature: 0.6, top_p: 0.9, stop: STOP, jinja: true, enable_thinking: false },
+        messages.some((m) => m.images?.length)
+          ? { ...sampling, messages: toLlama(messages), jinja: true, enable_thinking: false }
+          : { ...sampling, prompt: chatmlPrompt(messages) },
         (data) => {
           if (data.token) onToken(data.token);
         },
       );
-      speed = result.timings?.predicted_per_second ?? null;
-      console.log(`[ember] ${speed?.toFixed(1)} tok/s on ${accel}`);
+      const t = result.timings;
+      speed = t?.predicted_per_second ?? null;
+      // How the time split: tokens read afresh (the rest came from the saved reading) and tokens written.
+      console.log(`[ember] ${speed?.toFixed(1)} tok/s on ${accel}; read ${t?.prompt_n ?? '?'} new tokens in `
+        + `${((t?.prompt_ms ?? 0) / 1000).toFixed(1)} s, wrote ${t?.predicted_n ?? '?'}`);
       return result.text ?? '';
     } finally {
       touch();
