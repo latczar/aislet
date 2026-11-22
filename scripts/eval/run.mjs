@@ -6,7 +6,7 @@
 //   node scripts/eval/run.mjs --runs 3 --only identity-name,draft-text
 //
 // Options: --url (Ollama, default http://localhost:11434), --model, --runs (default 1), --seed (default 42),
-// --only (case ids or groups, comma-separated), --cases (extra case files, comma-separated),
+// --only (case ids or groups, comma-separated), --cases (extra case files, comma-separated), --where phone (the phone's prompt),
 // --out (JSON file for the answers and timings), --quiet.
 // Needs Node 22.18+ (it loads the app's TypeScript directly) and nothing else. Exit code 0 only if every case passes.
 //
@@ -117,7 +117,7 @@ async function main() {
     const runs = [];
     for (let r = 0; r < opt.runs; r++) {
       seed = opt.seed + r;
-      const messages = c.build ? c.build(app) : buildMessages(c);
+      const messages = c.build ? c.build(app) : buildMessages(opt.where && !c.where ? { ...c, where: opt.where } : c);
       let answer = '';
       const started = performance.now();
       let first = null;

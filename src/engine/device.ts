@@ -86,6 +86,7 @@ let performance: Performance = 'balanced';
 let chatCtx: LlamaContext | null = null;
 let chatKey = ''; // model + accel the context was made with
 let prefilling: Promise<void> | null = null; // reading the system message ahead (warm)
+let asking: Promise<string> | null = null; // learning or tidying; a new message stops it
 let visionOn = false;
 let embedCtx: LlamaContext | null = null;
 let loading: Promise<LlamaContext> | null = null;
@@ -234,6 +235,30 @@ const models: ModelManager = {
   },
 };
 
+/** Ask the chat's model for JSON (learning, tidying) without losing its reading of the chat. */
+async function askJson(ctx: LlamaContext, messages: Message[], maxTokens: number): Promise<string> {
+  // Learning and tidying ask the chat's model something else, which would replace its reading of the chat (on a
+  // phone CPU, about a minute of work for a long chat). Save that reading to a file first and load it back after,
+  // so the next message only reads what's new. If either step fails, the next message just reads it all again.
+  const state = new File(Paths.cache, 'chat-state.bin');
+  const saved = await ctx.saveSession(state.uri).catch(() => 0);
+  try {
+    const result = await ctx.completion({
+      messages: toLlama(messages.map(({ images: _i, ...m }) => m)), n_predict: maxTokens, temperature: 0, stop: STOP,
+      jinja: true, enable_thinking: false, response_format: { type: 'json_object' },
+    });
+    return result.text ?? '';
+  } finally {
+    if (saved > 0) await ctx.loadSession(state.uri).catch(() => undefined);
+    try {
+      if (state.exists) state.delete();
+    } catch {
+      // a leftover file in the cache folder is harmless; it's replaced next time
+    }
+    touch();
+  }
+}
+
 export const deviceEngine: Engine = {
   where: 'phone',
   models,
@@ -282,6 +307,11 @@ export const deviceEngine: Engine = {
   async chat(messages, modelId, onToken, maxTokens = 1024) {
     const ctx = await chatContext(modelId);
     if (prefilling) await prefilling;
+    if (asking) {
+      // Learning from the last message is a bonus: stop it so this one starts now. Its reading of the chat is put back.
+      await ctx.stopCompletion().catch(() => undefined);
+      await asking.catch(() => undefined);
+    }
     if (messages.some((m) => m.images?.length)) await ensureVision(ctx);
     try {
       // Photos need llama.rn's own template; everything else is written as the model generated it (see chatml.ts),
@@ -309,25 +339,13 @@ export const deviceEngine: Engine = {
   async json(messages, modelId, maxTokens = 256) {
     const ctx = await chatContext(modelId);
     if (prefilling) await prefilling;
-    // Learning and tidying ask the chat's model something else, which would replace its reading of the chat (on a
-    // phone CPU, about a minute of work for a long chat). Save that reading to a file first and load it back after,
-    // so the next message only reads what's new. If either step fails, the next message just reads it all again.
-    const state = new File(Paths.cache, 'chat-state.bin');
-    const saved = await ctx.saveSession(state.uri).catch(() => 0);
+    if (asking) await asking.catch(() => undefined);
+    const job = askJson(ctx, messages, maxTokens);
+    asking = job;
     try {
-      const result = await ctx.completion({
-        messages: toLlama(messages.map(({ images: _i, ...m }) => m)), n_predict: maxTokens, temperature: 0, stop: STOP,
-        jinja: true, enable_thinking: false, response_format: { type: 'json_object' },
-      });
-      return result.text ?? '';
+      return await job;
     } finally {
-      if (saved > 0) await ctx.loadSession(state.uri).catch(() => undefined);
-      try {
-        if (state.exists) state.delete();
-      } catch {
-        // a leftover file in the cache folder is harmless; it's replaced next time
-      }
-      touch();
+      if (asking === job) asking = null;
     }
   },
 

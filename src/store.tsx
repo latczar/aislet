@@ -1022,12 +1022,12 @@ ${interviewPrompt(s.name)}` : prompt };
     const reactingTo = before?.role === 'assistant' ? before.content : '';
     // "Already known" lists only the related facts, so learning stays quick with a long memory.
     if (base.mode === 'interview' || worthLearning(text)) {
-      const known = relevantMemories(memRef.current, text, 40);
+      const known = relevantMemories(memRef.current, text, active.where === 'phone' ? 15 : 40); // fewer to read on a phone
       jobs.push({ messages: learnMessages(name, known, text, reactingTo), known });
     }
     if (userTurns > 0 && userTurns % 6 === 0) {
       const said = recent.filter((m) => m.role === 'user').map((m) => m.display ?? m.content).join('\n');
-      const known = relevantMemories(memRef.current, said, 40);
+      const known = relevantMemories(memRef.current, said, active.where === 'phone' ? 15 : 40);
       jobs.push({ messages: conversationLearnMessages(name, known, recent), known });
     }
     const added: Learnt[] = [];

@@ -41,6 +41,9 @@ export function systemPrompt(
       'exactly that text, with its line breaks, in a code block marked draft (```draft), so it can be copied on its ' +
       'own; outside it, keep to one short line, and give tips only if asked. Never put answers, tables or explanations in one.',
     LENGTH[settings.length] ?? LENGTH.balanced,
+    // A phone writes about 10 words a second, so long answers keep people waiting.
+    ...(where === 'phone' && settings.length !== 'detailed'
+      ? ['Keep most answers under about 150 words, unless the task needs more, like a plan, code or a full list.'] : []),
     settings.webSearch
       ? "You can't open web pages yourself. When a question needs current information, the app searches DuckDuckGo " +
         'first and the results come with the message; they can also tap the globe by the message box to make it search.'
