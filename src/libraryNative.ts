@@ -6,6 +6,7 @@ import { type FileLibrary, type FileList, LIBRARY_FOLDER, type LibraryBook, type
 
 export interface NativeLibrary {
   storage(): string;
+  totalMemory?(): number; // bytes; missing before 1.1.2
   hasAccess(): boolean;
   appFolder(): string;
   requestAccess(): Promise<void>;

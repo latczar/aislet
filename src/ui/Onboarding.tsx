@@ -26,8 +26,11 @@ function Step({ n, of }: { n: number; of: number }) {
 
 function GetModel({ onDone }: { onDone: () => void }) {
   const theme = useTheme();
-  const { settings, status, refreshStatus } = useStore();
-  const model = engine.models?.chatModels().find((m) => m.id === settings.modelId) ?? engine.models?.chatModels()[0];
+  const { settings, updateSettings, status, refreshStatus } = useStore();
+  // A model already on the phone, or else the one that suits this phone's memory.
+  const models = engine.models;
+  const model = models?.chatModels().find((m) => m.id === settings.modelId && m.downloaded)
+    ?? models?.chatModels().find((m) => m.id === models.recommended());
   const dl = useDownload(model?.id ?? '');
 
   if (!engine.models) {
@@ -66,7 +69,7 @@ function GetModel({ onDone }: { onDone: () => void }) {
         <Surface style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]} elevation={0}>
           <Text variant="titleMedium" style={{ fontFamily: FONT.semibold }}>On this phone</Text>
           <Text variant="bodyMedium" style={muted}>
-            {model.name}, {formatSize(model.size)}. Download it once on Wi-Fi; after that it works anywhere, even with no signal.
+            {model.name}, {formatSize(model.size)}, chosen to suit this phone. Download it once on Wi-Fi; after that it works anywhere, even with no signal.
           </Text>
           {onPhone ? (
             <Text variant="labelLarge" style={{ color: theme.colors.primary }}>Downloaded and ready</Text>
@@ -79,7 +82,7 @@ function GetModel({ onDone }: { onDone: () => void }) {
               </View>
             </View>
           ) : (
-            <Button mode="contained-tonal" icon="download" onPress={() => startDownload(model.id, refreshStatus)}>Download</Button>
+            <Button mode="contained-tonal" icon="download" onPress={() => startDownload(model.id, () => { updateSettings({ modelId: model.id }); refreshStatus(); })}>Download</Button>
           )}
           {dl.problem && <Text variant="bodySmall" style={{ color: theme.colors.error }}>{dl.problem}</Text>}
         </Surface>

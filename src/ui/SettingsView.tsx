@@ -7,7 +7,7 @@ import { type BackupStatus, backUp, backupStatus, backupSupported, openBackup, p
 import { APP_NAME } from '../config';
 import { findLaptops } from '../discover';
 import { engine } from '../engine';
-import type { ModelInfo } from '../engine/types';
+import type { ModelInfo, ModelManager } from '../engine/types';
 import { STALE_PC_KEY, UNREACHABLE, hubNewCode, hubPairing, hubPing, isLinkKey, normaliseAddress, pairWith } from '../hub';
 import { KIWIX_FOLDER, LIBRARY_FOLDER, type LibraryBook, describeBook } from '../library';
 import { cleanCode, isPairingCode } from '../link';
@@ -41,8 +41,9 @@ function Section({ title, children, footer }: { title: string; children: React.R
   );
 }
 
-function ModelRow({ model, selected, onSelect, onChanged, icon = 'text-search' }: {
+function ModelRow({ model, selected, onSelect, onChanged, icon = 'text-search', replaces = [] }: {
   model: ModelInfo; selected?: boolean; onSelect?: () => void; onChanged: () => void; icon?: string;
+  replaces?: ModelInfo[]; // the phone keeps one AI model: getting another deletes these once it's downloaded
 }) {
   const theme = useTheme();
   const dl = useDownload(model.id);
@@ -78,7 +79,21 @@ function ModelRow({ model, selected, onSelect, onChanged, icon = 'text-search' }
               }}
             />
           ) : (
-            <Button mode="contained-tonal" compact style={p.style} onPress={() => startDownload(model.id, () => { onChanged(); onSelect?.(); })}>
+            <Button
+              mode="contained-tonal" compact style={p.style}
+              onPress={async () => {
+                if (replaces.length) {
+                  const names = replaces.map((r) => r.name).join(' and ');
+                  const freed = formatSize(replaces.reduce((n, r) => n + r.size, 0));
+                  if (!await confirm(`Switch to ${model.name}?`, `Aislet keeps one AI model on the phone. It downloads ${model.name} (${formatSize(model.size)}), then deletes ${names} to free ${freed}. Until then, ${names} keeps working.`, 'Switch')) return;
+                }
+                startDownload(model.id, async () => {
+                  onSelect?.();
+                  for (const r of replaces) await engine.models!.remove(r.id).catch(() => undefined);
+                  onChanged();
+                });
+              }}
+            >
               Get
             </Button>
           )
@@ -95,6 +110,15 @@ function ModelRow({ model, selected, onSelect, onChanged, icon = 'text-search' }
       {dl.problem && <Text variant="bodySmall" style={[styles.progress, { color: theme.colors.error }]}>{dl.problem}</Text>}
     </View>
   );
+}
+
+/** The phone's chat models to list: the recommended one first (marked), then any on the phone or chosen, then the rest. */
+function shownModels(models: ModelManager, chosen: string, all: boolean): ModelInfo[] {
+  const rec = models.recommended();
+  return models.chatModels()
+    .filter((m) => m.id === rec || m.downloaded || m.id === chosen || (all && !m.legacy))
+    .sort((a, b) => Number(b.id === rec) - Number(a.id === rec))
+    .map((m) => (m.id === rec ? { ...m, note: `Recommended for this phone. ${m.note}` } : m));
 }
 
 /** Your own files are listed one by one up to this many (anything needing attention first); the rest are counted. */
@@ -978,19 +1002,25 @@ export function SettingsView() {
             <>
               <Divider />
               <RadioButton.Group value={settings.modelId} onValueChange={(id) => updateSettings({ modelId: id })}>
-                {/* The recommended model (listed first) and any you have; the rest wait behind "Other models". */}
-                {engine.models.chatModels()
-                  .filter((m, i) => allModels || i === 0 || m.downloaded || m.id === settings.modelId)
+                {/* The model that suits this phone (listed first) and any you have; the rest wait behind "Other models".
+                    Models no longer offered show only while they're on the phone. */}
+                {shownModels(engine.models, settings.modelId, allModels)
                   .map((m) => (
-                    <ModelRow key={m.id} model={m} selected={settings.modelId === m.id} onSelect={() => updateSettings({ modelId: m.id })} onChanged={changed} />
+                    <ModelRow
+                      key={m.id} model={m} selected={settings.modelId === m.id} onSelect={() => updateSettings({ modelId: m.id })} onChanged={changed}
+                      replaces={[
+                        ...engine.models!.chatModels().filter((o) => o.downloaded && o.id !== m.id),
+                        ...[engine.models!.visionModel()].filter((v) => v.downloaded && v.forModel && v.forModel !== m.id),
+                      ]}
+                    />
                   ))}
               </RadioButton.Group>
-              {!allModels && engine.models.chatModels().some((m, i) => !(i === 0 || m.downloaded || m.id === settings.modelId)) && (
+              {!allModels && shownModels(engine.models, settings.modelId, true).length > shownModels(engine.models, settings.modelId, false).length && (
                 <>
                   <Divider />
                   <Row
                     title="Other models"
-                    description="Smaller or older models, if this one doesn't suit your phone"
+                    description="Smaller or older models, if this one doesn't suit your phone. Getting one replaces the current model."
                     left={(p) => <List.Icon {...p} icon="view-list-outline" />}
                     right={(p) => <List.Icon {...p} icon="chevron-down" />}
                     onPress={() => setAllModels(true)}

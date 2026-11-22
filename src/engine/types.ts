@@ -17,6 +17,8 @@ export interface ModelInfo {
   url: string;
   file: string;
   downloaded: boolean;
+  forModel?: string; // an add-on that only works with this chat model (photo understanding)
+  legacy?: boolean; // no longer offered; listed only if it's already on the phone
 }
 
 /** Phone only: download and manage on-device models. */
@@ -24,6 +26,8 @@ export interface ModelManager {
   chatModels(): ModelInfo[];
   searchModel(): ModelInfo;
   visionModel(): ModelInfo;
+  /** The chat model that suits this phone's memory. */
+  recommended(): string;
   download(id: string, onProgress: (fraction: number) => void, signal: AbortSignal): Promise<void>;
   remove(id: string): Promise<void>;
 }

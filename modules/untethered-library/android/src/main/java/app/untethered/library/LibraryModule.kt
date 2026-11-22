@@ -1,5 +1,7 @@
 package app.untethered.library
 
+import android.app.ActivityManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -68,6 +70,13 @@ class LibraryModule : Module() {
     }
     AsyncFunction("linkOpen") Coroutine { enc: String, mac: String, context: String, sealed: String ->
       withContext(Dispatchers.Default) { LinkCrypto.open(enc, mac, context, sealed) }
+    }
+
+    /** The phone's memory in bytes, so the app can recommend an AI model that fits. */
+    Function("totalMemory") {
+      val info = ActivityManager.MemoryInfo()
+      (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(info)
+      info.totalMem.toDouble()
     }
 
     /** The phone's shared storage, e.g. /storage/emulated/0. */
