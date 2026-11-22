@@ -438,9 +438,15 @@ def check_chat_typing() -> str:
         raise CheckFailed('box did not shrink after clearing')
     hide_keyboard()
 
-    # The attach menu opens, and Back closes it without leaving the app.
+    # The attach menu opens, and Back closes it without leaving the app. The bar slides down as the keyboard closes:
+    # wait for it to settle, and tap again if the first tap landed mid-slide.
+    time.sleep(1)
     tap(wait_for('the attach button', desc='Attach a photo or file'))
-    wait_for('the attach menu', timeout=5, text='PDF or text file')
+    try:
+        wait_for('the attach menu', timeout=4, text='PDF or text file')
+    except CheckFailed:
+        tap(wait_for('the attach button', desc='Attach a photo or file'))
+        wait_for('the attach menu', timeout=5, text='PDF or text file')
     key(4)
     time.sleep(1)
     if foreground() != PKG:
