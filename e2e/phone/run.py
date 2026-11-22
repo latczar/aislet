@@ -1578,7 +1578,7 @@ def relaunch() -> None:
     shell(f'am force-stop {PKG}')
     safe_front('opening the app')
     shell(f'am start -W -n {PKG}/.MainActivity -f 0x10008000')
-    wait_for('the tabs after reopening', timeout=20, text='Chat')
+    wait_for('the menu button after reopening', timeout=20, desc='Menu')
 
 
 def check_resume() -> str:

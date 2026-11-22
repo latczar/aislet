@@ -894,7 +894,7 @@ function Privacy() {
   );
 }
 
-export function SettingsView({ menu }: { menu?: React.ReactNode }) {
+export function SettingsView({ inBar }: { inBar?: boolean }) {
   const theme = useTheme();
   const { settings, updateSettings, status, refreshStatus, exportData, importData, clearChats, chats, memories, notes, hub, libraries } = useStore();
   const [allModels, setAllModels] = useState(false);
@@ -921,7 +921,7 @@ export function SettingsView({ menu }: { menu?: React.ReactNode }) {
   return (
     <View style={styles.flex}>
       <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
-        <PageTitle menu={menu}>Settings</PageTitle>
+        <PageTitle inBar={inBar}>Settings</PageTitle>
 
         <Section title="You">
           <View style={styles.profile}>

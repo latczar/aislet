@@ -70,7 +70,7 @@ function Editor({ note, onDone }: { note: Partial<Note>; onDone: () => void }) {
   );
 }
 
-export function NotesView({ menu }: { menu?: React.ReactNode }) {
+export function NotesView({ inBar }: { inBar?: boolean }) {
   const theme = useTheme();
   const { notes } = useStore();
   const [editing, setEditing] = useState<Partial<Note> | null>(null);
@@ -81,7 +81,7 @@ export function NotesView({ menu }: { menu?: React.ReactNode }) {
     <ScrollView contentContainerStyle={styles.page}>
       <View style={styles.header}>
         <View style={styles.flex}>
-          <PageTitle menu={menu}>Notes</PageTitle>
+          <PageTitle inBar={inBar}>Notes</PageTitle>
           <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
             Your assistant searches these when they help answer you.
           </Text>

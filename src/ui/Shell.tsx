@@ -97,9 +97,9 @@ export function Shell() {
 
   const content =
     view === 'chat' ? <ChatView onOpenSettings={() => setView('settings')} incoming={incoming} onIncomingTaken={takeIncoming} talkRequest={talkRequest} />
-      : view === 'memory' ? <MemoryView onStartInterview={() => setView('chat')} menu={menu} />
-        : view === 'notes' ? <NotesView menu={menu} />
-          : <SettingsView menu={menu} />;
+      : view === 'memory' ? <MemoryView onStartInterview={() => setView('chat')} inBar={!wide} />
+        : view === 'notes' ? <NotesView inBar={!wide} />
+          : <SettingsView inBar={!wide} />;
 
   const startChat = () => {
     tap();
@@ -167,11 +167,16 @@ export function Shell() {
       onLayout={keyboard.onLayout}
       style={[styles.flex, { backgroundColor: theme.colors.background, paddingTop: insets.top, paddingBottom: keyboard.inset }]}
     >
-      {view === 'chat' && (
+      {view === 'chat' ? (
         <ChatHeader
           left={menu}
           right={<IconButton icon="square-edit-outline" onPress={startChat} disabled={busy} accessibilityLabel="New chat" />}
         />
+      ) : (
+        <View style={[styles.pageBar, { borderBottomColor: theme.colors.outlineVariant }]}>
+          {menu}
+          <Text variant="titleLarge" style={styles.brandText}>{ROUTES.find((r) => r.key === view)?.title}</Text>
+        </View>
       )}
       <View style={[styles.flex, { paddingBottom: keyboard.open && keyboard.inset > 0 ? 0 : insets.bottom }]}>{content}</View>
 
@@ -230,6 +235,7 @@ const styles = StyleSheet.create({
   sheetRow: { flex: 1, flexDirection: 'row' },
   sheet: { width: '84%', maxWidth: 360 },
   sheetHead: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingBottom: 14 },
+  pageBar: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 60, paddingHorizontal: 4, borderBottomWidth: StyleSheet.hairlineWidth },
   tiles: { flexDirection: 'row', gap: 6, paddingHorizontal: 12, paddingBottom: 12 },
   tile: { flex: 1, minWidth: 0, alignItems: 'center', gap: 2, paddingVertical: 10, paddingHorizontal: 2, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth },
   tileText: { fontFamily: FONT.medium },

@@ -1,20 +1,15 @@
-// A page's title, with the phone's menu button beside it (Memory, Notes and Settings), so there's no second title bar.
+// A page's title. On the phone the title and the menu button (☰) sit in a fixed bar at the top instead (Shell), so the
+// menu stays in reach on long pages; there the page leaves its own title out.
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import { FONT } from './theme';
 
-export function PageTitle({ children, menu }: { children: string; menu?: React.ReactNode }) {
-  return (
-    <View style={[styles.row, menu ? styles.withMenu : null]}>
-      {menu}
-      <Text variant="headlineSmall" style={styles.title}>{children}</Text>
-    </View>
-  );
+export function PageTitle({ children, inBar }: { children: string; inBar?: boolean }) {
+  if (inBar) return null;
+  return <Text variant="headlineSmall" style={styles.title}>{children}</Text>;
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  withMenu: { marginLeft: -14, gap: 2 }, // the icon lines up with the page's left edge
-  title: { fontFamily: FONT.semibold },
+  title: { fontFamily: FONT.semibold, marginBottom: 8 },
 });

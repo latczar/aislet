@@ -34,7 +34,7 @@ function TidyItem({ change, memories, checked, onToggle }: { change: TidyChange;
   );
 }
 
-export function MemoryView({ onStartInterview, menu }: { onStartInterview: () => void; menu?: React.ReactNode }) {
+export function MemoryView({ onStartInterview, inBar }: { onStartInterview: () => void; inBar?: boolean }) {
   const theme = useTheme();
   const {
     memories, addMemory, removeMemory, proposeTidy, applyTidy, settings, updateSettings, startInterview, status, busy,
@@ -77,7 +77,7 @@ export function MemoryView({ onStartInterview, menu }: { onStartInterview: () =>
   return (
     <View style={styles.flex}>
     <ScrollView contentContainerStyle={styles.page}>
-      <PageTitle menu={menu}>Memory</PageTitle>
+      <PageTitle inBar={inBar}>Memory</PageTitle>
       <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
         What it knows about you, learnt from your chats and feedback like "shorter, please". Undo anything it learns, or
         remove it here. {settings.learn ? '' : 'Learning is off (Settings → More settings → Memory).'}
