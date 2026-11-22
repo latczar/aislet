@@ -392,6 +392,19 @@ def ollama_command() -> list[str] | None:
     return [exe, "serve"] if exe else None
 
 
+def ollama_app_running() -> bool:
+    """Whether Ollama's own app (Windows tray) is running. It starts its server itself, so the hub mustn't start a
+    second one: the app would then fail to start its own every second, filling its log."""
+    if not WINDOWS:
+        return False
+    try:
+        out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq ollama app.exe", "/NH"], capture_output=True, text=True,
+                             timeout=10, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return "ollama app.exe" in out.lower()
+
+
 def start_ollama() -> bool:
     """Start Ollama when it isn't running. True while it's starting; False if it isn't installed.
     Starts it at most once every OLLAMA_GRACE seconds, however often it's asked."""
@@ -399,6 +412,8 @@ def start_ollama() -> bool:
     with ollama_lock:
         if time.time() - ollama_launched < OLLAMA_GRACE:
             return True
+        if ollama_app_running():
+            return True  # its app is up and starts the server itself, a little after login
         command = ollama_command()
         if not command:
             return False
