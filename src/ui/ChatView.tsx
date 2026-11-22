@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Animated, AppState, Image, Keyboard, type NativeScrollEvent, type NativeSyntheticEvent, Platform, Pressable, ScrollView,
+  Animated, AppState, Image, Keyboard, Modal, type NativeScrollEvent, type NativeSyntheticEvent, Platform, Pressable, ScrollView,
   type ScrollViewInstance, StyleSheet, TextInput,
   type TextInputInstance, View, useWindowDimensions,
 } from 'react-native';
@@ -763,11 +763,19 @@ function Composer({ ready, incoming, onIncomingTaken, talkRequest = 0 }: Compose
             accessibilityLabel="Attach a photo or file" onPress={openAttach} style={styles.composerIcon}
           />
         </View>
-        <Menu visible={menu} onDismiss={closeMenu} anchor={attachAt}>
-          <Menu.Item leadingIcon="image-outline" title="Photo" onPress={() => addPhoto(false)} />
-          {cameraSupported && <Menu.Item leadingIcon="camera-outline" title="Take a photo" onPress={() => addPhoto(true)} />}
-          <Menu.Item leadingIcon="file-document-outline" title="PDF or text file" onPress={addFile} />
-        </Menu>
+        {/* Our own small popup rather than Paper's Menu: after the keyboard had been open, Paper's menu measured a
+            stale window and didn't show. This one sits just above the paperclip, and a tap outside or Back closes it. */}
+        <Modal visible={menu} transparent animationType="fade" onRequestClose={closeMenu} statusBarTranslucent>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeMenu} accessibilityLabel="Close the attach menu" />
+          <Surface
+            elevation={2}
+            style={[styles.attachCard, { top: attachAt.y, left: attachAt.x, backgroundColor: theme.colors.elevation.level2 }]}
+          >
+            <Menu.Item leadingIcon="image-outline" title="Photo" onPress={() => addPhoto(false)} />
+            {cameraSupported && <Menu.Item leadingIcon="camera-outline" title="Take a photo" onPress={() => addPhoto(true)} />}
+            <Menu.Item leadingIcon="file-document-outline" title="PDF or text file" onPress={addFile} />
+          </Surface>
+        </Modal>
         {settings.webSearch && (
           <IconButton
             icon="web" size={22} disabled={!ready || busy} selected={web}
@@ -995,6 +1003,7 @@ const styles = StyleSheet.create({
   homeHead: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   homeLogo: { width: 44, height: 44, borderRadius: 13 },
   homeGreeting: { fontFamily: FONT.semibold },
+  attachCard: { position: 'absolute', borderRadius: 12, paddingVertical: 8, minWidth: 220 },
   homeGroup: { gap: 8 },
   homeRow: { flexDirection: 'row', alignItems: 'center', gap: 14, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, paddingVertical: 10 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
