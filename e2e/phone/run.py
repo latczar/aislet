@@ -2014,12 +2014,13 @@ def check_hands_free() -> str:
         end_button = find(screen(), desc='End hands-free')
         if end_button:
             tap(end_button[0])
-        if heard_nearby:
-            stop = find(screen(), desc='Stop')
-            if stop:
-                tap(stop[0])
-            time.sleep(1)
-            delete_open_chat()
+        # Speech nearby (a video, a radio) can be heard and sent, which starts a chat. It's always the new chat this
+        # check opened, never one of yours, so delete whatever chat is open now (an untitled new chat is skipped).
+        stop = find(screen(), desc='Stop')
+        if stop:
+            tap(stop[0])
+        time.sleep(1)
+        delete_open_chat()
 
 
 CHECKS = {
