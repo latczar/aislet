@@ -479,8 +479,13 @@ function Composer({ ready, incoming, onIncomingTaken, talkRequest = 0 }: Compose
   const openAttach = () => {
     tap();
     const height = (cameraSupported ? 3 : 2) * 48 + 16; // Paper's menu items are 48 high, plus padding
-    if (!attachRef.current) { setMenu(true); return; }
-    attachRef.current.measureInWindow((x: number, y: number) => { setAttachAt({ x, y: Math.max(8, y - height - 4) }); setMenu(true); });
+    // Let go of the message box first: with it still focused, the menu's own keyboard handling swallowed the tap.
+    input.current?.blur();
+    Keyboard.dismiss();
+    setTimeout(() => {
+      if (!attachRef.current) { setMenu(true); return; }
+      attachRef.current.measureInWindow((x: number, y: number) => { setAttachAt({ x, y: Math.max(8, y - height - 4) }); setMenu(true); });
+    }, 120);
   };
   const closeMenu = useCallback(() => setMenu(false), []);
   useBackCloses(menu, closeMenu);
