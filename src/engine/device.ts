@@ -85,9 +85,38 @@ let accel: Accel = 'cpu';
 let performance: Performance = 'balanced';
 let chatCtx: LlamaContext | null = null;
 let chatKey = ''; // model + accel the context was made with
-let prefilling: Promise<void> | null = null; // reading the system message ahead (warm)
 let prefilled = ''; // the model and system message read ahead since the model loaded: done once, not on every check
-let asking: Promise<string> | null = null; // learning or tidying; a new message stops it
+
+// The chat model does one job at a time (llama.rn refuses a second one with "Context is busy"), so jobs take turns
+// here: reading a new chat's system message ahead, replies, learning or tidying, and deleting a model. A reply comes
+// first: it stops learning that's running, and learning waiting for its turn is skipped.
+type Job = 'ahead' | 'reply' | 'json' | 'remove';
+let queue: Promise<void> = Promise.resolve();
+let running: Job | null = null;
+let skipJson = false;
+
+function inTurn<T>(kind: Job, job: () => Promise<T>): Promise<T> {
+  const run = queue.then(async () => {
+    running = kind;
+    try {
+      return await job();
+    } finally {
+      running = null;
+      touch();
+    }
+  });
+  queue = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+/** Stop the chat model's current job. llama.rn's stop returns nothing here, not a promise. */
+function stopJob(): void {
+  try {
+    void chatCtx?.stopCompletion();
+  } catch {
+    // nothing was running
+  }
+}
 let visionOn = false;
 let embedCtx: LlamaContext | null = null;
 let loading: Promise<LlamaContext> | null = null;
@@ -109,7 +138,7 @@ async function unload() {
 /** Free the phone's memory and keep it cool when the app isn't being used. */
 function touch() {
   if (idleTimer) clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => { unload(); }, PROFILE[performance].idleMs);
+  idleTimer = setTimeout(() => { if (running) touch(); else unload(); }, PROFILE[performance].idleMs); // never mid-job
 }
 
 function accelParams(a: Accel) {
@@ -231,25 +260,29 @@ const models: ModelManager = {
   async remove(id) {
     const s = spec(id);
     if (!s) return;
-    await unload();
-    if (modelFile(s).exists) modelFile(s).delete();
-    if (doneMarker(s).exists) doneMarker(s).delete();
+    await inTurn('remove', async () => { // after any reply being written, so it isn't cut short
+      await unload();
+      if (modelFile(s).exists) modelFile(s).delete();
+      if (doneMarker(s).exists) doneMarker(s).delete();
+    });
   },
 };
 
 /** Ask the chat's model for JSON (learning, tidying) without losing its reading of the chat. */
-async function askJson(ctx: LlamaContext, messages: Message[], maxTokens: number): Promise<string> {
+async function askJson(ctx: LlamaContext, messages: Message[], maxTokens: number, skip: () => boolean): Promise<string> {
   // Learning and tidying ask the chat's model something else, which would replace its reading of the chat (on a
   // phone CPU, about a minute of work for a long chat). Save that reading to a file first and load it back after,
   // so the next message only reads what's new. If either step fails, the next message just reads it all again.
   const state = new File(Paths.cache, 'chat-state.bin');
   const saved = await ctx.saveSession(state.uri).catch(() => 0);
   try {
-    const result = await ctx.completion({
+    if (skip()) return ''; // a message was sent while the reading was saved
+    const asked = ctx.completion({
       messages: toLlama(messages.map(({ images: _i, ...m }) => m)), n_predict: maxTokens, temperature: 0, stop: STOP,
       jinja: true, enable_thinking: false, response_format: { type: 'json_object' },
     });
-    return result.text ?? '';
+    if (skip()) stopJob(); // sent just as it started
+    return (await asked).text ?? '';
   } finally {
     if (saved > 0) await ctx.loadSession(state.uri).catch(() => undefined);
     try {
@@ -291,38 +324,33 @@ export const deviceEngine: Engine = {
 
   async warm(modelId, system) {
     const s = spec(modelId);
-    if (performance !== 'cool' && s && isDownloaded(s)) { // Cool mode only loads the model when you send
+    if (performance === 'cool' || !s || !isDownloaded(s)) return; // Cool mode only loads the model when you send
+    await inTurn('ahead', async () => {
       const ctx = await chatContext(modelId);
       const key = `${chatKey}|${system}`;
-      if (system && !prefilling && prefilled !== key) {
-        prefilled = key;
-        // Read the system message now, while they look at the screen or type. llama.rn keeps a save point after it,
-        // so the first message only reads what's typed (about 25 s less on a phone CPU). One token is written and
-        // dropped. A message sent meanwhile waits for this rather than reading it all again.
-        prefilling = ctx.completion({ prompt: chatmlSystem(system), n_predict: 1, temperature: 0 })
-          .then(() => undefined, () => undefined)
-          .finally(() => { prefilling = null; });
-        await prefilling;
-      }
-      touch();
-    }
+      if (!system || prefilled === key) return;
+      // Read the system message now, while they look at the screen or type. llama.rn keeps a save point after it, so
+      // the first message only reads what's typed (about 25 s less on a phone CPU). One token is written and dropped.
+      // A message sent meanwhile waits its turn rather than reading it all again.
+      await ctx.completion({ prompt: chatmlSystem(system), n_predict: 1, temperature: 0 });
+      prefilled = key;
+    }).catch(() => undefined);
   },
 
-  async chat(messages, modelId, onToken, maxTokens = 1024) {
-    const ctx = await chatContext(modelId);
-    if (prefilling) await prefilling;
-    if (asking) {
-      // Learning from the last message is a bonus: stop it so this one starts now. Its reading of the chat is put back.
-      await ctx.stopCompletion().catch(() => undefined);
-      await asking.catch(() => undefined);
-    }
-    if (messages.some((m) => m.images?.length)) await ensureVision(ctx);
-    try {
+  chat(messages, modelId, onToken, maxTokens = 1024) {
+    // Learning from the last message is a bonus: stop it so this one starts now (its reading of the chat is put back).
+    skipJson = true;
+    if (running === 'json') stopJob();
+    return inTurn('reply', async () => {
+      skipJson = false; // learning asked for after this reply runs after it
+      const ctx = await chatContext(modelId);
+      const photos = messages.some((m) => m.images?.length);
+      if (photos) await ensureVision(ctx);
       // Photos need llama.rn's own template; everything else is written as the model generated it (see chatml.ts),
       // so a follow-up only reads the new message.
       const sampling = { n_predict: maxTokens, temperature: 0.6, top_p: 0.9, stop: STOP };
       const result = await ctx.completion(
-        messages.some((m) => m.images?.length)
+        photos
           ? { ...sampling, messages: toLlama(messages), jinja: true, enable_thinking: false }
           : { ...sampling, prompt: chatmlPrompt(messages) },
         (data) => {
@@ -335,22 +363,15 @@ export const deviceEngine: Engine = {
       console.log(`[ember] ${speed?.toFixed(1)} tok/s on ${accel}; read ${t?.prompt_n ?? '?'} new tokens in `
         + `${((t?.prompt_ms ?? 0) / 1000).toFixed(1)} s, wrote ${t?.predicted_n ?? '?'}`);
       return result.text ?? '';
-    } finally {
-      touch();
-    }
+    });
   },
 
-  async json(messages, modelId, maxTokens = 256) {
-    const ctx = await chatContext(modelId);
-    if (prefilling) await prefilling;
-    if (asking) await asking.catch(() => undefined);
-    const job = askJson(ctx, messages, maxTokens);
-    asking = job;
-    try {
-      return await job;
-    } finally {
-      if (asking === job) asking = null;
-    }
+  json(messages, modelId, maxTokens = 256) {
+    return inTurn('json', async () => {
+      if (skipJson) return ''; // a message is waiting: it goes first
+      const ctx = await chatContext(modelId);
+      return askJson(ctx, messages, maxTokens, () => skipJson);
+    });
   },
 
   async embed(texts, kind) {
@@ -363,6 +384,6 @@ export const deviceEngine: Engine = {
   },
 
   stop() {
-    chatCtx?.stopCompletion();
+    stopJob();
   },
 };

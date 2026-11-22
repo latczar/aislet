@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { Button, Divider, List, Surface, Text, useTheme } from 'react-native-paper';
+import { useBackCloses } from './back';
 import { PageTitle } from './PageTitle';
 import { useStore } from '../store';
 import type { Note } from '../types';
@@ -14,6 +15,13 @@ function Editor({ note, onDone }: { note: Partial<Note>; onDone: () => void }) {
   const [title, setTitle] = useState(note.title ?? '');
   const [text, setText] = useState(note.text ?? '');
   const [saving, setSaving] = useState(false);
+  // Back keeps what was written (as notes apps do) and closes the editor, rather than leaving the page and losing it.
+  const keepAndClose = useCallback(() => {
+    const changed = title !== (note.title ?? '') || text !== (note.text ?? '');
+    if (changed && text.trim()) saveNote({ id: note.id, title, text }).catch(() => undefined);
+    onDone();
+  }, [title, text, note, saveNote, onDone]);
+  useBackCloses(true, keepAndClose);
 
   return (
     <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">

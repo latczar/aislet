@@ -901,6 +901,15 @@ export function SettingsView({ menu }: { menu?: React.ReactNode }) {
   const [more, setMore] = useState(false); // everyday settings first; the rest behind "More settings"
   const [name, setName] = useState(settings.name);
   const [instructions, setInstructions] = useState(settings.instructions);
+  // Leaving Settings (Back, or the menu) while typing doesn't blur the box, so save what was typed on the way out.
+  const typed = useRef({ name, instructions, settings });
+  typed.current = { name, instructions, settings };
+  useEffect(() => () => {
+    const t = typed.current;
+    if (t.name.trim() !== t.settings.name || t.instructions.trim() !== t.settings.instructions) {
+      updateSettings({ name: t.name.trim(), instructions: t.instructions.trim() });
+    }
+  }, [updateSettings]);
   const [toast, setToast] = useState<string | null>(null);
   const [, setTick] = useState(0);
   const changed = () => {
