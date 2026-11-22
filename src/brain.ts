@@ -211,6 +211,18 @@ export const CATEGORIES: { id: MemoryCategory; title: string; icon: string }[] =
 ];
 const CATEGORY_IDS = CATEGORIES.map((c) => c.id).join('|');
 
+/**
+ * Whether to offer keeping a reply in Notes: they asked for something to keep (a plan, list, recipe, steps,
+ * schedule…) and the reply is one (three or more list items, or a table). Decided by rules, not the model, so it
+ * costs nothing on a phone. Nothing is saved until they tap Save.
+ */
+export function worthKeeping(asked: string, reply: string): boolean {
+  const wanted = /\b(plan|list|checklist|recipe|steps|schedule|itinerary|routine|timetable|packing|shopping|to-?dos?|workout|budget|meal)\b/i.test(asked);
+  const items = (reply.match(/^\s*(?:[-*•]|\d+[.)])\s+\S/gm) ?? []).length;
+  const table = /^\s*\|?\s*:?-{3,}/m.test(reply);
+  return wanted && (items >= 3 || table) && reply.split(/\s+/).length >= 30;
+}
+
 export interface Starter { icon: string; title: string; sub: string; prompt: string }
 
 /**

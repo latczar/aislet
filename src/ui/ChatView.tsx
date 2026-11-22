@@ -5,7 +5,7 @@ import {
   type TextInputInstance, View, useWindowDimensions,
 } from 'react-native';
 import { ActivityIndicator, Button, Icon, IconButton, Menu, ProgressBar, Snackbar, Surface, Text, useTheme } from 'react-native-paper';
-import { personalStarters, titleFrom } from '../brain';
+import { personalStarters, titleFrom, worthKeeping } from '../brain';
 import { type DeviceAction, actionsSupported, describe, parseActions, runAction, shownText } from '../deviceActions';
 import { engine } from '../engine';
 import { hubExtract, localHub } from '../hub';
@@ -242,6 +242,7 @@ function Sources({ sources }: { sources: { title: string; url: string }[] }) {
 
 type AssistantProps = {
   index: number; text: string; last: boolean; streaming: boolean; busy: boolean; noted?: Learnt[]; saved: boolean;
+  offerKeep?: boolean; onKeepDismiss?: (index: number) => void; // "Keep this in Notes?" under a plan or list
   searched?: Message['searched']; found?: LibraryHit[]; onRetry: () => void; onSave: (index: number) => void;
   onUndo: (index: number, item: Learnt) => void; onAnswerFrom: (index: number) => void;
   onLibraryChoice: (index: number, book: string, choice: 'always' | 'never') => void;
@@ -288,6 +289,7 @@ function LibraryOffer({ index, hits, busy, onAnswerFrom, onLibraryChoice }: {
 // Memoised, like UserMessage: while a reply streams, only the message that's changing redraws.
 const AssistantMessage = React.memo(function AssistantMessage({
   index, text: reply, last, streaming, busy, noted, saved, searched, found, onRetry, onSave, onUndo, onAnswerFrom, onLibraryChoice,
+  offerKeep, onKeepDismiss,
 }: AssistantProps) {
   const theme = useTheme();
   const [speaking, setSpeaking] = useState(false);
@@ -345,6 +347,14 @@ const AssistantMessage = React.memo(function AssistantMessage({
                 disabled={busy} accessibilityLabel="Try again" onPress={() => { tap(); onRetry(); }}
               />
             )}
+          </View>
+        )}
+        {offerKeep && !saved && !streaming && (
+          <View style={[styles.keep, { borderColor: theme.colors.outlineVariant }]}>
+            <Icon source="note-plus-outline" size={16} color={theme.colors.primary} />
+            <Text variant="labelMedium" style={[styles.flex, { color: theme.colors.onSurfaceVariant }]}>Keep this in Notes?</Text>
+            <Button compact mode="contained-tonal" onPress={() => { tap(); onSave(index); }} accessibilityLabel="Keep this in Notes">Save</Button>
+            <IconButton icon="close" size={16} style={styles.action} accessibilityLabel="Don't keep" onPress={() => onKeepDismiss?.(index)} />
           </View>
         )}
         {last && !streaming && !!found?.length && (
@@ -807,6 +817,11 @@ export function ChatView({ onOpenSettings, incoming, onIncomingTaken, talkReques
     undoLearnt(i, item).then(() => setToast('Forgotten')).catch(() => setToast("Couldn't undo. Try again."));
   }, [undoLearnt]);
   const answerFrom = useCallback((i: number) => { answerFromLibrary(i).catch(() => undefined); }, [answerFromLibrary]);
+  // "Keep this in Notes?" under the last reply when it's a plan or list they asked for; ✕ hides it for that reply.
+  const [noKeep, setNoKeep] = useState<Record<number, true>>({});
+  useEffect(() => setNoKeep({}), [chat?.id]);
+  const dismissKeep = useCallback((i: number) => setNoKeep((k) => ({ ...k, [i]: true })), []);
+  const askedBefore = (i: number) => { const q = messages[i - 1]; return q?.role === 'user' ? (q.display ?? q.content) : ''; };
   const chooseLibrary = useCallback((i: number, book: string, choice: 'always' | 'never') => {
     setLibraryChoice(book, choice).catch(() => undefined);
     if (choice === 'always') answerFromLibrary(i).catch(() => undefined);
@@ -854,7 +869,8 @@ export function ChatView({ onOpenSettings, incoming, onIncomingTaken, talkReques
                 key={i} index={i} text={m.content} last={i === lastAi} streaming={busy && i === messages.length - 1}
                 busy={busy} noted={noted[i]} saved={noteTexts.has(shownText(m.content).trim())} searched={m.searched}
                 found={found[i]} onRetry={regenerate} onSave={saveToNotes} onUndo={undo} onAnswerFrom={answerFrom}
-                onLibraryChoice={chooseLibrary}
+                onLibraryChoice={chooseLibrary} onKeepDismiss={dismissKeep}
+                offerKeep={i === lastAi && !busy && !noKeep[i] && worthKeeping(askedBefore(i), m.content)}
               />
             ),
           )
@@ -912,6 +928,7 @@ const styles = StyleSheet.create({
   actionCard: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingVertical: 10, paddingLeft: 14, paddingRight: 10, gap: 6, maxWidth: 520, marginTop: 4 },
   actionCardRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   notedIcon: { margin: 0 },
+  keep: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, paddingLeft: 10, marginTop: 2 },
   undo: { marginVertical: 0, marginLeft: 4, minWidth: 0 },
   undoLabel: { marginVertical: 4, marginHorizontal: 8 },
   offerActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4 },

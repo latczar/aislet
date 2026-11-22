@@ -146,5 +146,12 @@ const sysA = brain.systemPrompt({ name: 'Sam', instructions: '', length: 'balanc
 const sysB = brain.systemPrompt({ name: 'Sam', instructions: '', length: 'balanced' }, brain.relevantMemories(known, '', 15), 'phone');
 check('a new chat on the phone always starts with the same system message', sysA === sysB);
 
+// "Keep this in Notes?" only under a plan or list they asked for.
+const plan = 'Here is your week:\n\n1. Monday: 5 km easy run and stretching afterwards\n2. Wednesday: intervals, 6 x 400 m with rests\n'
+  + '3. Saturday: long run of 12 km at an easy, steady pace\n4. Sunday: rest day, a short walk only';
+check('offers to keep a plan they asked for', brain.worthKeeping('Make me a training plan for this week', plan));
+check("doesn't offer for a question without a list", !brain.worthKeeping('Make me a plan', 'Go for a run on Monday and rest on Sunday.'));
+check("doesn't offer when they didn't ask for something to keep", !brain.worthKeeping('How does a heat pump work?', plan));
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
