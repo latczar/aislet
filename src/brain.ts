@@ -238,14 +238,20 @@ export function personalStarters(name: string, memories: Memory[]): Starter[] {
     const s = f.charAt(0).toUpperCase() + f.slice(1);
     return s.length > 60 ? `${s.slice(0, 57).replace(/\s+\S*$/, '')}…` : s;
   };
-  const newest = (c: MemoryCategory) => memories.filter((m) => !m.until && m.category === c).slice(-1)[0];
+  // A fact filed under goals or projects isn't always one ("breaks routine when travelling", "not in Lisbon now"), so
+  // only a fact that reads like something being worked towards gets a starter. Otherwise there's none, not a vague one.
+  const GOAL = /\b(wants? to|would like to|plans? to|aims? to|hopes? to|trying to|is (?:learning|training|saving|studying|working towards?|preparing)|goal)\b/i;
+  const PROJECT = /\b(is (?:building|making|writing|developing|working on|planning|renovating|setting up|creating|organising|organizing)|working on|project)\b/i;
+  const newest = (c: MemoryCategory, reads: RegExp) => memories
+    .filter((m) => !m.until && m.category === c && reads.test(m.fact) && !/\b(not|no longer|never)\b/i.test(m.fact))
+    .slice(-1)[0];
   const starters: Starter[] = [];
-  const goal = newest('goals');
+  const goal = newest('goals', GOAL);
   if (goal) {
     starters.push({ icon: 'flag-outline', title: 'Next step on your goal', sub: shown(goal.fact),
       prompt: `What should I do this week to move this goal on? ${goal.fact.trim().replace(/[.!]+$/, '')}.` });
   }
-  const project = newest('projects');
+  const project = newest('projects', PROJECT);
   if (project) {
     starters.push({ icon: 'briefcase-outline', title: 'Move a project on', sub: shown(project.fact),
       prompt: `Help me plan the next step on this, as a short list: ${project.fact.trim().replace(/[.!]+$/, '')}.` });

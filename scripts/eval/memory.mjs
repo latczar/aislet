@@ -140,6 +140,8 @@ const starters = brain.personalStarters('Sam', [fact('s1', 'Sam is training for 
 check('starters: one for the goal, one for the project', starters.length === 2 && starters[0].sub === 'Training for a half marathon in March');
 check('starters: the prompt carries the fact', starters[1].prompt.includes('building a shed'));
 check('starters: none without goals or projects', brain.personalStarters('Sam', [fact('s3', 'Sam likes jazz', 'about')]).length === 0);
+check("starters: none from a 'goal' that isn't one, or a 'not' fact", brain.personalStarters('Sam', [
+  fact('s4', 'Sam breaks their routine now and then when travelling', 'goals'), fact('s5', 'Sam is currently not in Lisbon', 'projects')]).length === 0);
 
 check('the system message read ahead is where a new chat starts', first.startsWith(chatmlSystem('You are Aislet.')));
 const sysA = brain.systemPrompt({ name: 'Sam', instructions: '', length: 'balanced' }, brain.relevantMemories(known, '', 15), 'phone');
