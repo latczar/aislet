@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Animated, AppState, Image, Keyboard, Platform, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, TextInput,
+  Animated, AppState, Image, Keyboard, type NativeScrollEvent, type NativeSyntheticEvent, Platform, Pressable, ScrollView,
+  type ScrollViewInstance, StyleSheet, TextInput,
   type TextInputInstance, View, useWindowDimensions,
 } from 'react-native';
 import { ActivityIndicator, Button, Icon, IconButton, Menu, ProgressBar, Snackbar, Surface, Text, useTheme } from 'react-native-paper';
@@ -815,6 +816,18 @@ export function ChatView({ onOpenSettings, incoming, onIncomingTaken, talkReques
   useEffect(() => {
     scroll.current?.scrollToEnd({ animated: false });
   }, [chat?.id]);
+  // Follow a reply as it's written only while you're at the bottom, so scrolling up to read stays put. While it
+  // streams, jump without animating: an animation started 15 times a second makes the text judder.
+  const atBottom = useRef(true);
+  const count = messages.length;
+  useEffect(() => { atBottom.current = true; }, [count]); // a new message always shows
+  const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+    atBottom.current = contentOffset.y + layoutMeasurement.height >= contentSize.height - 48;
+  }, []);
+  const follow = useCallback(() => {
+    if (atBottom.current) scroll.current?.scrollToEnd({ animated: !busy });
+  }, [busy]);
 
   return (
     <View style={styles.flex}>
@@ -822,7 +835,9 @@ export function ChatView({ onOpenSettings, incoming, onIncomingTaken, talkReques
         ref={scroll}
         style={styles.flex}
         contentContainerStyle={[styles.thread, !messages.length && styles.grow]}
-        onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: true })}
+        onContentSizeChange={follow}
+        onScroll={onScroll}
+        scrollEventThrottle={100}
         keyboardShouldPersistTaps="handled"
       >
         {!messages.length ? (
