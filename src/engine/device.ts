@@ -86,6 +86,7 @@ let performance: Performance = 'balanced';
 let chatCtx: LlamaContext | null = null;
 let chatKey = ''; // model + accel the context was made with
 let prefilling: Promise<void> | null = null; // reading the system message ahead (warm)
+let prefilled = ''; // the model and system message read ahead since the model loaded: done once, not on every check
 let asking: Promise<string> | null = null; // learning or tidying; a new message stops it
 let visionOn = false;
 let embedCtx: LlamaContext | null = null;
@@ -99,6 +100,7 @@ async function unload() {
   chatCtx = null;
   embedCtx = null;
   chatKey = '';
+  prefilled = '';
   visionOn = false;
   await c?.release().catch(() => undefined);
   await e?.release().catch(() => undefined);
@@ -291,7 +293,9 @@ export const deviceEngine: Engine = {
     const s = spec(modelId);
     if (performance !== 'cool' && s && isDownloaded(s)) { // Cool mode only loads the model when you send
       const ctx = await chatContext(modelId);
-      if (system && !prefilling) {
+      const key = `${chatKey}|${system}`;
+      if (system && !prefilling && prefilled !== key) {
+        prefilled = key;
         // Read the system message now, while they look at the screen or type. llama.rn keeps a save point after it,
         // so the first message only reads what's typed (about 25 s less on a phone CPU). One token is written and
         // dropped. A message sent meanwhile waits for this rather than reading it all again.

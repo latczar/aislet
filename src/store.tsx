@@ -379,7 +379,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setStatus(s);
     if (connected) syncNow();
     if (s.ready && active === localEngine && localEngine.warm) {
-      localEngine.warm(settingsRef.current.modelId, newChatSystem('phone')).catch(() => undefined);
+      // Read a new chat's system message ahead only while no chat is open: mid-chat it would replace that chat's reading.
+      const idle = !chatRef.current?.messages.length;
+      localEngine.warm(settingsRef.current.modelId, idle ? newChatSystem('phone') : undefined).catch(() => undefined);
     }
   }, [hubTarget, pickEngine, syncNow]);
   checkRef.current = checkStatus;
