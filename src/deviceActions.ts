@@ -183,13 +183,24 @@ export async function runAction(a: DeviceAction): Promise<void> {
 const ACTION_WORDS = /\b(alarms?|wake|waking|timers?|countdown|remind|reminders?|calendar|events?|appointments?|meetings?|schedule|diary|book|tomorrow|tonight|morning|evening|noon|midnight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|weekend|week)\b/i;
 const TIME_OR_SMALL_NUMBER = /(^|[\s(@~])\d{1,2}([:.h]\d{2})?(?![\d%,.]?\d)(?!\s?%)/;
 
+// Asking for words (a reply, a draft, a summary, a translation) isn't asking for a card, however many days and times
+// the text has in it: "help me reply to my landlord: the plumber can come Thursday between 8 and 12" had the model
+// offer a calendar event or a timer instead of the reply. Naming a card as well ("…and add it to my calendar") still asks.
+const WRITING_TASK = /^\W*(?:(?:can|could|would|will) you\s+|please\s+)?(?:help me\s+(?:to\s+)?|i need (?:help\s+)?(?:to\s+)?)?(?:reply|respond|draft|write|compose|summari[sz]e|translate|rewrite|reword|proofread|polish|shorten)\b/i;
+const NAMES_A_CARD = /\b(alarms?|timers?|countdown|remind me|reminders?|wake me|calendar|diary)\b/i;
+
+function writingTask(text: string): boolean {
+  return WRITING_TASK.test(text) && !NAMES_A_CARD.test(text);
+}
+
 /**
  * Whether the latest message may ask for an alarm, timer or calendar event. The words count in the two messages
  * before it too, so a reply to "what time?" ("seven, please") still gets the explanation; a number counts only in
- * the latest message.
+ * the latest message. A writing task doesn't count, now or as an earlier message ("make it shorter" after a reply).
  */
 export function mayWantAction(latest: string, earlier: string[] = []): boolean {
-  return ACTION_WORDS.test(latest) || TIME_OR_SMALL_NUMBER.test(latest) || earlier.some((t) => ACTION_WORDS.test(t));
+  if (writingTask(latest)) return false;
+  return ACTION_WORDS.test(latest) || TIME_OR_SMALL_NUMBER.test(latest) || earlier.some((t) => ACTION_WORDS.test(t) && !writingTask(t));
 }
 
 /** What the AI is told about actions, with today's date and time so it can work out "tomorrow at 7". */
@@ -208,7 +219,9 @@ export function actionsPrompt(now = new Date()): string {
     '[[event YYYY-MM-DD HH:MM | length | title]], or for a whole day: [[event YYYY-MM-DD | all day | title]].',
     "Nothing happens until they tap the card, so never write that you've set, added or started anything. Use the " +
       "name they gave, word for word. Don't work out the weekday of a date: the card shows it. If the time or date " +
-      'is unclear, ask first. Only add an action line when they ask for one. ' +
+      'is unclear, ask first. Add an action line only when they ask you to set an alarm or timer or add an event, and ' +
+      'then always add it, even next to a reply or draft. A day or time inside a message they want replied to or ' +
+      'summarised is not a request by itself. ' +
       `It is now ${weekday}, ${today}, ${pad(now.getHours())}:${pad(now.getMinutes())}.`,
   ].join('\n');
 }
