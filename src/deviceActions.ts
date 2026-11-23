@@ -203,25 +203,50 @@ export function mayWantAction(latest: string, earlier: string[] = []): boolean {
   return ACTION_WORDS.test(latest) || TIME_OR_SMALL_NUMBER.test(latest) || earlier.some((t) => ACTION_WORDS.test(t) && !writingTask(t));
 }
 
+/**
+ * What to tell the AI about actions for this message: nothing, how to set them, or how to set them next to a reply
+ * ("reply that Thursday's fine and add it to my calendar"). Asked for together, the phone's model wrote one of the
+ * two in more than half its tries, and no general wording fixed that without costing the 2B its alarm cards.
+ */
+export function actionsFor(latest: string, earlier: string[] = []): boolean | 'with-writing' {
+  if (!mayWantAction(latest, earlier)) return false;
+  return WRITING_TASK.test(latest) && NAMES_A_CARD.test(latest) ? 'with-writing' : true;
+}
+
 /** What the AI is told about actions, with today's date and time so it can work out "tomorrow at 7". */
-export function actionsPrompt(now = new Date()): string {
+export function actionsPrompt(now = new Date(), withWriting = false): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   const weekday = now.toLocaleDateString('en-GB', { weekday: 'long' });
   const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   // Placeholders, not sample values: a small model copies sample days and times into its answer.
-  return [
-    "You can set alarms and timers in the phone's Clock app and add events to its calendar. When asked to, reply with " +
-      'one short sentence saying it is ready, such as "Here it is: tap the card to set it.", then put each action ' +
-      'alone on its own line at the end, in exactly one of these forms:',
+  // Asked for a card alone, "reply with one short sentence" first keeps the 2B's card on a line of its own. Asked for a
+  // reply as well, that sentence made the 4B write only the sentence and the card, or the reply and "I've added it",
+  // so then the short sentence comes after the draft.
+  const forms = [
     '[[alarm HH:MM | label]] with a 24-hour time. To repeat it, add the days they asked for: [[alarm HH:MM | label | days]], ' +
       'with days written as mon tue wed thu fri sat sun, or weekdays, weekends or daily.',
     '[[timer length | label]] with lengths like 45s, 10m or 1h30m, up to 24 hours.',
     '[[event YYYY-MM-DD HH:MM | length | title]], or for a whole day: [[event YYYY-MM-DD | all day | title]].',
-    "Nothing happens until they tap the card, so never write that you've set, added or started anything. Use the " +
-      "name they gave, word for word. Don't work out the weekday of a date: the card shows it. If the time or date " +
-      'is unclear, ask first. Add an action line only when they ask you to set an alarm or timer or add an event, and ' +
-      'then always add it, even next to a reply or draft. A day or time inside a message they want replied to or ' +
-      'summarised is not a request by itself. ' +
-      `It is now ${weekday}, ${today}, ${pad(now.getHours())}:${pad(now.getMinutes())}.`,
+  ];
+  const rules = "Use the name they gave, word for word. Don't work out the weekday of a date: the card shows it. If " +
+    'the time or date is unclear, ask first. Add an action line only when they ask you to set an alarm or timer or add ' +
+    `an event, and then always add it${withWriting ? '' : ', even next to a reply or draft'}. A day or time inside ` +
+    'a message they want replied to or summarised is not a request by itself. ' +
+    `It is now ${weekday}, ${today}, ${pad(now.getHours())}:${pad(now.getMinutes())}.`;
+  const intro = "You can set alarms and timers in the phone's Clock app and add events to its calendar. ";
+  const never = "Nothing happens until they tap the card, so never write that you've set, added or started anything. ";
+  if (withWriting) {
+    return [
+      intro + 'When asked to, put each action alone on its own line at the very end, in exactly one of these forms:',
+      ...forms,
+      never + 'They also asked for a reply or message: write it in its draft block first, then one short sentence ' +
+        'such as "Here it is: tap the card to set it.", then the action line. ' + rules,
+    ].join('\n');
+  }
+  return [
+    intro + 'When asked to, reply with one short sentence saying it is ready, such as "Here it is: tap the card to set ' +
+      'it.", then put each action alone on its own line at the end, in exactly one of these forms:',
+    ...forms,
+    never + rules,
   ].join('\n');
 }

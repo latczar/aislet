@@ -41,7 +41,8 @@ export function systemPrompt(
       'exactly that text, with its line breaks, in a code block marked draft (```draft), so it can be copied on its ' +
       'own; outside it, keep to one short line, and give tips only if asked. Never put answers, tables or explanations in one. ' +
       'When they paste a message someone sent them and ask how to reply, the draft is their answer to that person, ' +
-      'written as them: answer what it asks, and never copy it back or write it as the sender.',
+      'written as them: start with the answer to what it asks. Never put any of their message in the draft, and never ' +
+      'write it as the sender.',
     LENGTH[settings.length] ?? LENGTH.balanced,
     // A phone writes about 10 words a second, so long answers keep people waiting.
     ...(where === 'phone' && settings.length !== 'detailed'
@@ -100,7 +101,7 @@ export interface TurnFound {
   notes?: NoteHit[];
   library?: LibraryHit[];
   web?: { query: string; hits: WebHit[] } | null; // a web search made for this message (Search the web)
-  actions?: boolean;   // explain alarms, timers and events (the message may ask for one)
+  actions?: boolean | 'with-writing'; // explain alarms, timers and events (the message may ask for one, maybe with a reply)
   memories?: Memory[]; // facts not in the system message: learnt during this chat, or relevant to this message
   stopQuestions?: boolean; // they asked to stop a "get to know me" chat: say that's fine, and ask nothing
 }
@@ -167,7 +168,7 @@ export function turnContext(name: string, found: TurnFound, now = new Date()): s
       ...web.hits.map((h, i) => `[${i + 1}] ${h.title} (${h.url})\n${h.snippet}`),
     ]);
   }
-  if (found.actions) parts.push([actionsPrompt(now)]);
+  if (found.actions) parts.push([actionsPrompt(now, found.actions === 'with-writing')]);
   if (found.stopQuestions) {
     parts.push([
       `${who} asked to stop the "get to know me" questions, so that chat is over. In one or two short sentences, say ` +

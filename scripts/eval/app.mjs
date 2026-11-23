@@ -3,7 +3,7 @@ import './hooks.mjs';
 import { MEMORIES, SETTINGS } from './cases.mjs';
 
 export const brain = await import('../../src/brain.ts');
-const { mayWantAction } = await import('../../src/deviceActions.ts');
+const { actionsFor } = await import('../../src/deviceActions.ts');
 export const { createOllamaEngine } = await import('../../src/engine/ollama.ts');
 
 const HISTORY = 20; // messages of the current chat the model sees, as in src/store.tsx
@@ -31,7 +31,7 @@ export function buildMessages(c, memories = c.memories ?? MEMORIES) {
   const prompt = brain.systemPrompt(settings, picked, where, where === 'phone');
   const system = { role: 'system', content: c.mode === 'interview' ? `${prompt}\n\n${brain.interviewPrompt(settings.name)}` : prompt };
   // actions: 'auto' decides as the phone does (src/store.tsx), from this message and the two asks before it.
-  const actions = c.actions === 'auto' ? mayWantAction(c.ask, recentAsks) : c.actions;
+  const actions = c.actions === 'auto' ? actionsFor(c.ask, recentAsks) : c.actions;
   const added = brain.turnContext(settings.name, { notes: c.notes, library: c.library, web, actions, memories: extra, stopQuestions: stopping });
   return [system, ...history.slice(-HISTORY), { role: 'user', content: added ? `${added}\n\n${c.ask}` : c.ask }];
 }

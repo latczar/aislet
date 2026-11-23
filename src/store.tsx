@@ -6,7 +6,7 @@ import {
   chunkText, cleanFact, conversationLearnMessages, indexChat, interviewPrompt, keywordScore, learnMessages, moreMemories, parseFacts, parseTidy, stopsQuestions,
   pastFacts, recallsPast, relevantMemories, searchPast, similarity, stripThinking, systemPrompt, tidyMessages, titleFrom, turnContext, withoutClosingQuestion, worthLearning,
 } from './brain';
-import { actionsSupported, mayWantAction } from './deviceActions';
+import { actionsFor, actionsSupported } from './deviceActions';
 import { type WebHit, needsWeb, searchWeb, webQuery } from './webSearch';
 import { engine as localEngine } from './engine';
 import { createOllamaEngine } from './engine/ollama';
@@ -974,7 +974,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const facts = rest.length && queryVec ? await memoryVectors().catch(() => ({})) : null;
       const extra = base.mode === 'interview' ? rest.filter((m) => fresh.has(m.id))
         : moreMemories(rest, query, fresh, queryVec && facts ? { query: queryVec, facts } : undefined);
-      const actions = actionsSupported && mayWantAction(userMsg.display ?? userMsg.content, recentAsks);
+      const actions = actionsSupported && actionsFor(userMsg.display ?? userMsg.content, recentAsks);
       // Search the web: when asked with the globe, or when the question needs current information. Not in a
       // get-to-know-me chat, and not by itself for a message about an attached photo or file.
       let web: { query: string; hits: WebHit[] } | null = null;
