@@ -116,10 +116,33 @@ function parseOne(kind: string, body: string): DeviceAction | null {
 // it's shown. So an alarm repeats only when they asked for that, in words like these.
 const ASKS_TO_REPEAT = /\b(every|everyday|each|daily|weekly|weekdays|weeknights|weekends|(mon|tues|wednes|thurs|fri|satur|sun)days)\b/i;
 
+// The 2B read "wake me up at 7 every weekday" as 19:00. When the ask names the alarm's time, the half of the day
+// comes from the ask: "7am", "7pm", "19:00", or words around it like wake or tonight. Otherwise the reply's stands.
+const ASKED_TIME = /\b(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?(?!\s*(?:min|hour|hr|sec|day|week|month|year))(?!\d)/gi;
+const MORNING = /\b(wake|waking|woken|morning|get up|getting up|breakfast)\b/i;
+const LATER = /\b(afternoon|evening|tonight|night|dinner|bedtime)\b/i;
+
+function hourAsked(hour: number, minutes: number, asked: string): number {
+  for (const line of asked.split('\n').reverse()) { // the latest ask first
+    for (const m of line.matchAll(ASKED_TIME)) {
+      const h = Number(m[1]);
+      if (h > 23 || Number(m[2] ?? 0) !== minutes || h % 12 !== hour % 12) continue;
+      if (m[3]) return (h % 12) + (m[3].toLowerCase().startsWith('p') ? 12 : 0);
+      if (h > 12 || m[1].startsWith('0')) return h; // a 24-hour time, as they wrote it
+      if (h === 12) return hour; // noon or midnight: as the reply gave it
+      const later = LATER.test(line);
+      if (later !== MORNING.test(line)) return later ? h + 12 : h;
+      return hour;
+    }
+  }
+  return hour;
+}
+
 /**
  * Split a reply into the text to show and the actions it proposes. Action lines are always removed from the text,
  * including one that's still being written; ones that can't be read are counted in `unreadable`. Given what they
- * asked (`asked`), an alarm they didn't ask to repeat rings once, whatever days the reply gave it.
+ * asked (`asked`), an alarm they didn't ask to repeat rings once, whatever days the reply gave it, and an alarm at a
+ * time they gave is set in the half of the day they meant.
  */
 export function parseActions(reply: string, streaming = false, asked?: string): { text: string; actions: DeviceAction[]; unreadable: number } {
   const actions: DeviceAction[] = [];
@@ -128,7 +151,9 @@ export function parseActions(reply: string, streaming = false, asked?: string): 
   const once = asked !== undefined && !ASKS_TO_REPEAT.test(asked);
   let text = reply.replace(LINE, (_, kind: string, body: string) => {
     let action = parseOne(kind.toLowerCase(), body);
-    if (action?.kind === 'alarm' && once) action = { ...action, days: [] };
+    if (action?.kind === 'alarm' && asked !== undefined) {
+      action = { ...action, hour: hourAsked(action.hour, action.minutes, asked), days: once ? [] : action.days };
+    }
     if (action && actions.length < 3) actions.push(action);
     else if (!action) unreadable++;
     return '';

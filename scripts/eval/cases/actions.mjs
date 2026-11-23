@@ -15,11 +15,14 @@ const noClaim = ["doesn't say it added anything", (a) => !/\b(I'?ve|I have) (set
 const alarmDays = (ask, a) => deviceActions.parseActions(a, false, ask).actions.find((x) => x.kind === 'alarm')?.days;
 const ringsOnce = (ask) => ['the card rings once', (a) => alarmDays(ask, a)?.length === 0];
 const repeats = (ask, days, label) => [label, (a) => alarmDays(ask, a)?.join() === days.join()];
+const alarmAt = (ask, hour, label) => [label, (a) => deviceActions.parseActions(a, false, ask).actions.find((x) => x.kind === 'alarm')?.hour === hour];
 
 const phone = { where: 'phone', actions: 'auto', group: 'actions' };
 const WAKE = 'Wake me up at 6:45 tomorrow.';
 const WEEKDAYS = 'Wake me up at 7 every weekday.';
 const SUNDAYS = 'Set an alarm for 9 on Sundays to water the plants.';
+const WAKE_7 = 'Wake me up at 7 tomorrow.';
+const TONIGHT = 'Set an alarm for 7 tonight to call Mum.';
 
 export const CASES = [
   // Asking for words, not a card.
@@ -39,7 +42,10 @@ export const CASES = [
   // Asking for a card: still offered.
   { ...phone, id: 'act-wake', ask: WAKE, checks: [card('alarm'), has(/\[\[alarm\s+06:45/i, 'at 06:45'), ringsOnce(WAKE)] },
   // Repeating only when asked: the 4B gave "tomorrow" every weekday on 23 Nov 2026.
-  { ...phone, id: 'act-wake-weekdays', ask: WEEKDAYS, checks: [card('alarm'), repeats(WEEKDAYS, [2, 3, 4, 5, 6], 'repeats Mon to Fri')] },
+  { ...phone, id: 'act-wake-weekdays', ask: WEEKDAYS, checks: [card('alarm'), repeats(WEEKDAYS, [2, 3, 4, 5, 6], 'repeats Mon to Fri'), alarmAt(WEEKDAYS, 7, 'at 7am')] },
+  // The half of the day from the ask: the 2B set "wake me up at 7" for 19:00 on 23 Nov 2026.
+  { ...phone, id: 'act-wake-7', ask: WAKE_7, checks: [card('alarm'), alarmAt(WAKE_7, 7, 'at 7am'), ringsOnce(WAKE_7)] },
+  { ...phone, id: 'act-alarm-tonight', ask: TONIGHT, checks: [card('alarm'), alarmAt(TONIGHT, 19, 'at 7pm'), ringsOnce(TONIGHT)] },
   { ...phone, id: 'act-alarm-sundays', ask: SUNDAYS, checks: [card('alarm'), repeats(SUNDAYS, [1], 'repeats on Sundays')] },
   { ...phone, id: 'act-timer', ask: 'Set a timer for 10 minutes for the eggs.', checks: [card('timer'), has(/\[\[timer\s+10m\b/i, 'for 10m')] },
   { ...phone, id: 'act-calendar', ask: 'Add the dentist on Friday at 3pm to my calendar.', checks: [card('event'), has(/\|\s*[^|\]]*dentist/i, 'called dentist')] },
