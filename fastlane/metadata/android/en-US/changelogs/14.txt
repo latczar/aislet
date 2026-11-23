@@ -1,0 +1,5 @@
+• The first answer after opening the app comes in 15–18 seconds instead of about 46, with "Getting the AI ready…" while you wait.
+• Archive chats one at a time, or all at once in Settings › Your data.
+• Alarm and calendar cards get the right repeat days, am or pm, and weekday.
+• A reply or summary that only mentions a day no longer makes a card.
+• Drafted replies answer the sender.
