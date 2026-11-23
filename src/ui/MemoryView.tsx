@@ -5,7 +5,7 @@ import {
 } from 'react-native-paper';
 import { PageTitle } from './PageTitle';
 import { CATEGORIES, type TidyChange } from '../brain';
-import { useStore } from '../store';
+import { type TidyUndo, useStore } from '../store';
 import type { Memory } from '../types';
 import { Field } from './Field';
 import { confirm } from './confirm';
@@ -37,13 +37,18 @@ function TidyItem({ change, memories, checked, onToggle }: { change: TidyChange;
 export function MemoryView({ onStartInterview, inBar }: { onStartInterview: () => void; inBar?: boolean }) {
   const theme = useTheme();
   const {
-    memories, addMemory, removeMemory, proposeTidy, applyTidy, settings, updateSettings, startInterview, status, busy,
+    memories, addMemory, removeMemory, proposeTidy, proposeCompress, applyTidy, undoTidy, settings, updateSettings, startInterview,
+    status, busy,
   } = useStore();
   const [fact, setFact] = useState('');
-  const [tidying, setTidying] = useState(false);
+  // Which suggestions are being looked for, or shown: Tidy up's or Compress's. They share the dialog.
+  const [working, setWorking] = useState<'tidy' | 'compress' | null>(null);
+  const [mode, setMode] = useState<'tidy' | 'compress'>('tidy');
   const [changes, setChanges] = useState<TidyChange[] | null>(null);
   const [picked, setPicked] = useState<boolean[]>([]);
   const [toast, setToast] = useState<string | null>(null);
+  const [undo, setUndo] = useState<TidyUndo | null>(null);
+  const current = memories.filter((m) => !m.until).length;
   const card = [styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }];
   const chosen = changes?.filter((_, i) => picked[i]) ?? [];
 
@@ -51,27 +56,47 @@ export function MemoryView({ onStartInterview, inBar }: { onStartInterview: () =
     if (await addMemory(fact)) setFact('');
   };
 
-  const tidy = async () => {
-    setTidying(true);
+  const show = (message: string, canUndo: TidyUndo | null = null) => {
+    setUndo(canUndo);
+    setToast(message);
+  };
+
+  const suggest = async (kind: 'tidy' | 'compress') => {
+    setWorking(kind);
+    setUndo(null);
     try {
-      const found = await proposeTidy();
-      if (!found.length) setToast('All tidy: no duplicates or out-of-date facts found.');
-      else {
+      const found = await (kind === 'tidy' ? proposeTidy() : proposeCompress());
+      if (!found.length) {
+        show(kind === 'tidy' ? 'All tidy: no duplicates or out-of-date facts found.' : 'Nothing to merge: no related facts found.');
+      } else {
+        setMode(kind);
         setPicked(found.map(() => true));
         setChanges(found);
       }
     } catch (e) {
-      setToast((e as Error).message || "Couldn't check your memory just now.");
+      show((e as Error).message || "Couldn't check your memory just now.");
     } finally {
-      setTidying(false);
+      setWorking(null);
     }
   };
 
   const apply = async () => {
     const n = chosen.length;
-    await applyTidy(chosen);
+    const merged = chosen.reduce((sum, c) => sum + c.remove.length, 0);
+    const done = await applyTidy(chosen);
     setChanges(null);
-    setToast(`Tidied: ${n} ${n === 1 ? 'change' : 'changes'} made.`);
+    show(mode === 'compress'
+      ? `Merged ${merged} facts into ${n}.`
+      : `Tidied: ${n} ${n === 1 ? 'change' : 'changes'} made.`, done);
+  };
+
+  const putBack = async (done: TidyUndo) => {
+    try {
+      await undoTidy(done);
+      show('Put back as it was.');
+    } catch {
+      show("Couldn't undo. Try again.");
+    }
   };
 
   return (
@@ -103,13 +128,26 @@ export function MemoryView({ onStartInterview, inBar }: { onStartInterview: () =
         <Divider />
         <Row
           title="Tidy up memory"
-          description={tidying ? 'Looking for duplicates and out-of-date facts…' : 'Finds duplicates and out-of-date facts. You approve each change.'}
+          description={working === 'tidy' ? 'Looking for duplicates and out-of-date facts…' : 'Finds duplicates and out-of-date facts. You approve each change.'}
           left={(p) => <List.Icon {...p} icon="broom" color={theme.colors.primary} />}
-          right={(p) => (tidying
+          right={(p) => (working === 'tidy'
             ? <ActivityIndicator size={18} style={[p.style, styles.tidySpinner]} accessibilityLabel="Tidying" />
             : (
-              <Button mode="contained-tonal" compact style={p.style} disabled={!status?.ready || busy || memories.length < 2} onPress={tidy}>
+              <Button mode="contained-tonal" compact style={p.style} disabled={!status?.ready || busy || current < 2} onPress={() => suggest('tidy')}>
                 Tidy up
+              </Button>
+            ))}
+        />
+        <Divider />
+        <Row
+          title="Compress memory"
+          description={working === 'compress' ? 'Looking for related facts to merge…' : 'Merges related facts into fewer, shorter ones. You approve each merge.'}
+          left={(p) => <List.Icon {...p} icon="call-merge" color={theme.colors.primary} />}
+          right={(p) => (working === 'compress'
+            ? <ActivityIndicator size={18} style={[p.style, styles.tidySpinner]} accessibilityLabel="Compressing" />
+            : (
+              <Button mode="contained-tonal" compact style={p.style} disabled={!status?.ready || busy || current < 2} onPress={() => suggest('compress')}>
+                Compress
               </Button>
             ))}
         />
@@ -176,7 +214,7 @@ export function MemoryView({ onStartInterview, inBar }: { onStartInterview: () =
 
       <Portal>
         <Dialog visible={!!changes} onDismiss={() => setChanges(null)} style={styles.dialog}>
-          <Dialog.Title style={{ fontFamily: FONT.semibold }}>Suggested changes</Dialog.Title>
+          <Dialog.Title style={{ fontFamily: FONT.semibold }}>{mode === 'compress' ? 'Suggested merges' : 'Suggested changes'}</Dialog.Title>
           <Dialog.ScrollArea style={styles.dialogScroll}>
             <ScrollView contentContainerStyle={styles.tidyList}>
               <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
@@ -198,7 +236,14 @@ export function MemoryView({ onStartInterview, inBar }: { onStartInterview: () =
           </Dialog.Actions>
         </Dialog>
       </Portal>
-      <Snackbar visible={!!toast} onDismiss={() => setToast(null)} duration={3500}>{toast}</Snackbar>
+      <Snackbar
+        visible={!!toast}
+        onDismiss={() => setToast(null)}
+        duration={undo ? 8000 : 3500}
+        action={undo ? { label: 'Undo', onPress: () => { void putBack(undo); } } : undefined}
+      >
+        {toast}
+      </Snackbar>
     </View>
   );
 }

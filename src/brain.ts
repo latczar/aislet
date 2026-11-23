@@ -437,6 +437,20 @@ export interface TidyChange {
 /** Facts per request. Memory is tidied a category at a time, in batches of up to this many. */
 export const TIDY_BATCH = 60;
 
+/**
+ * The facts to tidy or compress, a category at a time (small models mix up facts across a long mixed list), in
+ * batches it can read at once. What used to be true (`until`) is history, so it's never tidied or merged.
+ */
+export function tidyGroups(memories: Memory[]): Memory[][] {
+  const current = memories.filter((m) => !m.until);
+  const groups: Memory[][] = [];
+  for (const c of CATEGORIES) {
+    const group = current.filter((m) => (m.category ?? 'about') === c.id);
+    for (let i = 0; i < group.length; i += TIDY_BATCH) groups.push(group.slice(i, i + TIDY_BATCH));
+  }
+  return groups.filter((g) => g.length > 1);
+}
+
 /** Facts from one category, numbered for the model. */
 export function tidyMessages(name: string, memories: Memory[]): Message[] {
   const who = name || 'The user';
@@ -521,6 +535,175 @@ export function parseTidy(reply: string, memories: Memory[]): TidyChange[] {
 
 export function cleanFact(fact: string): string {
   return fact.replace(/\s+/g, ' ').trim().replace(/[.\s]+$/, '');
+}
+
+// ---- Compress: the model suggests merging related facts into one shorter fact, and the user approves each one ----
+
+/** Most facts one merge may join, and the longest a merged fact may be, in words. */
+export const MERGE_MAX_FACTS = 4;
+export const MERGE_MAX_WORDS = 32;
+
+/** Facts from one category, numbered for the model, to merge into fewer, shorter ones. */
+export function compressMessages(name: string, memories: Memory[]): Message[] {
+  const who = name || 'The user';
+  return [
+    {
+      role: 'system',
+      content: [
+        `You make the memory of ${who}'s personal assistant shorter. Below are numbered facts about ${who}, all of one kind.`,
+        `Find groups of two to ${MERGE_MAX_FACTS} facts about the same thing (one person, pet, place, project, plan or habit, or`,
+        `how they like answers) and write each group as one short sentence starting "${who}".`,
+        'The sentence keeps every detail of its group: every name, number, day and place. Use only what the facts say:',
+        'never add, guess or change a detail. Use names or "their", never he, she, his or her.',
+        "Leave a fact out when no other fact is about the same thing. Don't join facts about different things.",
+        'Each fact goes in one group at most. Check every number you give against the list.',
+        'Reply only with JSON: {"merges": [{"facts": [numbers], "fact": "the new sentence"}]}.',
+        'Reply {"merges": []} when nothing should be merged.',
+      ].join('\n'),
+    },
+    { role: 'user', content: `Facts:\n${memories.map((m, i) => `${i + 1}. ${m.fact}`).join('\n')}` },
+  ];
+}
+
+const NUMBER_WORDS = 'zero one two three four five six seven eight nine ten eleven twelve'.split(' ');
+// Words a merged fact may use without them being in the facts it joins: they join sentences, they don't add facts.
+const GLUE = new Set(('also both too well plus including who whom whose which where while than then there they them their '
+  + 'theirs its each called named aged year old').split(' ').map(stem));
+const NEGATION = /\b(not|no|never|none|nor|n't|without|isn't|doesn't|don't|won't|can't|cannot)\b/gi;
+const DISLIKE = /\b(dislikes?|hates?|avoids?)\b/gi;
+const GENDERED = /\b(he|she|his|her|hers|him|himself|herself)\b/gi;
+const STARTERS = new Set('the a an he she they their his her it its user'.split(' '));
+
+/** A word's stem, so "runs", "running" and "run", or "Priya's" and "Priya", count as the same word. */
+function stem(word: string): string {
+  let w = word.toLowerCase().replace(/['’]s$/, '');
+  if (w.length > 4 && w.endsWith('ies')) w = `${w.slice(0, -3)}y`;
+  else if (w.length >= 5 && /(ing|ed)$/.test(w)) w = w.replace(/(ing|ed)$/, '');
+  else if (w.length > 4 && /(ches|shes|sses|xes|zes)$/.test(w)) w = w.slice(0, -2);
+  else if (w.length > 3 && w.endsWith('s') && !w.endsWith('ss')) w = w.slice(0, -1);
+  if (w.length > 3 && w.endsWith('e')) w = w.slice(0, -1);
+  if (w.length > 3 && /([bdfgklmnprtz])\1$/.test(w)) w = w.slice(0, -1);
+  return w;
+}
+
+function contentStems(text: string, skip: Set<string>): Set<string> {
+  return new Set([...words(text)].map(stem).filter((w) => !skip.has(w) && !/^\d/.test(w)));
+}
+
+/** Numbers, with "four" read as 4, so "four years old" and "4 years old" match. */
+function numbersIn(text: string): Set<string> {
+  const spelt = text.toLowerCase().replace(new RegExp(`\\b(${NUMBER_WORDS.join('|')})\\b`, 'g'), (w) => String(NUMBER_WORDS.indexOf(w)));
+  return new Set(spelt.match(/\d+(?:[.:]\d+)?/g) ?? []);
+}
+
+/** Names, days, months and places: capitalised words, apart from their name and words that start a sentence. */
+function namesIn(text: string, skip: Set<string>): Set<string> {
+  return new Set((text.match(/\b[A-Z][A-Za-z'’-]*/g) ?? []).map(stem).filter((w) => !skip.has(w) && !STARTERS.has(w)));
+}
+
+/**
+ * Whether facts are about one thing: each shares a word or name (other than theirs) with another, so "has a cat
+ * called Biscuit" and "Biscuit is a tabby" join, but "is a teacher in Leeds" and "is allergic to peanuts" don't.
+ * The 2B joins whichever facts are next to each other.
+ */
+function oneTopic(sources: Memory[], skip: Set<string>): boolean {
+  const own = sources.map((m) => new Set([...contentStems(m.fact, skip), ...namesIn(m.fact, skip)]));
+  const reached = new Set([0]);
+  for (let grew = true; grew;) {
+    grew = false;
+    own.forEach((s, i) => {
+      if (reached.has(i) || ![...reached].some((j) => [...s].some((w) => own[j].has(w)))) return;
+      reached.add(i);
+      grew = true;
+    });
+  }
+  return reached.size === sources.length;
+}
+
+/**
+ * Why a merged fact can't replace the facts it joins, or '' when it can. The facts must be about one thing, and the
+ * merged fact about them, no longer than they are together, keeping every name and number, adding none, adding no
+ * other word (beyond a few that join sentences), "not" or he/she, and keeping each fact's words but one. Small
+ * models pair unrelated facts, rephrase, drop details and make things up, so this is checked by rules, not trusted.
+ */
+export function mergeProblem(sources: Memory[], merged: string, name = ''): string {
+  const fact = cleanFact(merged);
+  const count = (t: string) => t.split(/\s+/).filter((w) => /\w/.test(w)).length;
+  const skip = new Set(name ? name.split(/\s+/).map(stem) : ['user']);
+  if (!oneTopic(sources, skip)) return 'joins unrelated facts';
+  if (!aboutThem(fact, name || 'the user')) return `doesn't start with ${name || 'the user'}`;
+  const before = sources.reduce((n, m) => n + count(m.fact), 0);
+  if (count(fact) > before) return 'longer';
+  if (count(fact) > MERGE_MAX_WORDS) return 'too long';
+  const all = sources.map((m) => m.fact).join('. ');
+  const has = (a: Set<string>, b: Set<string>) => [...a].filter((x) => !b.has(x));
+  const numbers = numbersIn(fact);
+  const sourceNumbers = numbersIn(all);
+  if (has(numbers, sourceNumbers).length) return `adds ${has(numbers, sourceNumbers).join(', ')}`;
+  if (has(sourceNumbers, numbers).length) return `drops ${has(sourceNumbers, numbers).join(', ')}`;
+  const names = namesIn(fact, skip);
+  const sourceNames = new Set([...namesIn(all, skip), ...contentStems(all, skip)]); // "Spanish" may start a fact
+  const keptNames = new Set([...names, ...contentStems(fact, skip)]);
+  if (has(names, sourceNames).length) return `adds ${has(names, sourceNames).join(', ')}`;
+  const lost = has(namesIn(all, skip), keptNames);
+  if (lost.length) return `drops ${lost.join(', ')}`;
+  const times = (t: string, words: RegExp) => (t.match(words) ?? []).length;
+  if (times(fact, NEGATION) > times(all, NEGATION) + times(all, DISLIKE)) return 'adds a "not"'; // "dislikes long intros" → "no long intros"
+  if (times(fact, GENDERED) > times(all, GENDERED)) return 'adds he or she'; // a guess: facts use names
+  const stems = contentStems(fact, skip);
+  const sourceStems = contentStems(all, skip);
+  const added = [...stems].filter((w) => !sourceStems.has(w) && !GLUE.has(w) && !w.match(NEGATION)); // a "not" is counted above
+  if (added.length) return `adds ${added.join(', ')}`;
+  for (const m of sources) {
+    const dropped = [...contentStems(m.fact, skip)].filter((w) => !stems.has(w));
+    if (dropped.length > 1) return `drops ${dropped.join(', ')}`; // one word ("likes", "wants") may go as facts join
+  }
+  return '';
+}
+
+/**
+ * Read the model's merges, keeping only ones that are safe to offer: two to four real, current facts each, each
+ * fact in one merge at most, and a merged fact that passes mergeProblem. Each comes back as an overlap, so Tidy up's
+ * approve dialog and applyTidy work as they are.
+ */
+export function parseCompress(reply: string, memories: Memory[], name = ''): TidyChange[] {
+  const match = reply.match(/\{[\s\S]*\}/);
+  let data: unknown;
+  try {
+    data = JSON.parse(match ? match[0] : reply);
+  } catch {
+    return [];
+  }
+  const d = data as { merges?: unknown; groups?: unknown; changes?: unknown };
+  const raw = d?.merges ?? d?.groups ?? d?.changes;
+  if (!Array.isArray(raw)) return [];
+  type Raw = { facts?: unknown; remove?: unknown; fact?: unknown; add?: unknown };
+  const used = new Set<string>();
+  const out: TidyChange[] = [];
+  for (const c of raw.slice(0, 30) as Raw[]) {
+    if (!c || typeof c !== 'object') continue;
+    const numbers = Array.isArray(c.facts) ? c.facts : Array.isArray(c.remove) ? c.remove : [];
+    const text = typeof c.fact === 'string' ? c.fact : typeof c.add === 'string' ? c.add : '';
+    const targets = [...new Set(numbers.map((n) => {
+      const i = Number(n);
+      return Number.isInteger(i) && i >= 1 && i <= memories.length ? memories[i - 1] : undefined;
+    }))];
+    // One wrong or reused number and the merged text may hold another fact's details: skip the whole merge.
+    if (targets.length !== new Set(numbers.map(Number)).size || targets.some((m) => !m || m.until || used.has(m.id))) continue;
+    const sources = targets as Memory[];
+    if (sources.length < 2 || sources.length > MERGE_MAX_FACTS) continue;
+    const fact = cleanFact(text);
+    if (!fact || mergeProblem(sources, fact, name)) continue;
+    sources.forEach((m) => used.add(m.id));
+    const saved = sources.reduce((n, m) => n + m.fact.split(/\s+/).length, 0) - fact.split(/\s+/).length;
+    out.push({
+      kind: 'overlap',
+      remove: sources.map((m) => m.id),
+      add: { fact, category: sources[0].category ?? 'about' },
+      reason: `${sources.length} facts into one${saved > 0 ? `, ${saved} ${saved === 1 ? 'word' : 'words'} shorter` : ''}`,
+    });
+  }
+  return out;
 }
 
 /**

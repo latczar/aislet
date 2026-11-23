@@ -52,7 +52,7 @@ To link them, open Settings → Home on both, tap **Scan the laptop's code** on 
 **Knows you, and you stay in charge**
 - Learns lasting facts about you as you talk, including corrections like "shorter, please". Each one shows under the reply with Undo. When something changes, like a new job, the old fact is kept as no longer true. See, edit or forget them all in Memory.
 - Ask "what did we say about…" and it looks back at your earlier chats on that device.
-- "Get to know me" asks a few questions so it starts off knowing you, and "Tidy up" finds duplicate or out-of-date facts for you to approve.
+- "Get to know me" asks a few questions so it starts off knowing you. "Tidy up" finds duplicate or out-of-date facts, and "Compress" merges related facts into fewer, shorter ones. You approve each change, and can undo them.
 - Searches your notes when it answers, and follows your own instructions and preferred answer length. Save any answer to Notes with one tap.
 
 **Answers from offline libraries**

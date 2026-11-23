@@ -156,5 +156,58 @@ check('offers to keep a plan they asked for', brain.worthKeeping('Make me a trai
 check("doesn't offer for a question without a list", !brain.worthKeeping('Make me a plan', 'Go for a run on Monday and rest on Sunday.'));
 check("doesn't offer when they didn't ask for something to keep", !brain.worthKeeping('How does a heat pump work?', plan));
 
+// ---- Compress: merges are offered only when they keep every detail and add none ----
+const pets = [
+  fact('p1', 'Sam has a cat called Biscuit'),
+  fact('p2', 'Biscuit is a ginger tabby'),
+  fact('p3', 'Biscuit is four years old'),
+  fact('p4', 'Sam lives in Leeds'),
+  fact('p5', 'Sam lived in Cork until 2020', 'about', { until: '2026-01-01' }),
+];
+const merge = (facts, text) => brain.parseCompress(JSON.stringify({ merges: [{ facts, fact: text }] }), pets, 'Sam');
+let merged = merge([1, 2, 3], 'Sam has a four-year-old ginger tabby cat called Biscuit');
+check('compress: a merge keeping every detail is offered', merged.length === 1 && merged[0].remove.join() === 'p1,p2,p3' && merged[0].kind === 'overlap', JSON.stringify(merged));
+check('compress: it says how much shorter', merged[0]?.reason === '3 facts into one, 7 words shorter', merged[0]?.reason);
+check('compress: 4 years old matches four years old', merge([1, 2, 3], 'Sam has a ginger tabby cat called Biscuit, 4 years old').length === 1);
+const problems = [
+  ['an invented detail', [1, 2], 'Sam has a fluffy ginger tabby cat called Biscuit'],
+  ['an invented name', [1, 2], 'Sam and Priya have a ginger tabby cat called Biscuit'],
+  ['an invented number', [1, 2], 'Sam has a ginger tabby cat called Biscuit, 3 years old'],
+  ['a dropped number', [1, 3], 'Sam has a cat called Biscuit'],
+  ['a dropped name', [1, 2], 'Sam has a ginger tabby cat'],
+  ['a dropped detail', [1, 2], 'Sam has a cat called Biscuit'],
+  ['an added "not"', [1, 2], 'Sam has a ginger tabby cat called Biscuit, not a dog'],
+  ['one fact', [1], 'Sam has a cat called Biscuit'],
+  ['a number outside the list', [1, 9], 'Sam has a cat called Biscuit'],
+  ['history (until)', [4, 5], 'Sam lives in Leeds and lived in Cork until 2020'],
+  ['not about them', [1, 2], 'Biscuit is a ginger tabby cat that Sam has'],
+  ['more words than the facts', [1, 2], 'Sam has a cat called Biscuit, and Biscuit is a ginger tabby cat'],
+  ['an added he or she', [1, 2], 'Sam has her ginger tabby cat called Biscuit'],
+];
+for (const [what, facts, text] of problems) check(`compress: no merge with ${what}`, merge(facts, text).length === 0, JSON.stringify(merge(facts, text)));
+merged = brain.parseCompress(JSON.stringify({ merges: [
+  { facts: [1, 2], fact: 'Sam has a ginger tabby cat called Biscuit' },
+  { facts: [2, 3], fact: 'Sam has a four-year-old ginger tabby called Biscuit' },
+] }), pets, 'Sam');
+check('compress: no merge joining unrelated facts', merge([1, 4], 'Sam lives in Leeds and has a cat called Biscuit').length === 0);
+check('compress: "dislikes" may become "no" or "without"', brain.mergeProblem(
+  [fact('d1', 'Sam prefers short answers'), fact('d2', 'Sam dislikes long introductions in answers')],
+  'Sam prefers short answers without long introductions', 'Sam') === '');
+merged = merge([1, 2], 'Sam has a cat called Biscuit, which is a ginger tabby');
+check('compress: as many words but one fact fewer is fine', merged.length === 1 && merged[0].reason === '2 facts into one', JSON.stringify(merged));
+check('compress: each fact in one merge at most', merged.length === 1 && merged[0].remove.join() === 'p1,p2');
+check('compress: copes with stray text', brain.parseCompress(`Here you go: {"merges": [{"facts": ["1", "2"], "fact": "Sam has a ginger tabby cat called Biscuit."}]}`, pets, 'Sam').length === 1);
+check('compress: bad JSON gives nothing', brain.parseCompress('{"merges": [', pets, 'Sam').length === 0);
+check('compress: "the user" with no name set', brain.parseCompress(JSON.stringify({ merges: [{ facts: [1, 2], fact: 'The user has a ginger tabby cat called Biscuit' }] }),
+  [fact('u1', 'The user has a cat called Biscuit'), fact('u2', 'Biscuit is a ginger tabby')], '').length === 1);
+check('compress: plurals and tenses count as the same word', brain.mergeProblem(
+  [fact('r1', 'Sam trains on Tuesdays'), fact('r2', 'Sam is training for a half marathon')],
+  'Sam trains on Tuesdays for a half marathon', 'Sam') === '');
+const groups = brain.tidyGroups([...pets, fact('g1', 'Sam likes jazz', 'preferences'), fact('g2', 'Sam is learning Spanish', 'goals'), fact('g3', 'Sam wants to run a 10k', 'goals')]);
+check('compress and tidy: a category at a time, without history or lone facts',
+  groups.length === 2 && groups[0].map((m) => m.id).join() === 'p1,p2,p3,p4' && groups[1].map((m) => m.id).join() === 'g2,g3', JSON.stringify(groups.map((g) => g.map((m) => m.id))));
+const asked = brain.compressMessages('Sam', pets.slice(0, 3));
+check('compress: the prompt numbers the facts without dates', asked[1].content.includes('1. Sam has a cat called Biscuit') && !asked[1].content.includes('2026'));
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

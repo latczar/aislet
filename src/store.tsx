@@ -2,9 +2,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
 import {
-  CATEGORIES, type ChatIndex, type LearntFact, MAX_TOKENS, MEMORY_LIMIT, type PastRecall, SAME_THING, TIDY_BATCH, type TidyChange,
-  chunkText, cleanFact, conversationLearnMessages, indexChat, interviewPrompt, keywordScore, learnMessages, moreMemories, parseFacts, parseTidy, stopsQuestions,
-  pastFacts, recallsPast, relevantMemories, searchPast, similarity, stripThinking, systemPrompt, tidyMessages, titleFrom, turnContext, withoutClosingQuestion, worthLearning,
+  type ChatIndex, type LearntFact, MAX_TOKENS, MEMORY_LIMIT, type PastRecall, SAME_THING, type TidyChange,
+  chunkText, cleanFact, compressMessages, conversationLearnMessages, indexChat, interviewPrompt, keywordScore, learnMessages, moreMemories, parseCompress, parseFacts, parseTidy, stopsQuestions,
+  pastFacts, recallsPast, relevantMemories, searchPast, similarity, stripThinking, systemPrompt, tidyGroups, tidyMessages, titleFrom, turnContext, withoutClosingQuestion, worthLearning,
 } from './brain';
 import { actionsFor, actionsSupported, cardOnlyMessages, eventsOnDayAsked, missingCard, withCard } from './deviceActions';
 import { type WebHit, needsWeb, searchWeb, webQuery } from './webSearch';
@@ -87,7 +87,11 @@ interface Store {
   removeMemory(id: string): Promise<void>;
   /** Ask the model for duplicates, contradictions and overlaps to tidy. Nothing changes until applyTidy. */
   proposeTidy(): Promise<TidyChange[]>;
-  applyTidy(changes: TidyChange[]): Promise<void>;
+  /** Ask the model to merge related facts into fewer, shorter ones. Nothing changes until applyTidy. */
+  proposeCompress(): Promise<TidyChange[]>;
+  /** Make the approved changes. Returns what undoTidy needs to put memory back as it was. */
+  applyTidy(changes: TidyChange[]): Promise<TidyUndo | null>;
+  undoTidy(undo: TidyUndo): Promise<void>;
   notes: Note[];
   saveNote(note: { id?: string; title: string; text: string }): Promise<void>;
   deleteNote(id: string): Promise<void>;
@@ -123,6 +127,13 @@ interface Store {
   openLibraryFolder: (() => Promise<void>) | null; // the PC shows the folder; null on a phone
   snapshot(): Backup;                    // memory, notes, name and instructions, for a backup
   restore(backup: Backup): Promise<string>; // adds anything new from a backup; returns a summary
+}
+
+/** What a tidy or compress changed, so Undo can put it back. */
+export interface TidyUndo {
+  order: string[];   // fact ids, in order, before the change
+  removed: Memory[]; // the facts it forgot
+  added: string[];   // ids of the facts it wrote
 }
 
 /** A fact learnt from a message, shown under the reply with Undo. */
@@ -662,23 +673,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return relevantMemories(all, query, limit, queryVec ? { query: queryVec, facts } : undefined);
   }, [memoryVectors]);
 
-  const proposeTidy = useCallback(async (): Promise<TidyChange[]> => {
+  /** Ask the model about each category's current facts in turn (see tidyGroups), and read its suggestions. */
+  const suggestChanges = useCallback(async (
+    ask: (name: string, group: Memory[]) => Message[], read: (reply: string, group: Memory[], name: string) => TidyChange[],
+  ): Promise<TidyChange[]> => {
     if (busyRef.current) throw new Error('Wait for the current reply to finish, then try again.');
-    const all = memRef.current.filter((m) => !m.until); // what used to be true is history, not something to tidy
-    if (all.length < 2) return [];
-    // A category at a time (small models mix up facts across a long mixed list), in batches it can read at once.
-    const groups: Memory[][] = [];
-    for (const c of CATEGORIES) {
-      const group = all.filter((m) => (m.category ?? 'about') === c.id);
-      for (let i = 0; i < group.length; i += TIDY_BATCH) groups.push(group.slice(i, i + TIDY_BATCH));
-    }
+    const groups = tidyGroups(memRef.current);
+    if (!groups.length) return [];
     busyRef.current = true;
     setBusy(true);
     try {
       const changes: TidyChange[] = [];
-      for (const group of groups.filter((g) => g.length > 1)) {
-        const reply = await engineRef.current.json(tidyMessages(settingsRef.current.name, group), settingsRef.current.modelId, 1500);
-        changes.push(...parseTidy(reply, group));
+      for (const group of groups) {
+        const name = settingsRef.current.name;
+        const reply = await engineRef.current.json(ask(name, group), settingsRef.current.modelId, 1500);
+        changes.push(...read(reply, group, name));
       }
       return changes;
     } finally {
@@ -687,19 +696,45 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const applyTidy = useCallback(async (changes: TidyChange[]) => {
+  const proposeTidy = useCallback(() => suggestChanges(tidyMessages, (reply, group) => parseTidy(reply, group)), [suggestChanges]);
+  const proposeCompress = useCallback(() => suggestChanges(compressMessages, parseCompress), [suggestChanges]);
+
+  const applyTidy = useCallback(async (changes: TidyChange[]): Promise<TidyUndo | null> => {
     const gone = new Set(changes.flatMap((c) => c.remove));
-    if (!gone.size) return;
-    const kept = memRef.current.filter((m) => !gone.has(m.id));
+    if (!gone.size) return null;
+    const before = memRef.current;
+    const kept = before.filter((m) => !gone.has(m.id));
+    const added: string[] = [];
     for (const c of changes) {
       const add = c.add;
       if (!add || kept.some((m) => m.fact.toLowerCase() === add.fact.toLowerCase())) continue;
       // A merged fact keeps the date of the newest fact it replaces, so later tidies know how recent it is.
-      const dates = memRef.current.filter((m) => c.remove.includes(m.id)).map((m) => m.added).sort();
-      kept.push({ id: newId(), fact: add.fact, category: add.category, added: dates[dates.length - 1] ?? today() });
+      const dates = before.filter((m) => c.remove.includes(m.id)).map((m) => m.added).sort();
+      const id = newId();
+      added.push(id);
+      kept.push({ id, fact: add.fact, category: add.category, added: dates[dates.length - 1] ?? today() });
     }
     await markDeleted([...gone]);
     await saveMemories(kept);
+    return { order: before.map((m) => m.id), removed: before.filter((m) => gone.has(m.id)), added };
+  }, [markDeleted, saveMemories]);
+
+  /** Put back what a tidy or compress forgot, in its old place, and forget what it wrote. Facts learnt since stay. */
+  const undoTidy = useCallback(async (undo: TidyUndo) => {
+    const added = new Set(undo.added);
+    // The forgotten facts come back with new ids: the old ones are marked deleted for sync.
+    const back = new Map(undo.removed.map((m) => [m.id, { ...m, id: newId() }]));
+    const now = new Map(memRef.current.filter((m) => !added.has(m.id)).map((m) => [m.id, m]));
+    const next: Memory[] = [];
+    for (const id of undo.order) {
+      const m = now.get(id) ?? back.get(id);
+      if (!m) continue; // forgotten since
+      next.push(m);
+      now.delete(id);
+    }
+    next.push(...now.values());
+    if (undo.added.length) await markDeleted(undo.added);
+    await saveMemories(next);
   }, [markDeleted, saveMemories]);
 
   // ---- Notes ----
@@ -1240,7 +1275,7 @@ ${interviewPrompt(s.name)}` : prompt };
   }, [restore]);
 
   const value: Store = {
-    loaded, startView, settings, updateSettings, status, refreshStatus, engine, hub, syncNow, memories, addMemory, removeMemory, proposeTidy, applyTidy,
+    loaded, startView, settings, updateSettings, status, refreshStatus, engine, hub, syncNow, memories, addMemory, removeMemory, proposeTidy, proposeCompress, applyTidy, undoTidy,
     notes, saveNote, deleteNote, chats, chat, openChat, newChat, deleteChat, pinChat, archiveChats, clearChats, busy, error, clearError, noted,
     undoLearnt, found, answerFromLibrary, dismissFound, setLibraryChoice,
     send, regenerate, startInterview, stop, exportData, importData, snapshot, restore,
