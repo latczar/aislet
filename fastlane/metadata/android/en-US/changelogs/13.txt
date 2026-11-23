@@ -1,0 +1,6 @@
+• Much faster on the phone: follow-ups start in under a second, new chats in about 2 seconds.
+• More helpful: it does the task in the format you asked for, without sign-off filler.
+• A menu (☰) with Chat, Memory, Notes and Settings, and a new-chat page with ideas for you.
+• One AI model per phone, chosen to suit its memory.
+• Plans and lists can be kept in Notes with one tap.
+• Fixes: the 📎 menu after typing, Back on a note, smoother replies.

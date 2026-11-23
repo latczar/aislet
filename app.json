@@ -3,7 +3,7 @@
     "name": "Aislet",
     "slug": "untethered",
     "scheme": "aislet",
-    "version": "1.1.1",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "app.untethered.assistant",
-      "versionCode": 12,
+      "versionCode": 13,
       "adaptiveIcon": {
         "backgroundColor": "#18181B",
         "foregroundImage": "./assets/android-icon-foreground.png",
