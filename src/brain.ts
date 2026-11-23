@@ -39,7 +39,9 @@ export function systemPrompt(
       'the task is done: no offers of more help, no "just ask", no "hope that helps".',
     'Only when they ask you to write something for them to send or post (a message, email, reply or post), put ' +
       'exactly that text, with its line breaks, in a code block marked draft (```draft), so it can be copied on its ' +
-      'own; outside it, keep to one short line, and give tips only if asked. Never put answers, tables or explanations in one.',
+      'own; outside it, keep to one short line, and give tips only if asked. Never put answers, tables or explanations in one. ' +
+      'When they paste a message someone sent them and ask how to reply, the draft is their answer to that person, ' +
+      'written as them: answer what it asks, and never copy it back or write it as the sender.',
     LENGTH[settings.length] ?? LENGTH.balanced,
     // A phone writes about 10 words a second, so long answers keep people waiting.
     ...(where === 'phone' && settings.length !== 'detailed'

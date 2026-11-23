@@ -186,7 +186,7 @@ const TIME_OR_SMALL_NUMBER = /(^|[\s(@~])\d{1,2}([:.h]\d{2})?(?![\d%,.]?\d)(?!\s
 // Asking for words (a reply, a draft, a summary, a translation) isn't asking for a card, however many days and times
 // the text has in it: "help me reply to my landlord: the plumber can come Thursday between 8 and 12" had the model
 // offer a calendar event or a timer instead of the reply. Naming a card as well ("…and add it to my calendar") still asks.
-const WRITING_TASK = /^\W*(?:(?:can|could|would|will) you\s+|please\s+)?(?:help me\s+(?:to\s+)?|i need (?:help\s+)?(?:to\s+)?)?(?:reply|respond|draft|write|compose|summari[sz]e|translate|rewrite|reword|proofread|polish|shorten)\b/i;
+const WRITING_TASK = /^\W*(?:(?:(?:can|could|would|will) you\s+|please\s+)?(?:help me\s+(?:to\s+)?|i need (?:help\s+)?(?:to\s+)?)?(?:reply|respond|draft|write|compose|summari[sz]e|translate|rewrite|reword|proofread|polish|shorten)|(?:what|how) (?:should|do|can|would) i (?:say|write|reply|respond|answer|text|send))\b/i;
 const NAMES_A_CARD = /\b(alarms?|timers?|countdown|remind me|reminders?|wake me|calendar|diary)\b/i;
 
 function writingTask(text: string): boolean {
