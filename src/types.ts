@@ -8,6 +8,7 @@ export interface Message {
   files?: { name: string }[]; // names of attached files, for the chat to show
   web?: boolean;              // you: search the web for this one (the globe by the message box)
   searched?: { query: string; ok: boolean; sources?: { title: string; url: string }[] }; // AI: it searched the web first
+  preparing?: boolean;        // AI, while it waits: the phone's model is loading or reading ahead (shown, never saved)
 }
 
 export interface Chat {

@@ -161,6 +161,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [startView, setStartView] = useState('chat');
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [status, setStatus] = useState<EngineStatus | null>(null);
+  const [phoneReady, setPhoneReady] = useState(false); // the phone's own AI answers, and has a model
   const [memories, setMemories] = useState<Memory[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [chats, setChats] = useState<ChatSummary[]>([]);
@@ -379,15 +380,26 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       s = { ready: false, label: 'Ollama', problem: 'The AI is taking a long time to start. Open the Ollama app on the laptop, then press Retry.' };
     }
     setStatus(s);
+    setPhoneReady(s.ready && active === localEngine && Platform.OS !== 'web');
     if (connected) syncNow();
     if (s.ready && active === localEngine && localEngine.warm) {
-      // Read a new chat's system message ahead only while no chat is open: mid-chat it would replace that chat's reading.
-      const idle = !chatRef.current?.messages.length;
-      localEngine.warm(settingsRef.current.modelId, idle ? newChatSystem('phone') : undefined).catch(() => undefined);
+      // Load the model and read a new chat's system message ahead. With a chat open, the phone does that only before
+      // it has read the chat (just after loading), as reading it ahead mid-chat would replace that chat's reading.
+      const open = !!chatRef.current?.messages.length;
+      localEngine.warm(settingsRef.current.modelId, newChatSystem('phone'), open).catch(() => undefined);
     }
   }, [hubTarget, pickEngine, syncNow]);
   checkRef.current = checkStatus;
   const refreshStatus = useCallback(() => checkStatus(false), [checkStatus]);
+
+  // A new chat on the phone's own AI: read its system message ahead while they type, if it isn't already (after
+  // learning, photos or a "get to know me" chat, or with a chat open since the app started, it isn't).
+  const blank = !chat?.messages.length;
+  useEffect(() => {
+    if (blank && phoneReady && !busyRef.current) {
+      localEngine.warm?.(settingsRef.current.modelId, newChatSystem('phone')).catch(() => undefined);
+    }
+  }, [blank, phoneReady, newChatSystem]);
 
   useEffect(() => {
     (async () => {
@@ -1015,15 +1027,22 @@ ${interviewPrompt(s.name)}` : prompt };
         return a && a.for === m.content ? { ...m, content: `${a.text}\n\n${m.content}` } : m;
       };
       const history = base.messages.slice(cp.start).map((m, i) => withAdded(m, cp.start + i));
+      // While the phone's model loads or reads ahead, the reply says so rather than showing only the dots.
+      const onWait = (waiting: boolean) => setChat((c) => {
+        if (!c || c.messages[answerAt]?.content) return c;
+        const messages = c.messages.slice();
+        messages[answerAt] = { ...messages[answerAt], role: 'assistant', preparing: waiting || undefined };
+        return { ...c, messages };
+      });
       await active.chat([sys, ...history, withAdded(userMsg, at)], s.modelId, (token) => {
         answer += token;
         drawTimer ??= setTimeout(draw, 66);
-      }, MAX_TOKENS[s.length] ?? 1024);
+      }, MAX_TOKENS[s.length] ?? 1024, { onWait });
       // Asked for a reply and a card, the model sometimes wrote only the reply: then it's asked for the card alone.
       if (missingCard(actions, stripThinking(answer))) {
         try {
           let line = '';
-          await active.chat(cardOnlyMessages(userMsg.display ?? userMsg.content), s.modelId, (token) => { line += token; }, 160);
+          await active.chat(cardOnlyMessages(userMsg.display ?? userMsg.content), s.modelId, (token) => { line += token; }, 160, { aside: true });
           answer = withCard(stripThinking(answer).trim(), stripThinking(line));
           draw();
         } catch {

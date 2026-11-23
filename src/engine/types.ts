@@ -32,11 +32,18 @@ export interface ModelManager {
   remove(id: string): Promise<void>;
 }
 
+export interface ChatOptions {
+  /** The phone: called with true when the reply must first wait for the model to load or read ahead, false when it starts. */
+  onWait?: (waiting: boolean) => void;
+  /** A request outside the chat (a card asked for alone): the phone keeps its reading of the chat for the next message. */
+  aside?: boolean;
+}
+
 export interface Engine {
   where: 'laptop' | 'phone';
   status(modelId: string): Promise<EngineStatus>;
   /** Stream a reply; returns the full text. */
-  chat(messages: Message[], modelId: string, onToken: (text: string) => void, maxTokens?: number): Promise<string>;
+  chat(messages: Message[], modelId: string, onToken: (text: string) => void, maxTokens?: number, opts?: ChatOptions): Promise<string>;
   /** A JSON-only reply, used for learning facts (short) and tidying memory (longer). */
   json(messages: Message[], modelId: string, maxTokens?: number): Promise<string>;
   /** Vectors for notes search, or null when no embedding model is available. */
@@ -44,9 +51,11 @@ export interface Engine {
   /** Whether this engine can look at photos right now. */
   vision(modelId: string): boolean;
   stop(): void;
-  /** Load the model ahead of time so the first reply is quick. */
-  /** Load the model; with a system message, also read it ahead (the phone), so the next new chat starts sooner. */
-  warm?(modelId: string, system?: string): Promise<void>;
+  /**
+   * Load the model; with a system message, also read it ahead (the phone), so the next new chat starts sooner. With
+   * `chatOpen`, only while the open chat hasn't been read yet: reading ahead would replace its reading.
+   */
+  warm?(modelId: string, system?: string, chatOpen?: boolean): Promise<void>;
   /** Choose the chip (phone) and how hard to work: cool, balanced or max. */
   configure?(opts: { accel: Accel; performance: Performance }): void;
   /** Phone: speed of the last reply, in tokens per second. */

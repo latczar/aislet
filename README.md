@@ -46,6 +46,8 @@ To link them, open Settings → Home on both, tap **Scan the laptop's code** on 
 - On Android, a home-screen widget asks, or starts talking hands-free, in one tap.
 - On Android, ask for an alarm, a timer or a calendar event ("wake me at 7", "add the dentist on Tuesday at 3pm"). Aislet shows it as a card, and a tap hands it to your Clock or Calendar app to check and keep.
 - Picks up where you left off: the chat and screen you had open come back. Pin the chats you use most to the top of the list.
+- Archive chats you've finished with: they move to an Archived section at the bottom of the list and stay out of look-backs until you unarchive them. Archive or unarchive them all at once in Settings.
+- A new chat suggests a few ideas to try, a different handful each time.
 
 **Knows you, and you stay in charge**
 - Learns lasting facts about you as you talk, including corrections like "shorter, please". Each one shows under the reply with Undo. When something changes, like a new job, the old fact is kept as no longer true. See, edit or forget them all in Memory.

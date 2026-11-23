@@ -3,6 +3,7 @@
     python scripts/eval/phone_speed.py state           which AI, performance mode and accelerator are set
     python scripts/eval/phone_speed.py cold [runs]     cold starts: first frame, message box and a ready AI
     python scripts/eval/phone_speed.py chat [runs]     a made-up prompt and two follow-ups in a new chat, timed
+    python scripts/eval/phone_speed.py short [runs]    after a cold start, an alarm ask in a new chat and a timer ask in another
     python scripts/eval/phone_speed.py memory          the app's memory use (PSS and RSS)
     python scripts/eval/phone_speed.py laptop-off      switch "Use the laptop's AI at home" off (laptop-on: back on)
 
@@ -223,6 +224,43 @@ def chat(runs: int) -> None:
           "laptop's AI, Ollama's log on the laptop has its prompt sizes and times)")
 
 
+SHORT_ASKS = ('E2E check: wake me up at 6:45 tomorrow', 'E2E check: set a timer for 10 minutes')
+OPEN_CHAT = 'E2E check: say hello in three words.'
+
+
+def short(runs: int) -> None:
+    """Short asks after a cold start, as people use it: the app reopens on a chat, they start a new one and ask for
+    an alarm (the first answer), then a timer in another new chat (the second answer)."""
+    in_front_ok()
+    try:
+        for i in range(runs):
+            e2e.open_new_chat()
+            send_and_time(OPEN_CHAT)  # leave a chat open, as the app reopens on the last one
+            e2e.hide_keyboard()
+            e2e.key(3)
+            time.sleep(1)
+            e2e.shell(f'am force-stop {PKG}')
+            time.sleep(3)
+            e2e.adb('logcat', '-c', check=False)
+            e2e.shell(f'am start -W -n {PKG}/.MainActivity -f 0x10008000')
+            e2e.wait_for('the AI ready', timeout=60, contains='· private')
+            for label, text in zip(('first answer', 'second answer'), SHORT_ASKS):
+                e2e.open_new_chat()
+                start_log = phone_log()  # the model loading and reading ahead, since the app started
+                r = send_and_time(text)
+                e2e.hide_keyboard()
+                ahead = [m for _, m in start_log if 'model loaded' in m]
+                waited = next((re.search(r'waited ([\d.]+) s', m) for _, m in phone_log() if 'waited' in m), None)
+                print(f"run {i + 1} {label:14} reply finished by {r['done']} ms; {r['read'] or 'no split logged'}"
+                      f"{f'; waited {waited.group(1)} s to start' if waited else ''}"
+                      f"{', whole prompt read again' if r['full_reprocess'] else ''}"
+                      f"{f' | before it: {ahead[-1]}' if ahead and label == 'first answer' else ''}")
+            delete_test_chats()
+    finally:
+        print('test chats deleted:', delete_test_chats())
+    print('(the screen is read every ~2 s, so "finished by" is an upper bound; the split is from the phone\'s log)')
+
+
 def memory() -> None:
     out = e2e.shell(f'dumpsys meminfo {PKG}')
     for line in out.splitlines():
@@ -236,5 +274,5 @@ if __name__ == '__main__':
     what = sys.argv[1] if len(sys.argv) > 1 else ''
     n = int(sys.argv[2]) if len(sys.argv) > 2 else 3
     e2e.preflight(force=False)
-    {'state': state, 'cold': lambda: cold(n), 'chat': lambda: chat(n), 'memory': memory,
+    {'state': state, 'cold': lambda: cold(n), 'chat': lambda: chat(n), 'short': lambda: short(n), 'memory': memory,
      'laptop-on': lambda: set_laptop(True), 'laptop-off': lambda: set_laptop(False)}.get(what, lambda: print(__doc__))()

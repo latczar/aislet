@@ -309,6 +309,7 @@ type AssistantProps = {
   index: number; text: string; asked: string; last: boolean; streaming: boolean; busy: boolean; noted?: Learnt[]; saved: boolean;
   offerKeep?: boolean; onKeepDismiss?: (index: number) => void; // "Keep this in Notes?" under a plan or list
   searched?: Message['searched']; found?: LibraryHit[]; onRetry: () => void; onSave: (index: number) => void;
+  preparing?: boolean; // the phone's model is still loading or reading ahead
   onUndo: (index: number, item: Learnt) => void; onAnswerFrom: (index: number) => void;
   onLibraryChoice: (index: number, book: string, choice: 'always' | 'never') => void;
 };
@@ -353,7 +354,7 @@ function LibraryOffer({ index, hits, busy, onAnswerFrom, onLibraryChoice }: {
 
 // Memoised, like UserMessage: while a reply streams, only the message that's changing redraws.
 const AssistantMessage = React.memo(function AssistantMessage({
-  index, text: reply, asked, last, streaming, busy, noted, saved, searched, found, onRetry, onSave, onUndo, onAnswerFrom,
+  index, text: reply, asked, last, streaming, busy, noted, saved, searched, found, preparing, onRetry, onSave, onUndo, onAnswerFrom,
   onLibraryChoice, offerKeep, onKeepDismiss,
 }: AssistantProps) {
   const theme = useTheme();
@@ -377,6 +378,9 @@ const AssistantMessage = React.memo(function AssistantMessage({
                 : searched.ok ? `Searched the web for “${searched.query}”` : "Couldn't search the web, so this answer may be out of date"}
             </Text>
           </View>
+        )}
+        {streaming && !text && preparing && (
+          <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant, marginTop: 4 }}>Getting the AI ready…</Text>
         )}
         {text ? <Markdown text={text} /> : streaming ? <ThinkingDots /> : null}
         {!streaming && !!text && !!searched?.sources?.length && <Sources sources={searched.sources} />}
@@ -956,7 +960,7 @@ export function ChatView({ onOpenSettings, incoming, onIncomingTaken, talkReques
             ) : (
               <AssistantMessage
                 key={i} index={i} text={m.content} asked={asksBefore(i)} last={i === lastAi} streaming={busy && i === messages.length - 1}
-                busy={busy} noted={noted[i]} saved={noteTexts.has(shownText(m.content).trim())} searched={m.searched}
+                busy={busy} noted={noted[i]} saved={noteTexts.has(shownText(m.content).trim())} searched={m.searched} preparing={m.preparing}
                 found={found[i]} onRetry={regenerate} onSave={saveToNotes} onUndo={undo} onAnswerFrom={answerFrom}
                 onLibraryChoice={chooseLibrary} onKeepDismiss={dismissKeep}
                 offerKeep={i === lastAi && !busy && !noKeep[i] && worthKeeping(askedBefore(i), m.content)}

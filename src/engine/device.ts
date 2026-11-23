@@ -85,7 +85,11 @@ let accel: Accel = 'cpu';
 let performance: Performance = 'balanced';
 let chatCtx: LlamaContext | null = null;
 let chatKey = ''; // model + accel the context was made with
-let prefilled = ''; // the model and system message read ahead since the model loaded: done once, not on every check
+// The model and system message read ahead while llama.rn still keeps its save point after them: done once, not on
+// every check. Reading something with another system message (learning, a card asked for alone, photos) drops it.
+let prefilled = '';
+let readChat = false; // a chat has been read since the model loaded: reading a new chat's system message would replace it
+let aheadQueued = 0; // read-aheads waiting or running: a reply sent now waits for them
 
 // The chat model does one job at a time (llama.rn refuses a second one with "Context is busy"), so jobs take turns
 // here: reading a new chat's system message ahead, replies, learning or tidying, and deleting a model. A reply comes
@@ -130,15 +134,73 @@ async function unload() {
   embedCtx = null;
   chatKey = '';
   prefilled = '';
+  readChat = false;
   visionOn = false;
   await c?.release().catch(() => undefined);
   await e?.release().catch(() => undefined);
 }
 
-/** Free the phone's memory and keep it cool when the app isn't being used. */
+/**
+ * Free the phone's memory when the app isn't being used: never mid-job, and in Balanced and Max not while the app is
+ * on screen (loading the model again and reading the system message afresh added about half a minute to the next
+ * reply). Idle, the loaded model only takes memory, not work. Cool mode frees it after a minute regardless.
+ */
 function touch() {
   if (idleTimer) clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => { if (running) touch(); else unload(); }, PROFILE[performance].idleMs); // never mid-job
+  idleTimer = setTimeout(() => {
+    const inUse = running !== null || (performance !== 'cool' && AppState.currentState === 'active');
+    if (inUse) touch(); else unload();
+  }, PROFILE[performance].idleMs);
+}
+
+// The system message's reading, kept between app starts: loading it takes well under a second, reading it again
+// about 25 s on a phone CPU. One file, for the latest system message, and the model and chip it was read with.
+const aheadFile = () => new File(Paths.cache, 'system-ahead.bin');
+const aheadAbout = () => new File(Paths.cache, 'system-ahead.txt'); // which model and chip; written only after a whole save
+
+/**
+ * Load the system message's reading kept from an earlier start, if it's for this model, chip and system message.
+ * llama.rn checks the file's tokens against what it holds, and a prompt only reuses the tokens it shares with them,
+ * so a file that doesn't match costs a read, never a wrong answer.
+ */
+async function loadAhead(ctx: LlamaContext, text: string, forKey: string): Promise<boolean> {
+  try {
+    const file = aheadFile();
+    const about = aheadAbout();
+    if (!file.exists || !about.exists || about.textSync() !== forKey) return false;
+    const loaded = await ctx.loadSession(file.uri);
+    return loaded.tokens_loaded > 0 && loaded.prompt === text;
+  } catch {
+    return false;
+  }
+}
+
+/** Keep the system message's reading for the next start. Saved up to the system message itself, not the token after. */
+async function saveAhead(ctx: LlamaContext, text: string, forKey: string): Promise<void> {
+  const about = aheadAbout();
+  try {
+    if (about.exists) about.delete(); // a half-written file is never taken for a whole one
+    const tokenSize = (await ctx.tokenize(text)).tokens.length;
+    if ((await ctx.saveSession(aheadFile().uri, { tokenSize })) > 0) {
+      about.create();
+      about.write(forKey);
+    }
+  } catch {
+    // the next start reads it again
+  }
+}
+
+function forgetAhead(): void {
+  try {
+    for (const f of [aheadAbout(), aheadFile()]) if (f.exists) f.delete();
+  } catch {
+    // a leftover file in the cache folder is harmless; it's replaced next time
+  }
+}
+
+/** Whether a reply sent now has to wait for the model to load or for the system message to be read ahead. */
+function mustWait(modelId: string): boolean {
+  return aheadQueued > 0 || running === 'remove' || !chatCtx || chatKey !== `${modelId}|${accel}|${performance}`;
 }
 
 function accelParams(a: Accel) {
@@ -262,28 +324,26 @@ const models: ModelManager = {
     if (!s) return;
     await inTurn('remove', async () => { // after any reply being written, so it isn't cut short
       await unload();
+      forgetAhead();
       if (modelFile(s).exists) modelFile(s).delete();
       if (doneMarker(s).exists) doneMarker(s).delete();
     });
   },
 };
 
-/** Ask the chat's model for JSON (learning, tidying) without losing its reading of the chat. */
-async function askJson(ctx: LlamaContext, messages: Message[], maxTokens: number, skip: () => boolean): Promise<string> {
-  // Learning and tidying ask the chat's model something else, which would replace its reading of the chat (on a
-  // phone CPU, about a minute of work for a long chat). Save that reading to a file first and load it back after,
-  // so the next message only reads what's new. If either step fails, the next message just reads it all again.
+/**
+ * Ask the chat's model something outside the chat (learning, tidying, a card asked for alone) without losing its
+ * reading of the chat. Reading something else would replace it (on a phone CPU, about a minute of work for a long
+ * chat), so it's saved to a file first and loaded back after, and the next message only reads what's new. If either
+ * step fails, the next message just reads it all again.
+ */
+async function aside<T>(ctx: LlamaContext, job: () => Promise<T>): Promise<T> {
   const state = new File(Paths.cache, 'chat-state.bin');
   const saved = await ctx.saveSession(state.uri).catch(() => 0);
   try {
-    if (skip()) return ''; // a message was sent while the reading was saved
-    const asked = ctx.completion({
-      messages: toLlama(messages.map(({ images: _i, ...m }) => m)), n_predict: maxTokens, temperature: 0, stop: STOP,
-      jinja: true, enable_thinking: false, response_format: { type: 'json_object' },
-    });
-    if (skip()) stopJob(); // sent just as it started
-    return (await asked).text ?? '';
+    return await job();
   } finally {
+    prefilled = ''; // reading another system message dropped llama.rn's save point after the new-chat one
     if (saved > 0) await ctx.loadSession(state.uri).catch(() => undefined);
     try {
       if (state.exists) state.delete();
@@ -292,6 +352,19 @@ async function askJson(ctx: LlamaContext, messages: Message[], maxTokens: number
     }
     touch();
   }
+}
+
+/** Ask the chat's model for JSON (learning, tidying) without losing its reading of the chat. */
+function askJson(ctx: LlamaContext, messages: Message[], maxTokens: number, skip: () => boolean): Promise<string> {
+  return aside(ctx, async () => {
+    if (skip()) return ''; // a message was sent while the reading was saved
+    const asked = ctx.completion({
+      messages: toLlama(messages.map(({ images: _i, ...m }) => m)), n_predict: maxTokens, temperature: 0, stop: STOP,
+      jinja: true, enable_thinking: false, response_format: { type: 'json_object' },
+    });
+    if (skip()) stopJob(); // sent just as it started
+    return (await asked).text ?? '';
+  });
 }
 
 export const deviceEngine: Engine = {
@@ -322,34 +395,65 @@ export const deviceEngine: Engine = {
     return { ready: true, label: "This phone's AI", model: s.name };
   },
 
-  async warm(modelId, system) {
+  async warm(modelId, system, chatOpen = false) {
     const s = spec(modelId);
     if (performance === 'cool' || !s || !isDownloaded(s)) return; // Cool mode only loads the model when you send
+    aheadQueued++;
     await inTurn('ahead', async () => {
+      const started = Date.now();
       const ctx = await chatContext(modelId);
-      const key = `${chatKey}|${system}`;
-      if (!system || prefilled === key) return;
+      const loadMs = Date.now() - started;
+      const key = `${chatKey}|${system?.trim()}`;
+      // With a chat open that's been read, reading a new chat's system message would replace that reading. Straight
+      // after loading there's nothing to replace, and the open chat's next prompt starts with it too.
+      if (!system || prefilled === key || (chatOpen && readChat)) {
+        if (loadMs > 500) console.log(`[ember] model loaded in ${(loadMs / 1000).toFixed(1)} s`);
+        return;
+      }
       // Read the system message now, while they look at the screen or type. llama.rn keeps a save point after it, so
       // the first message only reads what's typed (about 25 s less on a phone CPU). One token is written and dropped.
-      // A message sent meanwhile waits its turn rather than reading it all again.
-      await ctx.completion({ prompt: chatmlSystem(system), n_predict: 1, temperature: 0 });
+      // A message sent meanwhile waits its turn rather than reading it all again. The reading is kept in a file, so
+      // the next start of the app loads it instead.
+      const text = chatmlSystem(system);
+      const forKey = `${modelId}|${accel}`;
+      const before = Date.now();
+      if (await loadAhead(ctx, text, forKey)) {
+        prefilled = key;
+        console.log(`[ember] model loaded in ${(loadMs / 1000).toFixed(1)} s; system message loaded from the last `
+          + `start in ${((Date.now() - before) / 1000).toFixed(1)} s`);
+        return;
+      }
+      const r = await ctx.completion({ prompt: text, n_predict: 1, temperature: 0 });
       prefilled = key;
-    }).catch(() => undefined);
+      const saving = Date.now();
+      await saveAhead(ctx, text, forKey);
+      console.log(`[ember] model loaded in ${(loadMs / 1000).toFixed(1)} s; system message read ahead: `
+        + `${r.timings?.prompt_n ?? '?'} tokens in ${((r.timings?.prompt_ms ?? 0) / 1000).toFixed(1)} s, `
+        + `saved for the next start in ${((Date.now() - saving) / 1000).toFixed(1)} s`);
+    }).catch(() => undefined).finally(() => { aheadQueued--; });
   },
 
-  chat(messages, modelId, onToken, maxTokens = 1024) {
+  chat(messages, modelId, onToken, maxTokens = 1024, opts) {
     // Learning from the last message is a bonus: stop it so this one starts now (its reading of the chat is put back).
     skipJson = true;
     if (running === 'json') stopJob();
+    if (mustWait(modelId)) opts?.onWait?.(true);
+    const sent = Date.now();
     return inTurn('reply', async () => {
       skipJson = false; // learning asked for after this reply runs after it
       const ctx = await chatContext(modelId);
+      const waited = Date.now() - sent; // for the model to load, or for what was ahead of it (reading ahead, learning)
+      opts?.onWait?.(false);
       const photos = messages.some((m) => m.images?.length);
       if (photos) await ensureVision(ctx);
+      // A chat with another system message (photos, a "get to know me" chat) makes llama.rn drop its save point after
+      // the new-chat one: the next new chat then reads it ahead again.
+      const system = messages[0]?.role === 'system' ? messages[0].content.trim() : '';
+      if (photos || `${chatKey}|${system}` !== prefilled) prefilled = '';
       // Photos need llama.rn's own template; everything else is written as the model generated it (see chatml.ts),
       // so a follow-up only reads the new message.
       const sampling = { n_predict: maxTokens, temperature: 0.6, top_p: 0.9, stop: STOP };
-      const result = await ctx.completion(
+      const ask = () => ctx.completion(
         photos
           ? { ...sampling, messages: toLlama(messages), jinja: true, enable_thinking: false }
           : { ...sampling, prompt: chatmlPrompt(messages) },
@@ -357,11 +461,15 @@ export const deviceEngine: Engine = {
           if (data.token) onToken(data.token);
         },
       );
+      // A request outside the chat (a card asked for alone) keeps the chat's reading for its next message.
+      const result = opts?.aside ? await aside(ctx, ask) : await ask();
+      if (!opts?.aside) readChat = true;
       const t = result.timings;
-      speed = t?.predicted_per_second ?? null;
-      // How the time split: tokens read afresh (the rest came from the saved reading) and tokens written.
-      console.log(`[ember] ${speed?.toFixed(1)} tok/s on ${accel}; read ${t?.prompt_n ?? '?'} new tokens in `
-        + `${((t?.prompt_ms ?? 0) / 1000).toFixed(1)} s, wrote ${t?.predicted_n ?? '?'}`);
+      if (!opts?.aside) speed = t?.predicted_per_second ?? null;
+      // How the time split: waiting to start, tokens read afresh (the rest came from the saved reading), tokens written.
+      console.log(`[ember] ${(t?.predicted_per_second ?? 0).toFixed(1)} tok/s on ${accel}; read ${t?.prompt_n ?? '?'} new tokens in `
+        + `${((t?.prompt_ms ?? 0) / 1000).toFixed(1)} s, wrote ${t?.predicted_n ?? '?'}; waited ${(waited / 1000).toFixed(1)} s to start`
+        + `${opts?.aside ? ' (aside)' : ''}`);
       return result.text ?? '';
     });
   },
