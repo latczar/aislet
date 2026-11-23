@@ -97,6 +97,8 @@ interface Store {
   newChat(): void;
   deleteChat(id: string): Promise<void>;
   pinChat(id: string, pinned: boolean): Promise<void>;
+  /** Archive or bring back one chat, several, or all of them (handy before a demo). */
+  archiveChats(ids: string[] | 'all', archived: boolean): Promise<void>;
   clearChats(): Promise<void>;
   busy: boolean;
   error: string | null;
@@ -299,8 +301,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const nextIndex: ChatSummary[] = [
         ...merged.chats.map((c) => {
           const have = mine.get(c.id);
-          const pinned = (have && c.updated <= have.updated ? have : c).pinned || undefined; // from the copy that was kept
-          return { id: c.id, title: c.title, updated: Math.max(c.updated, have?.updated ?? 0), pinned };
+          const kept = have && c.updated <= have.updated ? have : c; // flags come from the copy that was kept
+          return { id: c.id, title: c.title, updated: Math.max(c.updated, have?.updated ?? 0), pinned: kept.pinned || undefined, archived: kept.archived || undefined };
         }),
         ...latestIndex.filter((c) => !fromHub.has(c.id) && (merged.deleted[c.id] ?? -1) < c.updated), // new here since the sync started
       ].sort((a, b) => b.updated - a.updated);
@@ -752,7 +754,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const saveChat = useCallback(async (c: Chat) => {
     await save(KEYS.chat(c.id), c);
     setChats((prev) => {
-      const next = [{ id: c.id, title: c.title, updated: c.updated, pinned: c.pinned }, ...prev.filter((p) => p.id !== c.id)];
+      const next = [{ id: c.id, title: c.title, updated: c.updated, pinned: c.pinned, archived: c.archived }, ...prev.filter((p) => p.id !== c.id)];
       save(KEYS.chats, next);
       return next;
     });
@@ -784,7 +786,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
    */
   const chatIndex = useCallback(async (): Promise<ChatIndex> => {
     const index = await load<ChatIndex>(KEYS.chatIndex, {});
-    const list = await load<ChatSummary[]>(KEYS.chats, []);
+    const list = (await load<ChatSummary[]>(KEYS.chats, [])).filter((c) => !c.archived); // archived chats aren't looked back on
     const live = new Set(list.map((c) => c.id));
     let changed = false;
     for (const id of Object.keys(index)) {
@@ -851,6 +853,36 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       return list;
     });
     setChat((current) => (current?.id === id ? { ...current, pinned: next.pinned } : current));
+    scheduleSync();
+  }, [scheduleSync]);
+
+  const archiveChats = useCallback(async (ids: string[] | 'all', archived: boolean) => {
+    const list = await load<ChatSummary[]>(KEYS.chats, []);
+    const wanted = ids === 'all' ? null : new Set(ids);
+    const changed = new Map<string, number>(); // id → new updated
+    for (const s of list) {
+      if ((wanted && !wanted.has(s.id)) || !!s.archived === archived) continue;
+      const c = await load<Chat | null>(KEYS.chat(s.id), null);
+      if (!c) continue;
+      // One millisecond newer, as with pins: sync carries it without beating newer messages from the other device.
+      const next: Chat = { ...c, updated: c.updated + 1 };
+      if (archived) next.archived = true;
+      else delete next.archived;
+      await save(KEYS.chat(s.id), next);
+      changed.set(s.id, next.updated);
+    }
+    if (!changed.size) return;
+    setChats((prev) => {
+      const next = prev.map((p) => {
+        const updated = changed.get(p.id);
+        if (updated === undefined) return p;
+        const { archived: _, ...rest } = p;
+        return archived ? { ...rest, updated, archived: true } : { ...rest, updated };
+      });
+      save(KEYS.chats, next);
+      return next;
+    });
+    setChat((current) => (current && changed.has(current.id) ? { ...current, archived: archived || undefined } : current));
     scheduleSync();
   }, [scheduleSync]);
 
@@ -998,6 +1030,7 @@ ${interviewPrompt(s.name)}` : prompt };
     const finalChat: Chat = {
       ...base,
       pinned: chatsRef.current.find((c) => c.id === base.id)?.pinned, // pinned or unpinned while it answered
+      archived: chatsRef.current.find((c) => c.id === base.id)?.archived, // likewise archived
       updated: Date.now(),
       messages: answer ? [...base.messages, userMsg, { role: 'assistant', content: answer, searched }] : base.messages,
     };
@@ -1177,7 +1210,7 @@ ${interviewPrompt(s.name)}` : prompt };
 
   const value: Store = {
     loaded, startView, settings, updateSettings, status, refreshStatus, engine, hub, syncNow, memories, addMemory, removeMemory, proposeTidy, applyTidy,
-    notes, saveNote, deleteNote, chats, chat, openChat, newChat, deleteChat, pinChat, clearChats, busy, error, clearError, noted,
+    notes, saveNote, deleteNote, chats, chat, openChat, newChat, deleteChat, pinChat, archiveChats, clearChats, busy, error, clearError, noted,
     undoLearnt, found, answerFromLibrary, dismissFound, setLibraryChoice,
     send, regenerate, startInterview, stop, exportData, importData, snapshot, restore,
     libraries, refreshLibraries, allowLibraries, moveLibraries, removeLibrary, openLibraryFolder: fileLibrary?.openFolder ?? null,

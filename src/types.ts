@@ -18,9 +18,10 @@ export interface Chat {
   messages: Message[];
   mode?: 'interview'; // a "get to know me" chat
   pinned?: boolean;   // shown at the top of the chat list (synced with the laptop)
+  archived?: boolean; // kept, but out of the chat list, the new-chat page and look-backs until unarchived (synced)
 }
 
-export type ChatSummary = Pick<Chat, 'id' | 'title' | 'updated' | 'pinned'>;
+export type ChatSummary = Pick<Chat, 'id' | 'title' | 'updated' | 'pinned' | 'archived'>;
 
 export type MemoryCategory = 'about' | 'preferences' | 'goals' | 'people' | 'projects';
 

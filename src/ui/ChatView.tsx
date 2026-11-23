@@ -28,7 +28,30 @@ const SUGGESTIONS = [
   { icon: 'lightbulb-on-outline', title: 'Explain something', sub: 'Any topic, in plain English', prompt: 'Explain a topic to me in plain English. Ask me which topic first.' },
   { icon: 'email-edit-outline', title: 'Draft a message', sub: 'Emails, texts or replies', prompt: "Help me draft a message. Ask me who it's for and what I want to say." },
   { icon: 'code-braces', title: 'Help with code', sub: 'Debug, explain or write it', prompt: "I need help with some code. Ask me what I'm working on." },
+  { icon: 'chef-hat', title: 'Cook with what I have', sub: 'Meals from your cupboard', prompt: "Suggest something I can cook with what's in my kitchen. Ask me what I have first." },
+  { icon: 'airplane', title: 'Plan a trip', sub: 'Where to go and what to see', prompt: 'Help me plan a trip. Ask me where I want to go and what I enjoy first.' },
+  { icon: 'translate', title: 'Practise a language', sub: 'Chat at your level', prompt: 'Help me practise a language. Ask me which one and how much I know first.' },
+  { icon: 'wallet-outline', title: 'Make a budget', sub: 'A simple monthly plan', prompt: 'Help me make a simple monthly budget. Ask me about my income and spending first.' },
+  { icon: 'run', title: 'Get moving', sub: 'Exercise you can stick to', prompt: 'Help me plan some exercise I can stick to. Ask me about my goals and how much time I have first.' },
+  { icon: 'head-lightbulb-outline', title: 'Brainstorm ideas', sub: 'For anything at all', prompt: "Brainstorm ideas with me. Ask me what they're for first." },
+  { icon: 'spellcheck', title: 'Improve my writing', sub: 'Clearer, shorter, kinder', prompt: 'Help me improve some writing. Ask me to paste it first.' },
+  { icon: 'gift-outline', title: 'Gift ideas', sub: 'Something they will like', prompt: "Help me think of a gift. Ask me who it's for and what they like first." },
+  { icon: 'scale-balance', title: 'Weigh up a decision', sub: 'Pros, cons and a nudge', prompt: "Help me weigh up a decision. Ask me what I'm deciding first." },
+  { icon: 'help-circle-outline', title: 'Quiz me', sub: 'Learn by answering', prompt: 'Quiz me on a topic to help me learn it. Ask me which topic first.' },
+  { icon: 'hammer-wrench', title: 'Fix something at home', sub: 'Step-by-step help', prompt: "Help me fix something at home. Ask me what's wrong first." },
+  { icon: 'feather', title: 'Write a short story', sub: 'Yours to steer', prompt: 'Write a short story with me. Ask me what it should be about first.' },
 ];
+const IDEAS_SHOWN = 6;
+
+/** A different handful of ideas each time the new-chat page opens (a quick shuffle: no model time). */
+function someIdeas(): typeof SUGGESTIONS {
+  const pool = [...SUGGESTIONS];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, IDEAS_SHOWN);
+}
 
 function greeting(name: string): string {
   const h = new Date().getHours();
@@ -137,7 +160,8 @@ function Welcome({ onOpenSettings }: { onOpenSettings: () => void }) {
   const ready = !!status?.ready;
   const knowsLittle = memories.length < 5;
   const forYou = useMemo(() => (knowsLittle ? [] : personalStarters(settings.name, memories)), [knowsLittle, memories, settings.name]);
-  const recent = useMemo(() => (width >= 900 ? [] : [...chats].sort((a, b) => b.updated - a.updated).slice(0, 3)), [chats, width]);
+  const recent = useMemo(() => (width >= 900 ? [] : chats.filter((c) => !c.archived).sort((a, b) => b.updated - a.updated).slice(0, 3)), [chats, width]);
+  const ideas = useMemo(someIdeas, []);
   const muted = { color: theme.colors.onSurfaceVariant };
   const card = { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant };
   const row = (key: string, icon: string, title: string, sub: string, onPress: () => void, disabled = false) => (
@@ -193,7 +217,7 @@ function Welcome({ onOpenSettings }: { onOpenSettings: () => void }) {
           <View style={styles.homeGroup}>
             <Text variant="labelLarge" style={muted}>Ideas</Text>
             <View style={styles.chips}>
-              {SUGGESTIONS.map((s) => (
+              {ideas.map((s) => (
                 <Chip key={s.title} icon={s.icon} compact mode="outlined" disabled={!ready} onPress={() => { tap(); send(s.prompt); }}
                   style={{ backgroundColor: theme.colors.surface }}>
                   {s.title}

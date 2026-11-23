@@ -896,7 +896,7 @@ function Privacy() {
 
 export function SettingsView({ inBar }: { inBar?: boolean }) {
   const theme = useTheme();
-  const { settings, updateSettings, status, refreshStatus, exportData, importData, clearChats, chats, memories, notes, hub, libraries } = useStore();
+  const { settings, updateSettings, status, refreshStatus, exportData, importData, clearChats, archiveChats, chats, memories, notes, hub, libraries } = useStore();
   const [allModels, setAllModels] = useState(false);
   const [more, setMore] = useState(false); // everyday settings first; the rest behind "More settings"
   const [name, setName] = useState(settings.name);
@@ -1178,6 +1178,26 @@ export function SettingsView({ inBar }: { inBar?: boolean }) {
                 }
               }}
             />
+            <Divider />
+            {(() => {
+              const active = chats.filter((c) => !c.archived).length;
+              const bringBack = !active && chats.length > 0; // everything's archived: offer to bring it back
+              return (
+                <Row
+                  title={bringBack ? 'Unarchive all chats' : 'Archive all chats'}
+                  description={bringBack
+                    ? `${chats.length} archived. They go back in the chat list.`
+                    : 'Hides them from the chat list and the new-chat page, say before a demo. Nothing is deleted.'}
+                  left={(p) => <List.Icon {...p} icon={bringBack ? 'archive-arrow-up-outline' : 'archive-arrow-down-outline'} />}
+                  disabled={!chats.length}
+                  onPress={() => {
+                    archiveChats('all', !bringBack)
+                      .then(() => setToast(bringBack ? 'Chats unarchived.' : 'Chats archived. Find them under Archived in the ☰ menu.'))
+                      .catch((e) => setToast((e as Error).message));
+                  }}
+                />
+              );
+            })()}
             <Divider />
             <Row
               title="Delete all chats"
