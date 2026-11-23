@@ -29,7 +29,9 @@ const DAYS: Record<string, number> = { sun: 1, mon: 2, tue: 3, wed: 4, thu: 5, f
 const DAY_ORDER = [2, 3, 4, 5, 6, 7, 1];
 const DAY_NAMES: Record<number, string> = { 1: 'Sun', 2: 'Mon', 3: 'Tue', 4: 'Wed', 5: 'Thu', 6: 'Fri', 7: 'Sat' };
 
-const LINE = /^[ \t]*\[\[[ \t]*(alarm|timer|event)\b([^\]\n]*)\]\][ \t]*$/gim;
+// The 2B sometimes wraps the line in bold or runs on after it ("[[alarm 07:00 | wake]] with days written as…"): it's
+// still the action, and the whole line goes.
+const LINE = /^[ \t]*(?:[-*_>•]+[ \t]*)?\[\[[ \t]*(alarm|timer|event)\b([^\]\n]*)\]\][^\n]*$/gim;
 const ANY_LINE = /^[ \t]*\[\[[^\n]*\]\][ \t]*$/gm; // an action line of a kind that doesn't exist
 const PARTIAL = /^[ \t]*\[\[[^\n]*$/gm; // an action line still being written while the reply streams
 
@@ -116,33 +118,63 @@ function parseOne(kind: string, body: string): DeviceAction | null {
 // it's shown. So an alarm repeats only when they asked for that, in words like these.
 const ASKS_TO_REPEAT = /\b(every|everyday|each|daily|weekly|weekdays|weeknights|weekends|(mon|tues|wednes|thurs|fri|satur|sun)days)\b/i;
 
-// The 2B read "wake me up at 7 every weekday" as 19:00. When the ask names the alarm's time, the half of the day
-// comes from the ask: "7am", "7pm", "19:00", or words around it like wake or tonight. Otherwise the reply's stands.
+// The 2B set "wake me up at 7 every weekday" for 19:00, and "7 tonight" for 23:00. When the ask gives the alarm's
+// time, the card takes it from the ask: the half of the day from "7am", "7pm", "19:00" or words like wake or
+// tonight, and the time itself when the reply's is a different one and the ask gave just one clear time.
 const ASKED_TIME = /\b(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?(?!\s*(?:min|hour|hr|sec|day|week|month|year))(?!\d)/gi;
 const MORNING = /\b(wake|waking|woken|morning|get up|getting up|breakfast)\b/i;
 const LATER = /\b(afternoon|evening|tonight|night|dinner|bedtime)\b/i;
+const RELATIVE = /\b(before|after|earlier|later|in \d+|minutes?|mins?|hours?|hrs?)\b/i; // "30 minutes before 7"
 
-function hourAsked(hour: number, minutes: number, asked: string): number {
+/** The hour of a time they wrote, in the half of the day they meant; the reply's half when they didn't say. */
+function inHalf(m: RegExpMatchArray, line: string, replyHour: number): number {
+  const h = Number(m[1]);
+  if (m[3]) return (h % 12) + (m[3].toLowerCase().startsWith('p') ? 12 : 0);
+  if (h > 12 || m[1].startsWith('0')) return h; // a 24-hour time, as they wrote it
+  const later = LATER.test(line);
+  if (h !== 12 && later !== MORNING.test(line)) return later ? h + 12 : h;
+  return (h % 12) + (replyHour >= 12 ? 12 : 0);
+}
+
+function timeAsked(hour: number, minutes: number, asked: string): { hour: number; minutes: number } {
   for (const line of asked.split('\n').reverse()) { // the latest ask first
-    for (const m of line.matchAll(ASKED_TIME)) {
-      const h = Number(m[1]);
-      if (h > 23 || Number(m[2] ?? 0) !== minutes || h % 12 !== hour % 12) continue;
-      if (m[3]) return (h % 12) + (m[3].toLowerCase().startsWith('p') ? 12 : 0);
-      if (h > 12 || m[1].startsWith('0')) return h; // a 24-hour time, as they wrote it
-      if (h === 12) return hour; // noon or midnight: as the reply gave it
-      const later = LATER.test(line);
-      if (later !== MORNING.test(line)) return later ? h + 12 : h;
-      return hour;
+    const times = [...line.matchAll(ASKED_TIME)].filter((m) => Number(m[1]) <= 23 && Number(m[2] ?? 0) <= 59);
+    if (!times.length) continue;
+    const same = times.find((m) => Number(m[2] ?? 0) === minutes && Number(m[1]) % 12 === hour % 12);
+    if (same) return { hour: inHalf(same, line, hour), minutes };
+    // "At 7", "for 6:45", "make it 10", "7pm" or "19:00", not "the 2 cats".
+    const clear = times.filter((m) => m[2] || m[3] || /\b(at|for|by|around|to|it|until|till)\s*$/i.test(line.slice(0, m.index)));
+    if (times.length === 1 && clear.length === 1 && !RELATIVE.test(line)) {
+      return { hour: inHalf(clear[0], line, hour), minutes: Number(clear[0][2] ?? 0) };
     }
+    break;
   }
-  return hour;
+  return { hour, minutes };
+}
+
+// The 2B set "every weekday" to ring once. When the ask says plainly which days, the card repeats on those.
+function daysAsked(asked: string): number[] | null {
+  for (const line of asked.split('\n').reverse()) {
+    if (!ASKS_TO_REPEAT.test(line)) continue;
+    if (/\b(except|apart from|other than|not on)\b/i.test(line)) return null; // the reply's, as it may have it right
+    const named = [...line.matchAll(/\b(mon|tues|wednes|thurs|fri|satur|sun)days?\b/gi)].map((m) => DAYS[m[1].slice(0, 3).toLowerCase()]);
+    const weekdays = /\bweekdays?\b/i.test(line);
+    const weekends = /\bweekends?\b/i.test(line);
+    if ((weekdays || weekends) && (named.length || (weekdays && weekends))) return null; // a mix: the reply's
+    if (weekdays) return [2, 3, 4, 5, 6];
+    if (weekends) return [7, 1];
+    if (named.length) return DAY_ORDER.filter((d) => named.includes(d));
+    if (/\b(every ?day|daily|(every|each) (morning|evening|night))\b/i.test(line)) return DAY_ORDER;
+    return null;
+  }
+  return null;
 }
 
 /**
  * Split a reply into the text to show and the actions it proposes. Action lines are always removed from the text,
  * including one that's still being written; ones that can't be read are counted in `unreadable`. Given what they
- * asked (`asked`), an alarm they didn't ask to repeat rings once, whatever days the reply gave it, and an alarm at a
- * time they gave is set in the half of the day they meant.
+ * asked (`asked`), an alarm they didn't ask to repeat rings once, whatever days the reply gave it, one they asked to
+ * repeat on plainly named days repeats on those, and one at a time they gave is set for that time.
  */
 export function parseActions(reply: string, streaming = false, asked?: string): { text: string; actions: DeviceAction[]; unreadable: number } {
   const actions: DeviceAction[] = [];
@@ -152,7 +184,7 @@ export function parseActions(reply: string, streaming = false, asked?: string): 
   let text = reply.replace(LINE, (_, kind: string, body: string) => {
     let action = parseOne(kind.toLowerCase(), body);
     if (action?.kind === 'alarm' && asked !== undefined) {
-      action = { ...action, hour: hourAsked(action.hour, action.minutes, asked), days: once ? [] : action.days };
+      action = { ...action, ...timeAsked(action.hour, action.minutes, asked), days: once ? [] : daysAsked(asked) ?? action.days };
     }
     if (action && actions.length < 3) actions.push(action);
     else if (!action) unreadable++;
