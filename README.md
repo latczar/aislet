@@ -6,7 +6,7 @@ Say it "eye-let": AI plus islet, a private AI island. It was called Untethered u
 
 | Drafts replies | Summarises PDFs you share | Runs on your own devices |
 | :---: | :---: | :---: |
-| <img src="docs/images/demo.gif" width="250" alt="Typing a message from a landlord about a plumber's visit, and Aislet drafting a polite reply"> | <img src="docs/images/summarise-pdf.png" width="250" alt="A building notice about a water shut-off shared as a PDF, and Aislet summarising it"> | <img src="docs/images/settings-ai.png" width="250" alt="The AI settings: the laptop's model, the phone's own Qwen3.5 model, and speed and heat options"> |
+| <img src="docs/images/demo.gif" width="250" alt="Typing a message from a landlord about a plumber's visit, and Aislet drafting a polite reply"> | <img src="docs/images/summarise-pdf.png" width="250" alt="A building notice about a water shut-off shared as a PDF, and Aislet summarising it as a short list"> | <img src="docs/images/settings-ai.png" width="250" alt="The AI settings: the laptop's model, the phone's own Qwen3.5 4B model recommended for this phone, web search, and add-ons for notes search and photos"> |
 
 ## Install
 
