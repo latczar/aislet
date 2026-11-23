@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import {
   ActivityIndicator, Button, Checkbox, Dialog, Divider, Icon, IconButton, List, Portal, Snackbar, Surface, Switch, Text, useTheme,
 } from 'react-native-paper';
@@ -11,6 +11,9 @@ import { Field } from './Field';
 import { confirm } from './confirm';
 import { Row } from './rows';
 import { FONT } from './theme';
+
+/** Facts a section shows before "Show all": the newest ones. */
+const SHOWN = 5;
 
 /** One suggested change: what goes, what replaces it and why. */
 function TidyItem({ change, memories, checked, onToggle }: { change: TidyChange; memories: Memory[]; checked: boolean; onToggle: () => void }) {
@@ -48,6 +51,14 @@ export function MemoryView({ onStartInterview, inBar }: { onStartInterview: () =
   const [picked, setPicked] = useState<boolean[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [undo, setUndo] = useState<TidyUndo | null>(null);
+  // Sections folded away (what's no longer true starts folded), and sections showing all their facts.
+  const [folded, setFolded] = useState<Set<string>>(() => new Set(['earlier']));
+  const [showAll, setShowAll] = useState<Set<string>>(() => new Set());
+  const flip = (set: Set<string>, id: string) => {
+    const next = new Set(set);
+    if (!next.delete(id)) next.add(id);
+    return next;
+  };
   const current = memories.filter((m) => !m.until).length;
   const card = [styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }];
   const chosen = changes?.filter((_, i) => picked[i]) ?? [];
@@ -177,35 +188,59 @@ export function MemoryView({ onStartInterview, inBar }: { onStartInterview: () =
           { id: 'earlier', title: 'No longer true', icon: 'history', group: memories.filter((m) => m.until) },
         ].map(({ id, title, icon, group }) => {
           if (!group.length) return null;
+          const isFolded = folded.has(id);
+          const newest = [...group].reverse(); // newest first, so what it just learnt is never hidden
+          const long = newest.length > SHOWN + 1; // hiding a single fact behind a button isn't worth it
+          const shown = long && !showAll.has(id) ? newest.slice(0, SHOWN) : newest;
           return (
             <View key={id} style={styles.group}>
-              <View style={styles.groupHead}>
+              <Pressable
+                style={styles.groupHead}
+                onPress={() => setFolded((f) => flip(f, id))}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: !isFolded }}
+                accessibilityLabel={`${title}, ${group.length} ${group.length === 1 ? 'fact' : 'facts'}`}
+              >
                 <Icon source={icon} size={18} color={theme.colors.onSurfaceVariant} />
                 <Text variant="labelLarge" style={{ color: theme.colors.onSurfaceVariant }}>{title} · {group.length}</Text>
-              </View>
-              <Surface style={card} elevation={0}>
-                {group.map((m, i) => (
-                  <View key={m.id}>
-                    {i > 0 && <Divider />}
-                    <List.Item
-                      title={m.fact}
-                      titleNumberOfLines={4}
-                      description={m.until ? `${m.added} to ${m.until}` : m.added}
-                      right={(p) => (
-                        <IconButton
-                          icon="close"
-                          size={18}
-                          style={[styles.iconAction, p.style]}
-                          accessibilityLabel="Forget this"
-                          onPress={async () => {
-                            if (await confirm('Forget this?', m.fact, 'Forget')) removeMemory(m.id);
-                          }}
-                        />
-                      )}
-                    />
-                  </View>
-                ))}
-              </Surface>
+                <Icon source={isFolded ? 'chevron-right' : 'chevron-down'} size={18} color={theme.colors.onSurfaceVariant} />
+              </Pressable>
+              {!isFolded && (
+                <Surface style={card} elevation={0}>
+                  {shown.map((m, i) => (
+                    <View key={m.id}>
+                      {i > 0 && <Divider />}
+                      <List.Item
+                        title={m.fact}
+                        titleNumberOfLines={4}
+                        description={m.until ? `${m.added} to ${m.until}` : m.added}
+                        right={(p) => (
+                          <IconButton
+                            icon="close"
+                            size={18}
+                            style={[styles.iconAction, p.style]}
+                            accessibilityLabel="Forget this"
+                            onPress={async () => {
+                              if (await confirm('Forget this?', m.fact, 'Forget')) removeMemory(m.id);
+                            }}
+                          />
+                        )}
+                      />
+                    </View>
+                  ))}
+                  {long && (
+                    <>
+                      <Divider />
+                      <List.Item
+                        title={showAll.has(id) ? 'Show fewer' : `Show all ${group.length}`}
+                        titleStyle={{ color: theme.colors.primary, fontFamily: FONT.medium }}
+                        onPress={() => setShowAll((a) => flip(a, id))}
+                        right={(p) => <List.Icon {...p} icon={showAll.has(id) ? 'chevron-up' : 'chevron-down'} color={theme.colors.primary} />}
+                      />
+                    </>
+                  )}
+                </Surface>
+              )}
             </View>
           );
         })

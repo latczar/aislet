@@ -206,6 +206,14 @@ check('compress: plurals and tenses count as the same word', brain.mergeProblem(
 const groups = brain.tidyGroups([...pets, fact('g1', 'Sam likes jazz', 'preferences'), fact('g2', 'Sam is learning Spanish', 'goals'), fact('g3', 'Sam wants to run a 10k', 'goals')]);
 check('compress and tidy: a category at a time, without history or lone facts',
   groups.length === 2 && groups[0].map((m) => m.id).join() === 'p1,p2,p3,p4' && groups[1].map((m) => m.id).join() === 'g2,g3', JSON.stringify(groups.map((g) => g.map((m) => m.id))));
+const batches = brain.compressBatches([...pets, fact('q1', 'Sam is left-handed'), fact('q2', 'Sam knits scarves', 'preferences'),
+  fact('q3', 'Sam prefers short answers', 'preferences'), fact('q4', 'Sam prefers answers without jargon', 'preferences')], 'Sam');
+check('compress: only facts sharing a word are sent, a category at a time, without history',
+  batches.map((b) => b.map((m) => m.id).join()).join(' | ') === 'p1,p2,p3 | q3,q4', JSON.stringify(batches.map((b) => b.map((m) => m.id))));
+check('compress: nothing to send when no facts share a word', brain.compressBatches([fact('n1', 'Sam is allergic to peanuts'),
+  fact('n2', 'Sam drives a Kia Niro electric car'), fact('n3', 'Sam grew up in Cork')], 'Sam').length === 0);
+const many = Array.from({ length: 30 }, (_, i) => fact(`m${i}`, `Sam's plant number ${i} is a cactus called Spike${i % 15}`));
+check('compress: long lists go in requests of 20 at most', brain.compressBatches(many, 'Sam').every((b) => b.length <= 20));
 const asked = brain.compressMessages('Sam', pets.slice(0, 3));
 check('compress: the prompt numbers the facts without dates', asked[1].content.includes('1. Sam has a cat called Biscuit') && !asked[1].content.includes('2026'));
 

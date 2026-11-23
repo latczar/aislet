@@ -3,7 +3,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { AppState, Platform } from 'react-native';
 import {
   type ChatIndex, type LearntFact, MAX_TOKENS, MEMORY_LIMIT, type PastRecall, SAME_THING, type TidyChange,
-  chunkText, cleanFact, compressMessages, conversationLearnMessages, indexChat, interviewPrompt, keywordScore, learnMessages, moreMemories, parseCompress, parseFacts, parseTidy, stopsQuestions,
+  chunkText, cleanFact, compressBatches, compressMessages, conversationLearnMessages, indexChat, interviewPrompt, keywordScore, learnMessages, moreMemories, parseCompress, parseFacts, parseTidy, stopsQuestions,
   pastFacts, recallsPast, relevantMemories, searchPast, similarity, stripThinking, systemPrompt, tidyGroups, tidyMessages, titleFrom, turnContext, withoutClosingQuestion, worthLearning,
 } from './brain';
 import { actionsFor, actionsSupported, cardOnlyMessages, eventsOnDayAsked, missingCard, withCard } from './deviceActions';
@@ -673,12 +673,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return relevantMemories(all, query, limit, queryVec ? { query: queryVec, facts } : undefined);
   }, [memoryVectors]);
 
-  /** Ask the model about each category's current facts in turn (see tidyGroups), and read its suggestions. */
+  /** Ask the model about each group of facts in turn (tidyGroups or compressBatches), and read its suggestions. */
   const suggestChanges = useCallback(async (
+    groupsOf: (memories: Memory[], name: string) => Memory[][],
     ask: (name: string, group: Memory[]) => Message[], read: (reply: string, group: Memory[], name: string) => TidyChange[],
   ): Promise<TidyChange[]> => {
     if (busyRef.current) throw new Error('Wait for the current reply to finish, then try again.');
-    const groups = tidyGroups(memRef.current);
+    const groups = groupsOf(memRef.current, settingsRef.current.name);
     if (!groups.length) return [];
     busyRef.current = true;
     setBusy(true);
@@ -696,8 +697,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const proposeTidy = useCallback(() => suggestChanges(tidyMessages, (reply, group) => parseTidy(reply, group)), [suggestChanges]);
-  const proposeCompress = useCallback(() => suggestChanges(compressMessages, parseCompress), [suggestChanges]);
+  const proposeTidy = useCallback(
+    () => suggestChanges((memories) => tidyGroups(memories), tidyMessages, (reply, group) => parseTidy(reply, group)), [suggestChanges]);
+  const proposeCompress = useCallback(
+    () => suggestChanges((memories, name) => compressBatches(memories, name), compressMessages, parseCompress), [suggestChanges]);
 
   const applyTidy = useCallback(async (changes: TidyChange[]): Promise<TidyUndo | null> => {
     const gone = new Set(changes.flatMap((c) => c.remove));

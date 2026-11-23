@@ -1,6 +1,7 @@
-// Compress memory: given the app's own prompt (src/brain.ts, compressMessages), does the model merge related facts
-// into fewer, shorter ones, and do the merges the app would offer (parseCompress) keep to one topic? Merges that add
-// or drop a detail are dropped by parseCompress, so they never count. Made-up data only.
+// Compress memory: given the app's own prompt (src/brain.ts, compressMessages) and the facts the app would send
+// (compressBatches: only facts sharing a word with another), does the model merge related facts into fewer, shorter
+// ones, and do the merges the app would offer (parseCompress) keep to one topic? Merges that add or drop a detail are
+// dropped by parseCompress, so they never count. Made-up data only. A long memory: scripts/eval/compress-long.mjs.
 //   node scripts/eval/run.mjs --only compress [--model qwen3.5:4b] [--runs 3]
 // The rules that drop a bad merge are tested without a model in scripts/eval/memory.mjs.
 import { brain } from '../app.mjs';
@@ -14,7 +15,7 @@ const offered = (x, group) => brain.parseCompress(JSON.stringify(x.data ?? {}), 
  * one of them. `want` names the topics a good answer merges (at least two of its facts each).
  */
 function compress(id, memories, topics, want) {
-  const group = brain.tidyGroups(memories)[0];
+  const group = brain.compressBatches(memories, 'Sam')[0];
   const topicOf = (factId) => Object.keys(topics).find((t) => topics[t].includes(factId)) ?? factId;
   const checks = [
     ['keeps each merge to one topic', (_a, x) => offered(x, group).every((c) => new Set(c.remove.map(topicOf)).size === 1)],
@@ -23,7 +24,6 @@ function compress(id, memories, topics, want) {
   for (const t of want) {
     checks.push([`merges the ${t} facts`, (_a, x) => offered(x, group).some((c) => c.remove.length >= 2 && c.remove.every((r) => topics[t].includes(r)))]);
   }
-  if (!want.length) checks.push(['merges nothing', (_a, x) => offered(x, group).length === 0]);
   return { id, group: 'compress', json: true, maxTokens: 1500, build: () => brain.compressMessages('Sam', group), checks };
 }
 
@@ -74,12 +74,4 @@ export const CASES = [
     fact('c5', 'Sam wants British spelling', 'preferences'),
   ], { answers: ['c1', 'c2', 'c3', 'c4', 'c5'] }, ['answers']),
 
-  // Nothing here is about the same thing.
-  compress('compress-none', [
-    fact('e1', 'Sam is allergic to peanuts', 'about'),
-    fact('e2', 'Sam drives a Kia Niro electric car', 'about'),
-    fact('e3', 'Sam sings in a choir on Wednesdays', 'about'),
-    fact('e4', 'Sam grew up in Cork', 'about'),
-    fact('e5', 'Sam is left-handed', 'about'),
-  ], {}, []),
 ];

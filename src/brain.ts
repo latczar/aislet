@@ -441,12 +441,12 @@ export const TIDY_BATCH = 60;
  * The facts to tidy or compress, a category at a time (small models mix up facts across a long mixed list), in
  * batches it can read at once. What used to be true (`until`) is history, so it's never tidied or merged.
  */
-export function tidyGroups(memories: Memory[]): Memory[][] {
+export function tidyGroups(memories: Memory[], batch = TIDY_BATCH): Memory[][] {
   const current = memories.filter((m) => !m.until);
   const groups: Memory[][] = [];
   for (const c of CATEGORIES) {
     const group = current.filter((m) => (m.category ?? 'about') === c.id);
-    for (let i = 0; i < group.length; i += TIDY_BATCH) groups.push(group.slice(i, i + TIDY_BATCH));
+    for (let i = 0; i < group.length; i += batch) groups.push(group.slice(i, i + batch));
   }
   return groups.filter((g) => g.length > 1);
 }
@@ -542,6 +542,49 @@ export function cleanFact(fact: string): string {
 /** Most facts one merge may join, and the longest a merged fact may be, in words. */
 export const MERGE_MAX_FACTS = 4;
 export const MERGE_MAX_WORDS = 32;
+/** Most facts in one Compress request: small models lose track of longer lists. */
+export const COMPRESS_BATCH = 20;
+
+/**
+ * The facts to send to Compress, a category at a time. Only facts sharing a word or name with another fact can
+ * ever be merged (see oneTopic), so a fact with nothing in common with the rest is never sent, and facts that
+ * share words are kept together, in requests of up to `size` facts. Words most facts share ("likes", "work") don't
+ * count as a link. A long memory then costs a few short requests, and none at all when nothing could be merged.
+ */
+export function compressBatches(memories: Memory[], name = '', size = COMPRESS_BATCH): Memory[][] {
+  const skip = nameStems(name);
+  const out: Memory[][] = [];
+  for (const group of tidyGroups(memories, Infinity)) {
+    const keys = group.map((m) => new Set([...contentStems(m.fact, skip), ...namesIn(m.fact, skip)]));
+    const count = new Map<string, number>();
+    keys.forEach((k) => k.forEach((w) => count.set(w, (count.get(w) ?? 0) + 1)));
+    const common = Math.max(4, Math.ceil(group.length / 10));
+    const parent = group.map((_, i) => i);
+    const root = (i: number): number => (parent[i] === i ? i : (parent[i] = root(parent[i])));
+    const first = new Map<string, number>();
+    keys.forEach((k, i) => k.forEach((w) => {
+      if ((count.get(w) ?? 0) > common) return;
+      const j = first.get(w);
+      if (j === undefined) first.set(w, i);
+      else parent[root(i)] = root(j);
+    }));
+    const clusters = new Map<number, Memory[]>();
+    group.forEach((m, i) => clusters.set(root(i), [...(clusters.get(root(i)) ?? []), m]));
+    let batch: Memory[] = [];
+    for (const cluster of [...clusters.values()].filter((c) => c.length > 1)) {
+      for (let i = 0; i < cluster.length; i += size) {
+        const part = cluster.slice(i, i + size);
+        if (batch.length + part.length > size) {
+          if (batch.length > 1) out.push(batch);
+          batch = [];
+        }
+        batch.push(...part);
+      }
+    }
+    if (batch.length > 1) out.push(batch);
+  }
+  return out;
+}
 
 /** Facts from one category, numbered for the model, to merge into fewer, shorter ones. */
 export function compressMessages(name: string, memories: Memory[]): Message[] {
@@ -573,6 +616,11 @@ const NEGATION = /\b(not|no|never|none|nor|n't|without|isn't|doesn't|don't|won't
 const DISLIKE = /\b(dislikes?|hates?|avoids?)\b/gi;
 const GENDERED = /\b(he|she|his|her|hers|him|himself|herself)\b/gi;
 const STARTERS = new Set('the a an he she they their his her it its user'.split(' '));
+
+/** Their name's words, which never count as something facts share (every fact is about them). */
+function nameStems(name: string): Set<string> {
+  return new Set(name ? name.split(/\s+/).map(stem) : ['user']);
+}
 
 /** A word's stem, so "runs", "running" and "run", or "Priya's" and "Priya", count as the same word. */
 function stem(word: string): string {
@@ -629,7 +677,7 @@ function oneTopic(sources: Memory[], skip: Set<string>): boolean {
 export function mergeProblem(sources: Memory[], merged: string, name = ''): string {
   const fact = cleanFact(merged);
   const count = (t: string) => t.split(/\s+/).filter((w) => /\w/.test(w)).length;
-  const skip = new Set(name ? name.split(/\s+/).map(stem) : ['user']);
+  const skip = nameStems(name);
   if (!oneTopic(sources, skip)) return 'joins unrelated facts';
   if (!aboutThem(fact, name || 'the user')) return `doesn't start with ${name || 'the user'}`;
   const before = sources.reduce((n, m) => n + count(m.fact), 0);
