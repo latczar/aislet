@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import {
-  ActivityIndicator, Button, Checkbox, Dialog, Divider, Icon, IconButton, List, Portal, Snackbar, Surface, Switch, Text, useTheme,
+  ActivityIndicator, Button, Checkbox, Dialog, Divider, Icon, IconButton, List, Portal, Searchbar, Snackbar, Surface, Switch, Text, useTheme,
 } from 'react-native-paper';
 import { PageTitle } from './PageTitle';
 import { CATEGORIES, type TidyChange } from '../brain';
@@ -14,6 +14,8 @@ import { FONT } from './theme';
 
 /** Facts a section shows before "Show all": the newest ones. */
 const SHOWN = 5;
+/** Beyond this many current facts, a search box helps find one. */
+const SEARCH_FROM = 20;
 
 /** One suggested change: what goes, what replaces it and why. */
 function TidyItem({ change, memories, checked, onToggle }: { change: TidyChange; memories: Memory[]; checked: boolean; onToggle: () => void }) {
@@ -54,6 +56,10 @@ export function MemoryView({ onStartInterview, inBar }: { onStartInterview: () =
   // Sections folded away (what's no longer true starts folded), and sections showing all their facts.
   const [folded, setFolded] = useState<Set<string>>(() => new Set(['earlier']));
   const [showAll, setShowAll] = useState<Set<string>>(() => new Set());
+  const [query, setQuery] = useState('');
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const searching = terms.length > 0;
+  const matches = (m: Memory) => terms.every((t) => m.fact.toLowerCase().includes(t));
   const flip = (set: Set<string>, id: string) => {
     const next = new Set(set);
     if (!next.delete(id)) next.add(id);
@@ -177,6 +183,19 @@ export function MemoryView({ onStartInterview, inBar }: { onStartInterview: () =
         </View>
       </Surface>
 
+      {(current > SEARCH_FROM || searching) && (
+        <Searchbar
+          placeholder="Search your facts"
+          value={query}
+          onChangeText={setQuery}
+          elevation={0}
+          style={[styles.search, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]}
+        />
+      )}
+      {searching && !memories.some(matches) && (
+        <Text variant="bodyMedium" style={[styles.empty, { color: theme.colors.onSurfaceVariant }]}>No facts match "{query.trim()}".</Text>
+      )}
+
       {memories.length === 0 ? (
         <Text variant="bodyMedium" style={[styles.empty, { color: theme.colors.onSurfaceVariant }]}>
           Nothing yet. Start "Get to know me", tell it about yourself in any chat, or add a fact above.
@@ -186,11 +205,12 @@ export function MemoryView({ onStartInterview, inBar }: { onStartInterview: () =
           ...CATEGORIES.map((c) => ({ ...c, group: memories.filter((m) => !m.until && (m.category ?? 'about') === c.id) })),
           // Facts a newer one replaced (an old job, an old address): kept so questions about the past can use them.
           { id: 'earlier', title: 'No longer true', icon: 'history', group: memories.filter((m) => m.until) },
-        ].map(({ id, title, icon, group }) => {
+        ].map(({ id, title, icon, group: all }) => {
+          const group = searching ? all.filter(matches) : all; // a search shows every match, unfolded
           if (!group.length) return null;
-          const isFolded = folded.has(id);
+          const isFolded = !searching && folded.has(id);
           const newest = [...group].reverse(); // newest first, so what it just learnt is never hidden
-          const long = newest.length > SHOWN + 1; // hiding a single fact behind a button isn't worth it
+          const long = !searching && newest.length > SHOWN + 1; // hiding a single fact behind a button isn't worth it
           const shown = long && !showAll.has(id) ? newest.slice(0, SHOWN) : newest;
           return (
             <View key={id} style={styles.group}>
@@ -299,4 +319,5 @@ const styles = StyleSheet.create({
   tidyList: { paddingHorizontal: 20, paddingVertical: 12, gap: 14 },
   tidyItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
   struck: { textDecorationLine: 'line-through' },
+  search: { borderRadius: 18, borderWidth: StyleSheet.hairlineWidth },
 });
