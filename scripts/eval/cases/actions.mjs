@@ -1,6 +1,7 @@
 // Alarm, timer and calendar cards on the phone: only when asked for. A message to reply to, summarise or translate
 // often mentions a day or a time ("the plumber can come Thursday between 8 and 12"); that isn't asking for a card.
 // Each case decides whether to add the instructions as the phone does (actions: 'auto'). Made-up data only.
+import { deviceActions } from '../app.mjs';
 import { has } from '../cases.mjs';
 
 const ACTION_LINE = /^\s*\[\[(alarm|timer|event)\b/im;
@@ -10,7 +11,15 @@ const card = (kind) => [`adds a [[${kind} …]] card`, (a) => new RegExp(`^\\s*\
 const drafted = ['writes the reply', (a, x) => x.drafts.length > 0 || (x.words >= 6 && !/tap the card/i.test(a))];
 const noClaim = ["doesn't say it added anything", (a) => !/\b(I'?ve|I have) (set|added|created|scheduled)\b|\b(calendar|alarm|timer) (has been|is) (updated|set)\b/i.test(a)];
 
+// The alarm card the app shows for this answer to this ask: its days, as Calendar day numbers (Mon 2 … Sun 1).
+const alarmDays = (ask, a) => deviceActions.parseActions(a, false, ask).actions.find((x) => x.kind === 'alarm')?.days;
+const ringsOnce = (ask) => ['the card rings once', (a) => alarmDays(ask, a)?.length === 0];
+const repeats = (ask, days, label) => [label, (a) => alarmDays(ask, a)?.join() === days.join()];
+
 const phone = { where: 'phone', actions: 'auto', group: 'actions' };
+const WAKE = 'Wake me up at 6:45 tomorrow.';
+const WEEKDAYS = 'Wake me up at 7 every weekday.';
+const SUNDAYS = 'Set an alarm for 9 on Sundays to water the plants.';
 
 export const CASES = [
   // Asking for words, not a card.
@@ -28,7 +37,10 @@ export const CASES = [
     checks: [noCard, has(/demain/i, 'translates it')] },
 
   // Asking for a card: still offered.
-  { ...phone, id: 'act-wake', ask: 'Wake me up at 6:45 tomorrow.', checks: [card('alarm'), has(/\[\[alarm\s+06:45/i, 'at 06:45')] },
+  { ...phone, id: 'act-wake', ask: WAKE, checks: [card('alarm'), has(/\[\[alarm\s+06:45/i, 'at 06:45'), ringsOnce(WAKE)] },
+  // Repeating only when asked: the 4B gave "tomorrow" every weekday on 23 Nov 2026.
+  { ...phone, id: 'act-wake-weekdays', ask: WEEKDAYS, checks: [card('alarm'), repeats(WEEKDAYS, [2, 3, 4, 5, 6], 'repeats Mon to Fri')] },
+  { ...phone, id: 'act-alarm-sundays', ask: SUNDAYS, checks: [card('alarm'), repeats(SUNDAYS, [1], 'repeats on Sundays')] },
   { ...phone, id: 'act-timer', ask: 'Set a timer for 10 minutes for the eggs.', checks: [card('timer'), has(/\[\[timer\s+10m\b/i, 'for 10m')] },
   { ...phone, id: 'act-calendar', ask: 'Add the dentist on Friday at 3pm to my calendar.', checks: [card('event'), has(/\|\s*[^|\]]*dentist/i, 'called dentist')] },
   { ...phone, id: 'act-remind', ask: 'Remind me to call the vet at 4 this afternoon.', checks: [['adds a card', (a) => ACTION_LINE.test(a)]] },

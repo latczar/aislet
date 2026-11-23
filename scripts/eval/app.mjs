@@ -3,7 +3,8 @@ import './hooks.mjs';
 import { MEMORIES, SETTINGS } from './cases.mjs';
 
 export const brain = await import('../../src/brain.ts');
-const { actionsFor } = await import('../../src/deviceActions.ts');
+export const deviceActions = await import('../../src/deviceActions.ts');
+const { actionsFor } = deviceActions;
 export const { createOllamaEngine } = await import('../../src/engine/ollama.ts');
 
 const HISTORY = 20; // messages of the current chat the model sees, as in src/store.tsx

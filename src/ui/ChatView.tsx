@@ -306,7 +306,7 @@ function Sources({ sources }: { sources: { title: string; url: string }[] }) {
 }
 
 type AssistantProps = {
-  index: number; text: string; last: boolean; streaming: boolean; busy: boolean; noted?: Learnt[]; saved: boolean;
+  index: number; text: string; asked: string; last: boolean; streaming: boolean; busy: boolean; noted?: Learnt[]; saved: boolean;
   offerKeep?: boolean; onKeepDismiss?: (index: number) => void; // "Keep this in Notes?" under a plan or list
   searched?: Message['searched']; found?: LibraryHit[]; onRetry: () => void; onSave: (index: number) => void;
   onUndo: (index: number, item: Learnt) => void; onAnswerFrom: (index: number) => void;
@@ -353,15 +353,15 @@ function LibraryOffer({ index, hits, busy, onAnswerFrom, onLibraryChoice }: {
 
 // Memoised, like UserMessage: while a reply streams, only the message that's changing redraws.
 const AssistantMessage = React.memo(function AssistantMessage({
-  index, text: reply, last, streaming, busy, noted, saved, searched, found, onRetry, onSave, onUndo, onAnswerFrom, onLibraryChoice,
-  offerKeep, onKeepDismiss,
+  index, text: reply, asked, last, streaming, busy, noted, saved, searched, found, onRetry, onSave, onUndo, onAnswerFrom,
+  onLibraryChoice, offerKeep, onKeepDismiss,
 }: AssistantProps) {
   const theme = useTheme();
   const [speaking, setSpeaking] = useState(false);
   const [copied, setCopied] = useState(false);
   useEffect(() => () => stopSpeaking(), []);
   // Action lines like [[alarm 07:30 | Wake up]] become cards and never show as text.
-  const { text, actions, unreadable } = useMemo(() => parseActions(reply, streaming), [reply, streaming]);
+  const { text, actions, unreadable } = useMemo(() => parseActions(reply, streaming, asked), [reply, streaming, asked]);
   // With one draft (a message for them to send), Copy takes just that, not the AI's lines around it.
   const draft = useMemo(() => { const d = drafts(text); return d.length === 1 ? d[0] : null; }, [text]);
   return (
@@ -907,6 +907,10 @@ export function ChatView({ onOpenSettings, incoming, onIncomingTaken, talkReques
   useEffect(() => setNoKeep({}), [chat?.id]);
   const dismissKeep = useCallback((i: number) => setNoKeep((k) => ({ ...k, [i]: true })), []);
   const askedBefore = (i: number) => { const q = messages[i - 1]; return q?.role === 'user' ? (q.display ?? q.content) : ''; };
+  // The ask before a reply and the two before that, as the app looks at when it adds the alarm instructions: "make it
+  // 7:30" after "every weekday at 7" still repeats.
+  const asksBefore = (i: number) => messages.slice(0, i).filter((q) => q.role === 'user').slice(-3)
+    .map((q) => q.display ?? q.content).join('\n');
   const chooseLibrary = useCallback((i: number, book: string, choice: 'always' | 'never') => {
     setLibraryChoice(book, choice).catch(() => undefined);
     if (choice === 'always') answerFromLibrary(i).catch(() => undefined);
@@ -951,7 +955,7 @@ export function ChatView({ onOpenSettings, incoming, onIncomingTaken, talkReques
               <UserMessage key={i} message={m} onCopied={showCopied} />
             ) : (
               <AssistantMessage
-                key={i} index={i} text={m.content} last={i === lastAi} streaming={busy && i === messages.length - 1}
+                key={i} index={i} text={m.content} asked={asksBefore(i)} last={i === lastAi} streaming={busy && i === messages.length - 1}
                 busy={busy} noted={noted[i]} saved={noteTexts.has(shownText(m.content).trim())} searched={m.searched}
                 found={found[i]} onRetry={regenerate} onSave={saveToNotes} onUndo={undo} onAnswerFrom={answerFrom}
                 onLibraryChoice={chooseLibrary} onKeepDismiss={dismissKeep}

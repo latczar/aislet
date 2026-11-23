@@ -112,16 +112,23 @@ function parseOne(kind: string, body: string): DeviceAction | null {
   return { kind: 'event', title, begin, end: begin + length * 1000, allDay: false };
 }
 
+// "Wake me up at 6:45 tomorrow" came back on the phone's 4B as an alarm every weekday: a small model fills in the days
+// it's shown. So an alarm repeats only when they asked for that, in words like these.
+const ASKS_TO_REPEAT = /\b(every|everyday|each|daily|weekly|weekdays|weeknights|weekends|(mon|tues|wednes|thurs|fri|satur|sun)days)\b/i;
+
 /**
  * Split a reply into the text to show and the actions it proposes. Action lines are always removed from the text,
- * including one that's still being written; ones that can't be read are counted in `unreadable`.
+ * including one that's still being written; ones that can't be read are counted in `unreadable`. Given what they
+ * asked (`asked`), an alarm they didn't ask to repeat rings once, whatever days the reply gave it.
  */
-export function parseActions(reply: string, streaming = false): { text: string; actions: DeviceAction[]; unreadable: number } {
+export function parseActions(reply: string, streaming = false, asked?: string): { text: string; actions: DeviceAction[]; unreadable: number } {
   const actions: DeviceAction[] = [];
   let unreadable = 0;
   if (!reply.includes('[[')) return { text: reply, actions, unreadable };
+  const once = asked !== undefined && !ASKS_TO_REPEAT.test(asked);
   let text = reply.replace(LINE, (_, kind: string, body: string) => {
-    const action = parseOne(kind.toLowerCase(), body);
+    let action = parseOne(kind.toLowerCase(), body);
+    if (action?.kind === 'alarm' && once) action = { ...action, days: [] };
     if (action && actions.length < 3) actions.push(action);
     else if (!action) unreadable++;
     return '';
