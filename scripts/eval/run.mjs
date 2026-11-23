@@ -66,12 +66,16 @@ function args() {
   return out;
 }
 
+// The blocks the app shows as a draft, with a Copy draft button (DRAFT_LANGS in src/ui/Markdown.tsx): the prompt asks
+// for ```draft, but the phone's 2B often writes ```text, and the app shows that as a draft too.
+const draftBlocks = () => /```(?:draft|text|txt|plain|plaintext|markdown|md|email|message)[ \t]*\n([\s\S]*?)(```|$)/gi;
+
 /** The parts of an answer the checks look at. */
 function analyse(answer) {
-  const drafts = [...answer.matchAll(/```draft[^\n]*\n([\s\S]*?)(```|$)/g)].map((m) => m[1].trim());
-  const outside = answer.replace(/```draft[^\n]*\n[\s\S]*?(```|$)/g, ' ').trim();
+  const drafts = [...answer.matchAll(draftBlocks())].map((m) => m[1].trim()).filter(Boolean);
+  const outside = answer.replace(draftBlocks(), ' ').trim();
   const withoutActions = answer.replace(/^\s*\[\[[^\]]*\]\]\s*$/gm, '').trim();
-  const plain = withoutActions.replace(/```draft[^\n]*\n[\s\S]*?(```|$)/g, ' ').replace(/[*_#>`|-]+/g, ' ');
+  const plain = withoutActions.replace(draftBlocks(), ' ').replace(/[*_#>`|-]+/g, ' ');
   const words = plain.split(/\s+/).filter((w) => /\w/.test(w)).length;
   const outsideWords = outside.replace(/[*_#>`|-]+/g, ' ').split(/\s+/).filter((w) => /\w/.test(w)).length;
   const questions = (outside.match(/\?/g) ?? []).length;

@@ -47,7 +47,7 @@ const SAYS_CANT = /can'?t|cannot|can not|unable|not able|no way to|don'?t have (
 const has = (re, label = `mentions ${re}`) => [label, (a) => re.test(a)];
 const lacks = (re, label = `doesn't mention ${re}`) => [label, (a) => !re.test(a)];
 const maxWords = (n) => [`at most ${n} words`, (_a, x) => x.words <= n];
-const hasDraft = ['puts the draft in its own ```draft block', (_a, x) => x.drafts.length === 1 && x.drafts[0].split(/\s+/).length >= 8];
+const hasDraft = ['puts the draft in its own draft block', (_a, x) => x.drafts.length === 1 && x.drafts[0].split(/\s+/).length >= 8];
 const shortOutsideDraft = ['keeps to a short line outside the draft', (_a, x) => x.outsideWords <= 30];
 const noDraft = ['no draft block', (_a, x) => x.drafts.length === 0];
 const questions = (min, max) => [`asks ${min === max ? min : `${min}-${max}`} question(s)`, (_a, x) => x.questions >= min && x.questions <= max];
