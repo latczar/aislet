@@ -86,8 +86,9 @@ function parseOne(kind: string, body: string): DeviceAction | null {
   const parts = body.split('|').map((p) => p.trim());
   if (kind === 'alarm') {
     const time = parseTime(parts[0] ?? '');
-    const days = parseDays(parts[2] ?? '');
-    if (!time || !days) return null;
+    // Days it can't read ("tomorrow", "today") were dropping the whole card: it rings once, as the card then says.
+    const days = parseDays(parts[2] ?? '') ?? [];
+    if (!time) return null;
     return { kind: 'alarm', ...time, label: clean(parts[1] ?? '', LIMITS.label), days };
   }
   if (kind === 'timer') {
@@ -97,7 +98,10 @@ function parseOne(kind: string, body: string): DeviceAction | null {
   }
   // event: "2026-11-18 15:00 | 60m | Dentist" or "2026-11-18 | all day | Birthday"
   const m = /^(\d{4})-(\d{2})-(\d{2})(?:\s+(\S.*))?$/.exec(parts[0] ?? '');
-  const title = clean(parts[2] ?? '', LIMITS.title);
+  // "2026-11-27 15:00 | Dentist", with no length: the title is where the length goes.
+  const titleOnly = !parts[2]?.trim() && !!parts[1] && !/^all\s*day$/i.test(parts[1]) && !parseDuration(parts[1]);
+  const title = clean((titleOnly ? parts[1] : parts[2]) ?? '', LIMITS.title);
+  if (titleOnly) parts[1] = '';
   if (!m || !title) return null;
   const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
   const day = new Date(y, mo - 1, d);
@@ -108,8 +112,9 @@ function parseOne(kind: string, body: string): DeviceAction | null {
     return { kind: 'event', title, begin, end: begin + 24 * 3600 * 1000, allDay: true };
   }
   const time = parseTime(m[4]);
-  const length = parts[1] ? parseDuration(parts[1]) : 3600;
-  if (!time || !length || length > LIMITS.event) return null;
+  // A length that can't be read ("0m", "half day") was dropping the whole card: an hour, which they can change.
+  const length = (parts[1] && parseDuration(parts[1])) || 3600;
+  if (!time || length > LIMITS.event) return null;
   const begin = new Date(y, mo - 1, d, time.hour, time.minutes).getTime();
   return { kind: 'event', title, begin, end: begin + length * 1000, allDay: false };
 }
@@ -192,6 +197,7 @@ export function parseActions(reply: string, streaming = false, asked?: string): 
   });
   text = text.replace(ANY_LINE, () => { unreadable++; return ''; });
   if (streaming) text = text.replace(PARTIAL, '');
+  if (actions.length) text = withoutClaims(text); // "I've added it": not until they tap the card
   return { text: text.replace(/\n{3,}/g, '\n\n').trim(), actions, unreadable };
 }
 
@@ -313,4 +319,73 @@ export function actionsPrompt(now = new Date(), withWriting = false): string {
     ...forms,
     never + rules,
   ].join('\n');
+}
+
+// Asked for a reply and a card in one message, the phone's 4B wrote the reply and "I've added it to your calendar"
+// with no card in about a quarter of its tries. Asked for the card alone, it gets it right, so the app asks again.
+
+/** Whether a reply asked for with a card (actionsFor gave 'with-writing') came without one. */
+export function missingCard(wanted: boolean | 'with-writing', reply: string): boolean {
+  return wanted === 'with-writing' && parseActions(reply).actions.length === 0;
+}
+
+/** The request for the card alone: the instructions and their message, with nothing else to write. */
+export function cardOnlyMessages(ask: string, now = new Date()): { role: 'system' | 'user'; content: string }[] {
+  return [
+    { role: 'system', content: `${actionsPrompt(now)}\nThe reply they asked for has been written already. Write only the action line for the alarm, timer or event in their message, and nothing else.` },
+    { role: 'user', content: ask },
+  ];
+}
+
+// "I've added it to your calendar", outside a draft: not true until they tap the card.
+const CLAIM = /[^.!?\n]*\b(?:I'?ve|I have) (?:set|added|created|scheduled|put)\b[^.!?\n]*[.!?]?[ \t]*/gi;
+
+/** The text without a claim that an action is already done; only outside ``` blocks, as a draft may well say it. */
+function withoutClaims(text: string): string {
+  return text.split(/(```[\s\S]*?(?:```|$))/).map((part, i) => (i % 2 ? part : part.replace(CLAIM, ''))).join('')
+    .replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/** The reply with the action lines found in `extra` at its end, and without a claim that it's already done. */
+export function withCard(reply: string, extra: string): string {
+  const lines = [...extra.matchAll(LINE)].map((m) => `[[${m[1]}${m[2]}]]`).slice(0, 3);
+  return lines.length ? `${withoutClaims(reply)}\n\n${lines.join('\n')}` : reply;
+}
+
+// "Add it to my calendar" for "Thursday" came back on the 23rd (a Monday) from the 2B, and on the 27th from the 4B. When
+// the ask names one weekday, or tomorrow or today, and no date, an event on another day is moved to that one. It's
+// done once, when the reply arrives, so the card keeps the date after that day has passed.
+const WEEKDAY = /\b(sun|mon|tues|wednes|thurs|fri|satur)day\b/gi;
+const WEEKDAY_NUMBER: Record<string, number> = { sun: 0, mon: 1, tues: 2, wednes: 3, thurs: 4, fri: 5, satur: 6 };
+const NAMES_A_DATE = /\b\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}\b|\bthe\s+\d{1,2}(?:st|nd|rd|th)\b|\b\d{1,2}[/.-]\d{1,2}\b|\b\d{4}-\d{2}-\d{2}\b|\b(?:next|last)\s+(?:week|month|\w+day)\b/i;
+
+/** The day the ask names plainly, and whether it was a weekday ("Thursday") rather than tomorrow or today. */
+function dayFor(ask: string, now: Date): { date: Date; weekday: boolean } | null {
+  if (NAMES_A_DATE.test(ask)) return null;
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const days = new Set([...ask.matchAll(WEEKDAY)].map((m) => WEEKDAY_NUMBER[m[1].toLowerCase()]));
+  const tomorrow = /\btomorrow\b/i.test(ask);
+  const todayAsked = /\b(today|tonight|this (morning|afternoon|evening))\b/i.test(ask);
+  if (days.size + Number(tomorrow) + Number(todayAsked) !== 1) return null; // none, or more than one: the reply's
+  const after = (n: number) => new Date(today.getFullYear(), today.getMonth(), today.getDate() + n);
+  if (tomorrow) return { date: after(1), weekday: false };
+  if (todayAsked) return { date: today, weekday: false };
+  const [day] = days;
+  return { date: after((day - today.getDay() + 7) % 7), weekday: true };
+}
+
+/** The reply with its events on the day they asked for, when they named it plainly and the reply has another. */
+export function eventsOnDayAsked(reply: string, ask: string, now = new Date()): string {
+  if (!/\[\[\s*event\b/i.test(reply)) return reply;
+  const want = dayFor(ask, now);
+  if (!want) return reply;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const date = `${want.date.getFullYear()}-${pad(want.date.getMonth() + 1)}-${pad(want.date.getDate())}`;
+  return reply.replace(LINE, (line, kind: string) => {
+    const m = /(\[\[\s*event\s+)(\d{4})-(\d{2})-(\d{2})/i.exec(line);
+    if (kind.toLowerCase() !== 'event' || !m) return line;
+    // A weekday they named: any date on that weekday stands ("Monday", said on a Monday evening, may be next week's).
+    if (want.weekday && new Date(+m[2], +m[3] - 1, +m[4]).getDay() === want.date.getDay()) return line;
+    return line.replace(m[0], `${m[1]}${date}`);
+  });
 }

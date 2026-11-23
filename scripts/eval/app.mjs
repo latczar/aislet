@@ -14,6 +14,19 @@ const HISTORY = 20; // messages of the current chat the model sees, as in src/st
  * at the chat's first message, here the case's question), then the history, then the latest message with what the
  * app adds to it (notes, library passages, web results, how to set alarms).
  */
+/** As src/store.tsx does after a reply: a card asked for with a reply but missing is asked for alone, and events go
+ * on the day the ask named. */
+export async function afterReply(c, answer, chat) {
+  const recentAsks = (c.history ?? []).filter((m) => m.role === 'user').slice(-2).map((m) => m.content);
+  const wanted = c.actions === 'auto' ? actionsFor(c.ask, recentAsks) : c.actions;
+  if (deviceActions.missingCard(wanted, answer)) {
+    let line = '';
+    await chat(deviceActions.cardOnlyMessages(c.ask), (token) => { line += token; });
+    answer = deviceActions.withCard(answer, brain.stripThinking(line));
+  }
+  return wanted ? deviceActions.eventsOnDayAsked(answer, c.ask) : answer;
+}
+
 export function buildMessages(c, memories = c.memories ?? MEMORIES) {
   // Asked to stop a "get to know me" chat: it becomes an ordinary chat, and the app says so with the message.
   const stopping = c.mode === 'interview' && brain.stopsQuestions(c.ask);

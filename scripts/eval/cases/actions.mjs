@@ -4,12 +4,20 @@
 import { deviceActions } from '../app.mjs';
 import { has } from '../cases.mjs';
 
-const ACTION_LINE = /^\s*\[\[(alarm|timer|event)\b/im;
+// The cards the app shows for an answer (src/deviceActions.ts), however the model wrapped the line.
+const cards = (a) => deviceActions.parseActions(a).actions;
+const ACTION_LINE = { test: (a) => cards(a).length > 0 };
 const noCard = ['adds no alarm, timer or event card', (a) => !ACTION_LINE.test(a)];
-const card = (kind) => [`adds a [[${kind} …]] card`, (a) => new RegExp(`^\\s*\\[\\[${kind}\\b`, 'im').test(a)];
+const card = (kind) => [`adds a [[${kind} …]] card`, (a) => cards(a).some((x) => x.kind === kind)];
 // A draft block, or a reply written out ("Yes, let's move the meeting to Friday at 3."), not just "tap the card".
 const drafted = ['writes the reply', (a, x) => x.drafts.length > 0 || (x.words >= 6 && !/tap the card/i.test(a))];
-const noClaim = ["doesn't say it added anything", (a) => !/\b(I'?ve|I have) (set|added|created|scheduled)\b|\b(calendar|alarm|timer) (has been|is) (updated|set)\b/i.test(a)];
+// In what the chat shows: the app takes "I've added it" out of a reply with a card.
+const noClaim = ["doesn't say it added anything", (a) => !/\b(I'?ve|I have) (set|added|created|scheduled)\b|\b(calendar|alarm|timer) (has been|is) (updated|set)\b/i.test(deviceActions.shownText(a))];
+// The day of the event card, 0 Sunday … 6 Saturday.
+const onDay = (day, label) => [label, (a) => {
+  const e = deviceActions.parseActions(a).actions.find((x) => x.kind === 'event');
+  return !!e && (e.allDay ? new Date(e.begin).getUTCDay() : new Date(e.begin).getDay()) === day;
+}];
 
 // The alarm card the app shows for this answer to this ask: its days, as Calendar day numbers (Mon 2 … Sun 1).
 const alarmDays = (ask, a) => deviceActions.parseActions(a, false, ask).actions.find((x) => x.kind === 'alarm')?.days;
@@ -48,9 +56,9 @@ export const CASES = [
   { ...phone, id: 'act-alarm-tonight', ask: TONIGHT, checks: [card('alarm'), alarmAt(TONIGHT, 19, 'at 7pm'), ringsOnce(TONIGHT)] },
   { ...phone, id: 'act-alarm-sundays', ask: SUNDAYS, checks: [card('alarm'), repeats(SUNDAYS, [1], 'repeats on Sundays')] },
   { ...phone, id: 'act-timer', ask: 'Set a timer for 10 minutes for the eggs.', checks: [card('timer'), has(/\[\[timer\s+10m\b/i, 'for 10m')] },
-  { ...phone, id: 'act-calendar', ask: 'Add the dentist on Friday at 3pm to my calendar.', checks: [card('event'), has(/\|\s*[^|\]]*dentist/i, 'called dentist')] },
+  { ...phone, id: 'act-calendar', ask: 'Add the dentist on Friday at 3pm to my calendar.', checks: [card('event'), has(/\|\s*[^|\]]*dentist/i, 'called dentist'), onDay(5, 'on Friday')] },
   { ...phone, id: 'act-remind', ask: 'Remind me to call the vet at 4 this afternoon.', checks: [['adds a card', (a) => ACTION_LINE.test(a)]] },
   // Both at once: the reply and the card.
   { ...phone, id: 'act-reply-and-add', ask: 'Reply to my landlord that Thursday between 8 and 12 is fine for the plumber, and add it to my calendar.',
-    checks: [drafted, card('event'), noClaim] },
+    checks: [drafted, card('event'), noClaim, onDay(4, 'on Thursday')] },
 ];

@@ -6,7 +6,7 @@ import {
   chunkText, cleanFact, conversationLearnMessages, indexChat, interviewPrompt, keywordScore, learnMessages, moreMemories, parseFacts, parseTidy, stopsQuestions,
   pastFacts, recallsPast, relevantMemories, searchPast, similarity, stripThinking, systemPrompt, tidyMessages, titleFrom, turnContext, withoutClosingQuestion, worthLearning,
 } from './brain';
-import { actionsFor, actionsSupported } from './deviceActions';
+import { actionsFor, actionsSupported, cardOnlyMessages, eventsOnDayAsked, missingCard, withCard } from './deviceActions';
 import { type WebHit, needsWeb, searchWeb, webQuery } from './webSearch';
 import { engine as localEngine } from './engine';
 import { createOllamaEngine } from './engine/ollama';
@@ -1019,6 +1019,18 @@ ${interviewPrompt(s.name)}` : prompt };
         answer += token;
         drawTimer ??= setTimeout(draw, 66);
       }, MAX_TOKENS[s.length] ?? 1024);
+      // Asked for a reply and a card, the model sometimes wrote only the reply: then it's asked for the card alone.
+      if (missingCard(actions, stripThinking(answer))) {
+        try {
+          let line = '';
+          await active.chat(cardOnlyMessages(userMsg.display ?? userMsg.content), s.modelId, (token) => { line += token; }, 160);
+          answer = withCard(stripThinking(answer).trim(), stripThinking(line));
+          draw();
+        } catch {
+          // the reply stands without a card
+        }
+      }
+      if (actions) answer = eventsOnDayAsked(answer, userMsg.display ?? userMsg.content);
     } catch (e) {
       setError((e as Error).message || 'Something went wrong.');
       refreshStatus();

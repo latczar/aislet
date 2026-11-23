@@ -135,6 +135,7 @@ async function main() {
         }, c.maxTokens ?? brain.MAX_TOKENS[c.settings?.length ?? SETTINGS.length]);
       }
       answer = brain.stripThinking(answer).trim();
+      if (!c.build && !c.json) answer = await app.afterReply(c, answer, (msgs, onToken) => engine.chat(msgs, undefined, onToken, 160));
       // As the app does when asked to stop a "get to know me" chat.
       if (!c.build && c.mode === 'interview' && brain.stopsQuestions(c.ask)) answer = brain.withoutClosingQuestion(answer);
       const verdict = judge(c, answer);
