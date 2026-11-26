@@ -200,6 +200,13 @@ check('compress: copes with stray text', brain.parseCompress(`Here you go: {"mer
 check('compress: bad JSON gives nothing', brain.parseCompress('{"merges": [', pets, 'Sam').length === 0);
 check('compress: "the user" with no name set', brain.parseCompress(JSON.stringify({ merges: [{ facts: [1, 2], fact: 'The user has a ginger tabby cat called Biscuit' }] }),
   [fact('u1', 'The user has a cat called Biscuit'), fact('u2', 'Biscuit is a ginger tabby')], '').length === 1);
+const priya = [fact('n1', "Sam's partner is called Priya", 'people'), fact('n2', 'Priya works as a nurse', 'people'),
+  fact('n3', "Priya's birthday is on 14 March", 'people'), fact('n4', "Tom's birthday is in June", 'people')];
+merged = brain.parseCompress(JSON.stringify({ merges: [{ facts: [1, 2, 3], fact: "Sam's partner Priya is a nurse and her birthday is on 14 March" }] }), priya, 'Sam');
+check('compress: "her birthday" becomes "Priya\'s birthday" when the facts say whose', merged.length === 1
+  && merged[0].add.fact === "Sam's partner Priya is a nurse and Priya's birthday is on 14 March", JSON.stringify(merged));
+check('compress: a pronoun two names could own is still dropped', brain.parseCompress(JSON.stringify({ merges: [{ facts: [2, 3, 4],
+  fact: 'Sam knows Priya is a nurse and her birthday is on 14 March' }] }), priya, 'Sam').length === 0);
 check('compress: plurals and tenses count as the same word', brain.mergeProblem(
   [fact('r1', 'Sam trains on Tuesdays'), fact('r2', 'Sam is training for a half marathon')],
   'Sam trains on Tuesdays for a half marathon', 'Sam') === '');

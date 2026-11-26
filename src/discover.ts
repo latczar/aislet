@@ -2,7 +2,7 @@
 // It asks each address on this network "is a hub here?" (/api/hub), a few at a time with short
 // timeouts. Nothing secret is sent: the pairing code is only used after you pick the laptop.
 import * as Network from 'expo-network';
-import { HUB_PORT } from './hub';
+import { HUB_PORT, hubPing, normaliseAddress } from './hub';
 import { fetch } from './net';
 
 const TIMEOUT_MS = 1000; // a hub on the same Wi-Fi answers in well under this
@@ -79,4 +79,40 @@ export async function findLaptops(
   };
   await Promise.all(Array.from({ length: AT_ONCE }, worker));
   return found;
+}
+
+/**
+ * Look on this Wi-Fi for the laptop this phone is paired with, for when its address has changed. Only a laptop that
+ * answers with this phone's key counts, so it can't be someone else's. Resolves with its address, or null.
+ */
+export async function findOurLaptop(
+  key: string,
+  cancelled: AbortSignal,
+  onProgress: (fraction: number) => void = () => undefined,
+): Promise<string | null> {
+  const stop = new AbortController();
+  const cancel = () => stop.abort();
+  cancelled.addEventListener('abort', cancel);
+  let match: string | null = null;
+  const checks: Promise<void>[] = [];
+  try {
+    await findLaptops(
+      (address) => {
+        checks.push(hubPing({ base: normaliseAddress(address), key, kind: 'phone' })
+          .then((info) => {
+            if (info.paired && !match) {
+              match = address;
+              stop.abort(); // found it: stop looking
+            }
+          })
+          .catch(() => undefined));
+      },
+      onProgress,
+      stop.signal,
+    );
+    await Promise.all(checks);
+  } finally {
+    cancelled.removeEventListener('abort', cancel);
+  }
+  return match;
 }

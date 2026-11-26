@@ -6,3 +6,11 @@ export async function findLaptops(
 ): Promise<string[]> {
   return [];
 }
+
+export async function findOurLaptop(
+  _key: string,
+  _cancelled: AbortSignal,
+  _onProgress?: (fraction: number) => void,
+): Promise<string | null> {
+  return null;
+}

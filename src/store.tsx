@@ -11,7 +11,8 @@ import { type WebHit, needsWeb, searchWeb, webQuery } from './webSearch';
 import { engine as localEngine } from './engine';
 import { createOllamaEngine } from './engine/ollama';
 import type { Engine, EngineStatus } from './engine/types';
-import { type HubInfo, type HubTarget, STALE_PC_KEY, hubPing, hubRequest, hubSync, isLinkKey, localHub, pairWith } from './hub';
+import { HubError, type HubInfo, type HubTarget, STALE_PC_KEY, hubPing, hubRequest, hubSync, isLinkKey, localHub, normaliseAddress, pairWith } from './hub';
+import { findOurLaptop } from './discover';
 import {
   type FileList, KIWIX_FOLDER, LIBRARY_FOLDER, OLD_LIBRARY_FOLDER, type LibraryBook, type LibraryHit, type LibraryPage, OTHER_FOLDERS,
   libraryCandidates, overviewTitles, searchQuery, titleQueries,
@@ -29,6 +30,7 @@ const DEFAULT_SETTINGS: Settings = {
   useLibraries: true, voiceLang: '', webSearch: false, libraryMode: 'ask', libraryChoice: {}, recallChats: true,
 };
 const HISTORY = 20; // messages of the current chat the model sees, at most
+const REFIND_EVERY_MS = 5 * 60_000; // looking for a laptop that has moved asks every address on the Wi-Fi, so not too often
 
 /**
  * What keeps an open chat's prompt the same from one message to the next, so the phone and Ollama only read what's
@@ -343,6 +345,35 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     settingsRef.current, relevantMemories(memRef.current.filter((m) => !m.until), '', MEMORY_LIMIT), where, actionsSupported,
   ), []);
 
+  /**
+   * Phone: the laptop didn't answer at its saved address. Routers sometimes give it a new one, so look for it on this
+   * Wi-Fi in the background (at most every few minutes) and move to wherever it answers with this phone's key. That
+   * key proves it's the same laptop, so this doesn't need to ask.
+   */
+  const refind = useRef({ running: false, last: 0 });
+  const refindLaptop = useCallback((key: string) => {
+    const r = refind.current;
+    if (r.running || Date.now() - r.last < REFIND_EVERY_MS) return;
+    r.running = true;
+    r.last = Date.now();
+    findOurLaptop(key, new AbortController().signal)
+      .then(async (address) => {
+        const s = settingsRef.current;
+        if (!address || s.hubKey !== key) return; // not found, or paired again meanwhile
+        const base = normaliseAddress(address);
+        if (base !== s.hubUrl) {
+          console.log(`[aislet] the laptop moved from ${s.hubUrl} to ${base}; using the new address`);
+          const next = { ...s, hubUrl: base };
+          settingsRef.current = next;
+          setSettings(next);
+          await save(KEYS.settings, next);
+        }
+        checkRef.current(false);
+      })
+      .catch(() => undefined) // not on Wi-Fi, so nothing to look for
+      .finally(() => { r.running = false; });
+  }, []);
+
   const checkStatus = useCallback(async (auto: boolean) => {
     if (recheck.current.timer) clearTimeout(recheck.current.timer);
     recheck.current.timer = null;
@@ -372,6 +403,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         setHub((h) => ({ ...h, connected, name: info!.name, problem: connected ? undefined : target.kind === 'pc' ? STALE_PC_KEY : 'Not paired. Check the code.' }));
       } catch (e) {
         setHub((h) => ({ ...h, connected: false, problem: (e as Error).message }));
+        if (target.kind === 'phone' && !(e instanceof HubError)) refindLaptop(target.key); // no answer at all there
       }
     }
     const active = pickEngine(connected);
@@ -399,7 +431,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const open = !!chatRef.current?.messages.length;
       localEngine.warm(settingsRef.current.modelId, newChatSystem('phone'), open).catch(() => undefined);
     }
-  }, [hubTarget, pickEngine, syncNow]);
+  }, [hubTarget, pickEngine, syncNow, refindLaptop]);
   checkRef.current = checkStatus;
   const refreshStatus = useCallback(() => checkStatus(false), [checkStatus]);
 

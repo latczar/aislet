@@ -106,6 +106,16 @@ def foreground() -> str:
     return m.group(1) if m else ''
 
 
+def install(apk: str) -> str:
+    """Install a new build for the main profile only. Without --user 0, Samsung puts a second copy in Dual Apps."""
+    front = foreground()
+    if front != PKG and not any(l in front for l in LAUNCHERS):
+        raise CheckFailed(f'stopped before installing: another app is in front ({front or "unknown"})')
+    out = adb('install', '--user', '0', '-r', apk, timeout=300).strip().splitlines()[-1]
+    time.sleep(5)  # Android shows its own screen for a moment while the old app closes
+    return out
+
+
 def keyboard_top() -> int | None:
     """Screen y (px) of the top of the on-screen keyboard, or None when it's hidden."""
     if 'mInputShown=true' not in shell('dumpsys input_method'):

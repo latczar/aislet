@@ -710,6 +710,21 @@ export function mergeProblem(sources: Memory[], merged: string, name = ''): stri
 }
 
 /**
+ * Put the name back where a merge says "his" or "her" but the facts it joins say whose: "her birthday" becomes
+ * "Priya's birthday" when a fact says "Priya's birthday…" (and only one name owns that word). Small models write
+ * pronouns however they're asked, which would otherwise lose a good merge. Anything else is left for mergeProblem.
+ */
+export function namesForPronouns(merged: string, sources: Memory[]): string {
+  const all = sources.map((m) => m.fact).join('. ');
+  return merged.replace(/\b(his|her)\s+(\w+)/gi, (whole, _pronoun: string, word: string) => {
+    const owners = new Set([...all.matchAll(new RegExp(`\\b([\\w-]+)['’]s\\s+${word}\\b`, 'gi'))]
+      .map((m) => m[1])
+      .filter((n) => /^[A-Z]/.test(n)));
+    return owners.size === 1 ? `${[...owners][0]}'s ${word}` : whole;
+  });
+}
+
+/**
  * Read the model's merges, keeping only ones that are safe to offer: two to four real, current facts each, each
  * fact in one merge at most, and a merged fact that passes mergeProblem. Each comes back as an overlap, so Tidy up's
  * approve dialog and applyTidy work as they are.
@@ -740,7 +755,7 @@ export function parseCompress(reply: string, memories: Memory[], name = ''): Tid
     if (targets.length !== new Set(numbers.map(Number)).size || targets.some((m) => !m || m.until || used.has(m.id))) continue;
     const sources = targets as Memory[];
     if (sources.length < 2 || sources.length > MERGE_MAX_FACTS) continue;
-    const fact = cleanFact(text);
+    const fact = namesForPronouns(cleanFact(text), sources);
     if (!fact || mergeProblem(sources, fact, name)) continue;
     sources.forEach((m) => used.add(m.id));
     const saved = sources.reduce((n, m) => n + m.fact.split(/\s+/).length, 0) - fact.split(/\s+/).length;
